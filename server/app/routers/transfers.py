@@ -518,6 +518,8 @@ def export_table(table_id: int, payload: ExportIn, db: Session = Depends(get_db)
     ws = wb.active
     ws.title = re.sub(r"[\[\]\*\?:/\\]", "_", table.name)[:31] or "数据"
     ws.append([f.name for f in fields])
+    for cell in ws[1]:
+        cell.data_type = "s"
     option_names = {
         f.key: {o["id"]: o["name"] for o in (f.options or [])} for f in fields if f.type in {"select", "multiselect"}
     }
@@ -534,12 +536,22 @@ def export_table(table_id: int, payload: ExportIn, db: Session = Depends(get_db)
                 else:
                     row.append(names.get(value, value) if value else "")
             elif field.type == "attachment" and value:
-                row.append(f"/api/v1/files/{value}/download")
+                attached = db.get(FileObject, value)
+                row.append(attached.original_name if attached else "附件已不可用")
             elif isinstance(value, (int, float)):
                 row.append(value)
             else:
                 row.append("" if value is None else str(value))
         ws.append(row)
+        for index, field in enumerate(fields, start=1):
+            cell = ws.cell(row=ws.max_row, column=index)
+            # User text must remain text, including strings starting with '='.
+            if isinstance(cell.value, str):
+                cell.data_type = "s"
+            file_id = (record.data or {}).get(field.key)
+            if field.type == "attachment" and file_id:
+                cell.hyperlink = f"{settings.public_base_url.rstrip('/')}/api/v1/files/{file_id}/download"
+                cell.style = "Hyperlink"
 
     export_dir = settings.storage_dir / "exports"
     export_dir.mkdir(parents=True, exist_ok=True)

@@ -151,6 +151,8 @@ def test_connection(provider: str, db: Session = Depends(get_db)):
     config = decrypt_config(conn.encrypted_config)
     if not config:
         raise ApiError("PROVIDER_NOT_CONFIGURED", "尚未配置该服务的凭据", 409)
+    if provider == "deepseek" and conn.model:
+        config["model"] = conn.model
     started = time.monotonic()
     try:
         text, model = prov.translate(provider, "连接测试", "zh", "en", config)
@@ -181,6 +183,8 @@ def translate(payload: TranslateIn, db: Session = Depends(get_db)):
     config = decrypt_config(conn.encrypted_config)
     if not config:
         raise ApiError("PROVIDER_NOT_CONFIGURED", f"{PROVIDERS[payload.provider]} 尚未配置凭据", 409)
+    if payload.provider == "deepseek" and conn.model:
+        config["model"] = conn.model
     if not conn.enabled:
         raise ApiError("PROVIDER_DISABLED", f"{PROVIDERS[payload.provider]} 已停用，请先在服务设置中启用", 409)
 

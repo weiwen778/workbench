@@ -15,6 +15,7 @@ def run_cleanup():
         now = utcnow()
         jobs = db.scalars(select(DataTransferJob).where(DataTransferJob.expires_at <= now)).all()
         candidates = {job.file_id for job in jobs if job.file_id}
+        exported_files = {job.file_id for job in jobs if job.kind == "export" and job.file_id}
         for job in jobs:
             db.delete(job)
         candidates.update(db.scalars(select(FileObject.id).where(FileObject.status == "staged", FileObject.expires_at <= now)).all())
@@ -24,8 +25,9 @@ def run_cleanup():
                 continue
             obj = db.get(FileObject, file_id)
             if obj:
-                path = (settings.storage_dir / "files" / obj.storage_key).resolve()
-                if not path.is_relative_to((settings.storage_dir / "files").resolve()):
+                directory = (settings.storage_dir / ("exports" if file_id in exported_files else "files")).resolve()
+                path = (directory / obj.storage_key).resolve()
+                if not path.is_relative_to(directory):
                     continue
                 path.unlink(missing_ok=True)
                 db.delete(obj)

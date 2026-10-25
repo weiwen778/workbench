@@ -52,7 +52,7 @@ cd web && npm run dev    # http://127.0.0.1:5173，已代理 /api 到 18080
 ## 测试
 
 ```bash
-# 后端 113 项；测试库与开发库隔离
+# 后端 116 项；测试库与开发库隔离
 cd server && .venv/bin/python -m pytest -q
 
 # 前端类型与构建
@@ -104,7 +104,7 @@ server/app            FastAPI 应用
   services/           业务服务（周期、实例、字段校验、动态查询、翻译适配、加密、回收站）
   models.py           SQLAlchemy 模型
 server/migrations     Alembic 迁移
-server/tests          pytest（113 项）
+server/tests          pytest（116 项）
 web/src               Vue 3 前端（views 11 页、components 3 个复用组件、styles/theme.css）
 e2e                   Playwright 冒烟脚本
 deploy                Nginx 配置、备份与恢复脚本

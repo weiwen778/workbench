@@ -2,6 +2,55 @@ import io
 from openpyxl import Workbook
 
 
+def test_deepseek_saved_model_is_used_for_test_and_translation(auth, monkeypatch):
+    from app.routers import translate
+    response = auth.put('/api/v1/translation-connections/deepseek', json={'enabled': True, 'config': {'api_key': 'test-key'}, 'model': 'custom-deepseek-model'})
+    assert response.status_code == 200
+    seen = []
+    def translated(provider, text, source, target, config):
+        seen.append(config['model'])
+        return 'Hello', config['model']
+    monkeypatch.setattr(translate.prov, 'translate', translated)
+    assert auth.post('/api/v1/translation-connections/deepseek/test').json()['ok']
+    result = auth.post('/api/v1/translations', json={'provider': 'deepseek', 'source_text': '你好', 'source_lang': 'zh', 'target_lang': 'en'})
+    assert result.status_code == 200
+    assert result.json()['model'] == 'custom-deepseek-model'
+    assert seen == ['custom-deepseek-model', 'custom-deepseek-model']
+
+
+def test_export_attachment_has_filename_and_authenticated_absolute_link(auth):
+    from openpyxl import load_workbook
+    from app.config import settings
+    table = auth.post('/api/v1/tables', json={'name': 'export-links', 'fields': [{'name': 'text', 'type': 'short_text'}, {'name': 'file', 'type': 'attachment'}]}).json()
+    file = auth.post('/api/v1/files', files={'file': ('invoice.pdf', b'%PDF-1.4 sample', 'application/pdf')}).json()
+    keys = [f['key'] for f in table['fields']]
+    auth.post(f"/api/v1/tables/{table['id']}/records", json={'data': {keys[0]: '=1+1', keys[1]: file['id']}}).raise_for_status()
+    job = auth.post(f"/api/v1/tables/{table['id']}/exports", json={'scope': 'all'}).json()
+    response = auth.get(f"/api/v1/data-transfer-jobs/{job['id']}/download")
+    sheet = load_workbook(io.BytesIO(response.content)).active
+    assert sheet['A2'].value == '=1+1'
+    assert sheet['A2'].data_type == 's'
+    assert sheet['B2'].value == 'invoice.pdf'
+    assert sheet['B2'].hyperlink.target == f"{settings.public_base_url.rstrip('/')}/api/v1/files/{file['id']}/download"
+
+
+def test_cleanup_removes_expired_export_from_export_directory(auth, db):
+    from datetime import timedelta
+    from app.config import settings
+    from app.maintenance import run_cleanup
+    from app.models import DataTransferJob, FileObject, utcnow
+    table = auth.post('/api/v1/tables', json={'name': 'expired-export', 'fields': [{'name': 'text', 'type': 'short_text'}]}).json()
+    result = auth.post(f"/api/v1/tables/{table['id']}/exports", json={'scope': 'all'}).json()
+    job = db.get(DataTransferJob, result['id'])
+    obj = db.get(FileObject, job.file_id)
+    path = settings.storage_dir / 'exports' / obj.storage_key
+    assert path.exists()
+    job.expires_at = utcnow() - timedelta(seconds=1)
+    db.commit()
+    run_cleanup()
+    assert not path.exists()
+
+
 def test_spa_does_not_serve_files_outside_distribution(client):
     response = client.get('/..%2F..%2FREADME.md')
     assert response.status_code == 404
