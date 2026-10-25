@@ -1,5 +1,7 @@
 # 个人工作台（Workbench v2.1）
 
+> 仓库：<https://github.com/weiwen778/workbench_element>
+
 单用户的店铺／社媒工作台：打卡、待办、数据表、笔记、便签、翻译、回收站。
 
 - 前端：Vue 3 + TypeScript + Element Plus 2.14（Vite 构建）
