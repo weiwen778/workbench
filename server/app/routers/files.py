@@ -15,7 +15,7 @@ from ..config import settings
 from ..db import get_db
 from ..deps import get_current_user
 from ..errors import ApiError
-from ..models import FileObject, FileRef, utcnow
+from ..models import DataRecord, DataTable, DataTransferJob, FileObject, FileRef, Note, NoteRevision, utcnow
 from ..utils import iso_z
 
 router = APIRouter(tags=["files"], dependencies=[Depends(get_current_user)])
@@ -65,7 +65,8 @@ async def upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
     if suffix not in ALLOWED_EXT:
         raise ApiError("FILE_TYPE_NOT_ALLOWED", f"不支持 {suffix or '该'} 类型的文件", 415)
 
-    content_type = file.content_type or mimetypes.guess_type(original)[0] or "application/octet-stream"
+    # Client-supplied MIME types must not turn an allowed extension into inline SVG/HTML.
+    content_type = mimetypes.guess_type(original)[0] or "application/octet-stream"
     storage_key = f"{uuid.uuid4().hex}{suffix}"
     target_dir = settings.storage_dir / "files"
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -89,6 +90,7 @@ def metadata(file_id: int, db: Session = Depends(get_db)):
     obj = db.get(FileObject, file_id)
     if not obj:
         raise ApiError("NOT_FOUND", "文件不存在", 404)
+    _ensure_readable(obj, db)
     return file_payload(obj)
 
 
@@ -96,10 +98,33 @@ def _resolve(file_id: int, db: Session) -> tuple[FileObject, Path]:
     obj = db.get(FileObject, file_id)
     if not obj:
         raise ApiError("NOT_FOUND", "文件不存在", 404)
+    _ensure_readable(obj, db)
     path = settings.storage_dir / "files" / obj.storage_key
     if not path.exists():
         raise ApiError("FILE_MISSING", "文件已不在存储中", 410)
     return obj, path
+
+
+def _ensure_readable(obj: FileObject, db: Session) -> None:
+    if obj.status == "staged":
+        if obj.expires_at is not None and obj.expires_at > utcnow():
+            return
+    for ref in db.scalars(select(FileRef).where(FileRef.file_id == obj.id)).all():
+        if ref.owner_type == "record":
+            record = db.get(DataRecord, ref.owner_id)
+            table = db.get(DataTable, record.table_id) if record else None
+            if record and record.deleted_at is None and table and table.deleted_at is None:
+                return
+        elif ref.owner_type in {"note", "note_revision"}:
+            revision = db.get(NoteRevision, ref.owner_id) if ref.owner_type == "note_revision" else None
+            note = db.get(Note, revision.note_id if revision else ref.owner_id)
+            if note and note.deleted_at is None:
+                return
+    for job in db.scalars(select(DataTransferJob).where(DataTransferJob.file_id == obj.id)).all():
+        table = db.get(DataTable, job.table_id) if job.table_id else None
+        if (job.expires_at is None or job.expires_at > utcnow()) and (not job.table_id or (table and table.deleted_at is None)):
+            return
+    raise ApiError("FILE_UNAVAILABLE", "文件已过期或所属内容已进入回收站", 410)
 
 
 @router.get("/files/{file_id}/content")
@@ -111,7 +136,7 @@ def content(file_id: int, db: Session = Depends(get_db)):
         media_type=obj.content_type,
         filename=obj.original_name,
         content_disposition_type="inline" if inline else "attachment",
-        headers={"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"},
+        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
     )
 
 

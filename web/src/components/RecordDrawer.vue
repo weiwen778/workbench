@@ -4,10 +4,12 @@
     :title="record ? '编辑数据' : '添加数据'"
     :size="drawerSize"
     :close-on-click-modal="false"
+    :close-on-press-escape="uploading === null && !saving"
+    :show-close="uploading === null && !saving"
     @update:model-value="$emit('update:modelValue', $event)"
     @open="init"
   >
-    <el-form label-position="top" class="drawer-form">
+    <el-form label-position="top" class="drawer-form" :disabled="saving || uploading !== null">
       <el-form-item
         v-for="field in fields"
         :key="field.key"
@@ -72,7 +74,7 @@
           <template v-if="data[field.key]">
             <div class="file-chip">
               <el-icon><Paperclip /></el-icon>
-              <el-link v-if="fileInfo[field.key]" :href="`/api/v1/files/${data[field.key]}/content`" target="_blank">
+              <el-link v-if="fileInfo[field.key]" @click="previewFile = fileInfo[field.key]; previewOpen = true">
                 {{ fileInfo[field.key].name }}
               </el-link>
               <span v-else>附件 #{{ data[field.key] }}</span>
@@ -83,7 +85,7 @@
             v-else
             :show-file-list="false"
             :http-request="(options: any) => uploadFile(options, field)"
-            :disabled="uploading === field.key"
+            :disabled="uploading !== null || saving"
           >
             <el-button :icon="Upload" :loading="uploading === field.key" size="small">选择文件</el-button>
             <span class="text-12 muted" style="margin-left: 8px">单文件，最大 20 MB</span>
@@ -103,13 +105,14 @@
 
     <template #footer>
       <div class="toolbar-actions" style="justify-content: flex-end">
-        <el-button @click="$emit('update:modelValue', false)">取消</el-button>
+        <el-button :disabled="saving || uploading !== null" @click="$emit('update:modelValue', false)">取消</el-button>
         <el-button type="primary" :loading="saving" :disabled="uploading !== null" @click="save(false)">
           {{ uploading !== null ? '附件上传中…' : '保存' }}
         </el-button>
       </div>
     </template>
   </el-drawer>
+  <AttachmentPreview v-model="previewOpen" :file="previewFile" />
 </template>
 
 <script setup lang="ts">
@@ -117,6 +120,7 @@ import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Paperclip, Upload } from '@element-plus/icons-vue'
 import { apiError, http } from '@/api/client'
+import AttachmentPreview from './AttachmentPreview.vue'
 
 const props = defineProps<{
   modelValue: boolean
@@ -135,6 +139,8 @@ const fileInfo = reactive<Record<string, any>>({})
 const saving = ref(false)
 const uploading = ref<string | null>(null)
 const conflict = ref(false)
+const previewOpen = ref(false)
+const previewFile = ref<any | null>(null)
 const version = ref<number | null>(null)
 
 const drawerSize = computed(() => (window.innerWidth < 900 ? '100%' : '520px'))
@@ -167,6 +173,7 @@ function init() {
 }
 
 async function uploadFile(options: any, field: any) {
+  if (uploading.value !== null || saving.value) return
   uploading.value = field.key
   const form = new FormData()
   form.append('file', options.file)
@@ -197,6 +204,7 @@ function buildPayload() {
 }
 
 async function save(force: boolean) {
+  if (uploading.value !== null || saving.value) return
   saving.value = true
   try {
     if (props.record) {

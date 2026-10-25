@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 from sqlalchemy.orm import Session
 
 from ..errors import ApiError
-from ..models import FileObject
+from ..models import FileObject, utcnow
 
 FIELD_TYPES = {
     "short_text",
@@ -129,6 +129,8 @@ def validate_value(db: Session, field, raw, *, table_id: int) -> object:
         file_obj = db.get(FileObject, file_id)
         if not file_obj:
             _fail(fname, "附件不存在或已过期")
+        if file_obj.status == "staged" and file_obj.expires_at is not None and file_obj.expires_at <= utcnow():
+            _fail(fname, "附件已过期，请重新上传")
         if file_obj.status == "bound" and not _file_owned_by(db, file_id, table_id):
             pass
         return file_id

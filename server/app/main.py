@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import asyncio
+from contextlib import suppress
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -28,7 +30,17 @@ def create_app() -> FastAPI:
     async def lifespan(_app: FastAPI):
         init_db()
         bootstrap()
-        yield
+        task = None
+        if settings.env == "production":
+            from .maintenance import maintenance_loop
+            task = asyncio.create_task(maintenance_loop())
+        try:
+            yield
+        finally:
+            if task is not None:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
 
     app = FastAPI(
         title=settings.app_name,
@@ -119,6 +131,11 @@ def create_app() -> FastAPI:
 
 def bootstrap() -> None:
     """初始化管理员、翻译服务占位、存储目录。"""
+    if settings.env == "production":
+        if not settings.encryption_key or settings.admin_password == "admin12345" or len(settings.admin_password) < 8:
+            raise RuntimeError("Production requires an encryption key and a non-default administrator password")
+        if settings.is_sqlite:
+            raise RuntimeError("Production must use the configured PostgreSQL database")
     settings.storage_dir.mkdir(parents=True, exist_ok=True)
     with SessionLocal() as db:
         user = db.scalar(select(User).limit(1))
@@ -149,7 +166,9 @@ def _mount_spa(app: FastAPI) -> None:
     async def _spa(full_path: str):
         if full_path.startswith("api/"):
             return JSONResponse(status_code=404, content=error_payload("NOT_FOUND", "接口不存在"))
-        candidate = dist / full_path
+        candidate = (dist / full_path).resolve()
+        if not candidate.is_relative_to(dist.resolve()):
+            return JSONResponse(status_code=404, content=error_payload("NOT_FOUND", "文件不存在"))
         if full_path and candidate.is_file():
             return FileResponse(candidate)
         return FileResponse(dist / "index.html")

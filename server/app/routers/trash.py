@@ -193,6 +193,7 @@ def purge_expired(db: Session = Depends(get_db)):
         try:
             _purge_entity(db, entry.kind, entry.entity_id)
             entry.purged_at = now
+            db.commit()
             purged += 1
         except Exception:  # 单条失败不影响其余
             db.rollback()

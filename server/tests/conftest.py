@@ -5,7 +5,13 @@ import tempfile
 from pathlib import Path
 
 _TMP = Path(tempfile.mkdtemp(prefix="wb_test_"))
-os.environ["WB_DATABASE_URL"] = f"sqlite:///{_TMP}/test.db"
+_TEST_URL = os.environ.get("WB_TEST_DATABASE_URL", f"sqlite:///{_TMP}/test.db")
+if not _TEST_URL.startswith("sqlite:"):
+    from sqlalchemy.engine import make_url
+    parsed = make_url(_TEST_URL)
+    if parsed.host not in {"127.0.0.1", "localhost"} or not (parsed.database or "").startswith("workbench_element_test"):
+        raise RuntimeError("Only a local workbench_element_test* database may be reset by tests")
+os.environ["WB_DATABASE_URL"] = _TEST_URL
 os.environ["WB_STORAGE_DIR"] = str(_TMP / "storage")
 os.environ["WB_ENV"] = "test"
 os.environ["WB_ALLOW_INSECURE_UPSTREAM"] = "1"

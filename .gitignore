@@ -24,3 +24,10 @@ docs/screenshots/
 .vscode/
 .idea/
 .DS_Store
+**/.venv/
+**/.env
+!**/.env.example
+**/.pytest_cache/
+**/.coverage
+.run/
+web/public/pdfjs/

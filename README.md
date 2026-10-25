@@ -10,7 +10,7 @@
 - 部署：Docker Compose（PostgreSQL + API + Nginx）
 
 需求基线：`docs/个人工作台_PRD_v2.1.md`（PRD v2.1，Element Plus 版）
-本轮状态：`docs/交付报告.md`｜逐条验收：`docs/验收对照.md`｜遗留与待办：`docs/待办清单.md`
+最新发布检查：`docs/发布检查-2026-10-26.md`。交付报告、验收对照及待办清单保留为上一轮记录，状态以最新发布检查为准。
 
 ## 快速开始（WSL / Linux）
 
@@ -19,12 +19,12 @@ cd /home/weiwen/workbench
 
 # 1. 后端依赖（首次）
 cd server
-uv venv --python 3.13 .venv
+uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -r requirements.txt
 cp .env.example .env          # 本地开发：SQLite，按需填 WB_ENCRYPTION_KEY
 
 # 2. 前端依赖（首次）
-cd ../web && npm install && npm run build
+cd ../web && npm ci && npm run build
 
 # 3. 启动（前端取 web/dist，API 同源 18080）
 cd ../server && .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 18080
@@ -52,7 +52,7 @@ cd web && npm run dev    # http://127.0.0.1:5173，已代理 /api 到 18080
 ## 测试
 
 ```bash
-# 后端 105 项
+# 后端 113 项；测试库与开发库隔离
 cd server && .venv/bin/python -m pytest -q
 
 # 前端类型与构建
@@ -69,11 +69,13 @@ cd e2e && npm install && node ui-smoke.mjs
 python3 scripts/gen-report.py    # 生成 docs/交付报告.html
 ```
 
+PostgreSQL 回归可设置 `WB_TEST_DATABASE_URL`。为防止误删业务库，测试仅接受回环地址且数据库名以 `workbench_element_test` 开头；用例会重建该测试库的表，切勿指定业务数据库。
+
 ## 生产部署
 
 ```bash
 cp .env.example .env
-# 必改：WB_DB_PASSWORD、WB_ADMIN_PASSWORD、WB_ENCRYPTION_KEY、WB_PUBLIC_BASE_URL
+# 必改：WB_DB_PASSWORD、WB_ADMIN_USERNAME、WB_ADMIN_PASSWORD、WB_ENCRYPTION_KEY、WB_PUBLIC_BASE_URL
 python3 -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"   # 生成主密钥
 docker compose up -d --build
 ```
@@ -84,7 +86,15 @@ docker compose up -d --build
 - API 容器启动前执行 `alembic upgrade head`；
 - Nginx 用 `resolver` + 变量 `proxy_pass`，API 容器重建后无需重启 Web。
 
-备份：`deploy/backup.sh`（数据库 + 附件 + 配置），恢复步骤写在备份目录的 `README.txt`。
+生产启动会拒绝缺失的主密钥、默认管理员密码和 SQLite 数据库。管理员环境变量只在空库首次启动时创建账号，之后改环境变量不会覆盖已有账号。密码和翻译密钥只保存在服务器私有 `.env`，不提交 Git。
+
+同机试运行时可设置 `WB_BIND_ADDRESS=127.0.0.1`、`WB_HTTP_PORT=18744`、`WB_API_PORT=18081`、`WB_DB_PORT=55434`，避开已有服务。正式入口使用 18743；只开放 Web 端口。
+
+国内服务器下载 Python 依赖较慢时，可运行 `docker compose build --build-arg PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple api`，随后再启动 Compose。
+
+备份：`bash deploy/backup.sh /私有备份目录`（数据库 + 附件 + 配置）。备份期间短暂停止 API 保持数据和附件一致，退出时自动恢复运行。恢复：`bash deploy/restore.sh /完整备份目录`，按提示输入数据库名；恢复会替换当前数据库及附件，应先在隔离环境演练。主密钥必须与备份保持一致。备份包含敏感配置，禁止上传到 Git。
+
+生产 API 每小时清理到期回收站、导入导出任务及无引用暂存文件。有效引用附件保留。PDF 使用本地 PDF.js 阅读器，支持分页、缩放与适宽，worker、字体和 CMap 随构建部署，无需第三方 CDN。
 
 ## 目录结构
 
@@ -94,10 +104,10 @@ server/app            FastAPI 应用
   services/           业务服务（周期、实例、字段校验、动态查询、翻译适配、加密、回收站）
   models.py           SQLAlchemy 模型
 server/migrations     Alembic 迁移
-server/tests          pytest（105 项）
+server/tests          pytest（113 项）
 web/src               Vue 3 前端（views 11 页、components 3 个复用组件、styles/theme.css）
 e2e                   Playwright 冒烟脚本
-deploy                Nginx 配置、备份脚本
+deploy                Nginx 配置、备份与恢复脚本
 docs                  PRD、交付报告、验收对照、待办、截图
 scripts               开发服务脚本、报告生成脚本
 ```

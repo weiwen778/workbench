@@ -138,10 +138,8 @@
                 >{{ row.data[field.key] }}</el-link>
                 <el-link
                   v-else-if="field.type === 'attachment' && row.data[field.key]"
-                  :href="`/api/v1/files/${row.data[field.key]}/content`"
-                  target="_blank"
-                  :underline="false"
-                  @click.stop
+                  underline="never"
+                  @click.stop="openAttachment(row.data[field.key])"
                 >查看附件</el-link>
                 <span v-else-if="field.type === 'select'">{{ optionName(field, row.data[field.key]) }}</span>
                 <span v-else-if="field.type === 'multiselect'">{{ multiName(field, row.data[field.key]) }}</span>
@@ -187,6 +185,7 @@
       :record="editingRecord"
       @saved="loadRecords"
     />
+    <AttachmentPreview v-model="previewOpen" :file="previewFile" />
     <FieldManager v-model="fieldsOpen" :table-id="tableId" :fields="fields" @updated="reload" />
     <ImportWizard v-model="importOpen" :table-id="tableId" :existing-fields="fields" @done="loadRecords" />
 
@@ -216,10 +215,19 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Close, Download, InfoFilled, Plus, Refresh, Setting, Sort, Upload } from '@element-plus/icons-vue'
 import { apiError, http } from '@/api/client'
 import RecordDrawer from '@/components/RecordDrawer.vue'
+import AttachmentPreview from '@/components/AttachmentPreview.vue'
 import FieldManager from '@/components/FieldManager.vue'
 import ImportWizard from '@/components/ImportWizard.vue'
 
 const route = useRoute()
+const previewOpen = ref(false)
+const previewFile = ref<any | null>(null)
+async function openAttachment(id: number) {
+  try {
+    previewFile.value = (await http.get(`/files/${id}`)).data
+    previewOpen.value = true
+  } catch (cause) { ElMessage.error(apiError(cause).message) }
+}
 const tableId = Number(route.params.tableId)
 
 const table = ref<any>(null)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 from sqlalchemy import select, text
 
 from ..db import SessionLocal
@@ -18,5 +19,5 @@ def health():
                 c.provider: c.enabled for c in db.scalars(select(TranslationConnection)).all()
             }
         return {"status": "ok", "database": "ok", "translation": providers}
-    except Exception as exc:  # pragma: no cover - 环境相关
-        return {"status": "degraded", "database": "error", "detail": str(exc)[:200]}
+    except Exception:  # Do not expose connection strings or driver internals.
+        return JSONResponse(status_code=503, content={"status": "degraded", "database": "error"})

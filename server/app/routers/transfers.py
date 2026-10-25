@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import re
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
@@ -48,6 +48,8 @@ def _job(db: Session, job_id: int) -> DataTransferJob:
     job = db.get(DataTransferJob, job_id)
     if not job:
         raise ApiError("NOT_FOUND", "任务不存在", 404)
+    if job.expires_at is not None and job.expires_at <= utcnow():
+        raise ApiError("TRANSFER_EXPIRED", "导入导出任务已过期，请重新提交", 410)
     return job
 
 
@@ -68,7 +70,16 @@ def _read_sheets(raw: bytes) -> tuple[dict[str, list[list]], str]:
     wb = load_workbook(io.BytesIO(raw), data_only=True)
     sheets: dict[str, list[list]] = {}
     for ws in wb.worksheets:
-        rows = [[cell for cell in row] for row in ws.iter_rows(values_only=True)]
+        rows = []
+        for row in ws.iter_rows():
+            values = []
+            for cell in row:
+                value = cell.value
+                if (isinstance(value, (int, float)) and not isinstance(value, bool)
+                        and float(value).is_integer() and re.fullmatch(r"0+", cell.number_format or "")):
+                    value = format(int(value), f"0{len(cell.number_format)}d")
+                values.append(value)
+            rows.append(values)
         sheets[ws.title] = rows
     wb.close()
     return sheets, wb.sheetnames[0] if wb.sheetnames else ""
@@ -215,7 +226,7 @@ async def preview_import(
             "file_name": file.filename,
         },
         errors=[],
-        expires_at=None,
+        expires_at=utcnow() + timedelta(hours=settings.staged_ttl_hours),
     )
     db.add(job)
     db.commit()
@@ -553,6 +564,7 @@ def export_table(table_id: int, payload: ExportIn, db: Session = Depends(get_db)
         payload={"scope": payload.scope, "rows": len(all_rows)},
         result={"rows": len(all_rows), "file_id": file_obj.id},
         file_id=file_obj.id,
+        expires_at=utcnow() + timedelta(hours=settings.staged_ttl_hours),
     )
     db.add(job)
     db.commit()

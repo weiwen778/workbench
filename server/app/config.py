@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 20_000_000
     staged_ttl_hours: int = 24
     trash_days: int = 30
+    maintenance_interval_seconds: int = 3600
 
     login_max_failures: int = 5
     login_lock_seconds: int = 300
