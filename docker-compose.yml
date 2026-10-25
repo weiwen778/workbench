@@ -1,0 +1,67 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${WB_DB_NAME:-workbench}
+      POSTGRES_USER: ${WB_DB_USER:-workbench}
+      POSTGRES_PASSWORD: ${WB_DB_PASSWORD:?请在 .env 中设置 WB_DB_PASSWORD}
+      TZ: Asia/Shanghai
+    volumes:
+      - wb_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${WB_DB_USER:-workbench} -d ${WB_DB_NAME:-workbench}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 384m
+    ports:
+      # 仅绑定本机回环地址，不直接对公网开放
+      - "127.0.0.1:${WB_DB_PORT:-5433}:5432"
+
+  api:
+    build: ./server
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      WB_ENV: production
+      WB_DATABASE_URL: postgresql+psycopg://${WB_DB_USER:-workbench}:${WB_DB_PASSWORD}@db:5432/${WB_DB_NAME:-workbench}
+      WB_STORAGE_DIR: /data/storage
+      WB_ADMIN_USERNAME: ${WB_ADMIN_USERNAME:-admin}
+      WB_ADMIN_PASSWORD: ${WB_ADMIN_PASSWORD:?请在 .env 中设置 WB_ADMIN_PASSWORD}
+      WB_ENCRYPTION_KEY: ${WB_ENCRYPTION_KEY:?请在 .env 中设置 WB_ENCRYPTION_KEY}
+      WB_PUBLIC_BASE_URL: ${WB_PUBLIC_BASE_URL:-http://127.0.0.1:18743}
+      WB_COOKIE_SECURE: ${WB_COOKIE_SECURE:-false}
+      WB_MAX_UPLOAD_BYTES: ${WB_MAX_UPLOAD_BYTES:-20000000}
+      TZ: Asia/Shanghai
+    volumes:
+      - wb_storage:/data/storage
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    mem_limit: 640m
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "${WB_HTTP_PORT:-18743}:80"
+    mem_limit: 128m
+
+volumes:
+  wb_pgdata:
+  wb_storage:
