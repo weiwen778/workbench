@@ -7,7 +7,7 @@ cd "$ROOT"
 BACKUP="${1:?Usage: deploy/restore.sh /absolute/path/to/workbench-backup}"
 test -s "$BACKUP/database.dump"
 test -f "$BACKUP/storage.tar.gz"
-DB_NAME="$(docker compose exec -T db printenv POSTGRES_DB)"
+DB_NAME="$(docker compose exec -T db printenv POSTGRES_DB </dev/null)"
 printf 'This replaces database %s and its uploaded files. Type the database name: ' "$DB_NAME"
 read -r answer
 test "$answer" = "$DB_NAME" || { printf 'Aborted.\n'; exit 1; }
