@@ -59,7 +59,7 @@
                 <span class="ellipsis-1">{{ table.name }}</span>
               </div>
               <div class="wb-nav-item" @click="openNewTable">
-                <el-icon><Plus /></el-icon><span>新建数据表</span>
+                <el-icon><Plus /></el-icon><span>新建表格</span>
               </div>
             </template>
           </div>
@@ -109,10 +109,10 @@
       </div>
     </div>
 
-    <!-- 新建数据表 -->
-    <el-dialog v-model="newTableOpen" title="新建数据表" width="520px" :append-to-body="true">
+    <!-- 新建表格 -->
+    <el-dialog v-model="newTableOpen" title="新建表格" width="520px" :append-to-body="true">
       <el-form label-position="top" :model="newTable">
-        <el-form-item label="表名" required>
+        <el-form-item label="表格名称" required>
           <el-input v-model="newTable.name" maxlength="100" placeholder="例如：商品台账" />
         </el-form-item>
         <el-form-item label="说明">
@@ -179,7 +179,7 @@ const collapsedGroups = [
   },
   {
     key: 'data',
-    label: '数据表',
+    label: '表格',
     icon: Collection,
     items: [],
   },
@@ -188,17 +188,17 @@ const collapsedGroups = [
 const simpleItems = [
   { label: '待办', path: '/todos', icon: Check },
   { label: '笔记', path: '/notes', icon: Document },
-  { label: '便签', path: '/memos', icon: Memo },
+  { label: '便利贴', path: '/memos', icon: Memo },
   { label: '翻译', path: '/translate', icon: SwitchButton },
   { label: '回收站', path: '/trash', icon: Delete },
   { label: '设置', path: '/settings', icon: Setting },
 ]
 
 const pageTitle = computed(() => {
-  if (route.name === 'target') return '对象资料'
+  if (route.name === 'target') return '资料'
   if (route.name === 'table') {
     const found = tables.value.find((t) => String(t.id) === String(route.params.tableId))
-    return found?.name || '数据表'
+    return found?.name || '表格'
   }
   return (route.meta.title as string) || '个人工作台'
 })
@@ -243,13 +243,13 @@ function openNewTable() {
 
 async function createTable() {
   if (!newTable.name.trim()) {
-    ElMessage.warning('请填写表名')
+    ElMessage.warning('请填写表格名称')
     return
   }
   creatingTable.value = true
   try {
     const { data } = await http.post('/tables', { name: newTable.name.trim(), note: newTable.note, fields: [] })
-    ElMessage.success('已创建，接下来添加字段')
+    ElMessage.success('已创建，接下来添加一列')
     newTableOpen.value = false
     await loadTables()
     router.push(`/data/${data.id}`)

@@ -1,11 +1,11 @@
 <template>
   <div class="page">
     <div class="page-toolbar">
-      <div class="title-15">{{ table?.name || '数据表' }}</div>
+      <div class="title-15">{{ table?.name || '表格' }}</div>
       <el-tooltip v-if="table?.note" :content="table.note" placement="bottom">
         <el-icon class="muted"><InfoFilled /></el-icon>
       </el-tooltip>
-      <span class="text-12 muted">共 {{ total }} 条</span>
+      <span class="text-12 muted">共 {{ total }} 行</span>
       <div class="spacer" />
       <div class="toolbar-actions">
         <el-button text :icon="Refresh" @click="reload">刷新</el-button>
@@ -15,9 +15,9 @@
               排序{{ sorts.length ? `(${sorts.length})` : '' }}
             </el-button>
           </template>
-          <div class="text-13" style="margin-bottom: 6px">排序（最多 3 个字段，临时生效）</div>
+          <div class="text-13" style="margin-bottom: 6px">排序（最多 3 列，临时生效）</div>
           <div v-for="(sort, index) in sortDraft" :key="index" class="filter-item" style="margin-bottom: 6px">
-            <el-select v-model="sort.field" size="small" style="width: 140px" placeholder="字段">
+            <el-select v-model="sort.field" size="small" style="width: 140px" placeholder="列">
               <el-option v-for="f in sortableFields" :key="f.key" :label="f.name" :value="f.key" />
             </el-select>
             <el-select v-model="sort.order" size="small" style="width: 90px">
@@ -32,17 +32,17 @@
             <el-button size="small" type="primary" @click="applySorts">应用</el-button>
           </div>
         </el-popover>
-        <el-button text :icon="Setting" @click="fieldsOpen = true">字段设置</el-button>
+        <el-button text :icon="Setting" @click="fieldsOpen = true">列设置</el-button>
         <el-button text :icon="Download" @click="exportOpen = true">导出</el-button>
-        <el-button text :icon="Upload" @click="importOpen = true">导入</el-button>
-        <el-button class="btn-tonal" :icon="Plus" :disabled="!fields.length" @click="openCreate">添加数据</el-button>
+        <el-button text :icon="Upload" @click="importOpen = true">批量导入</el-button>
+        <el-button class="btn-tonal" :icon="Plus" :disabled="!fields.length" @click="openCreate">添加一行</el-button>
       </div>
     </div>
 
     <!-- 筛选条 -->
     <div class="filter-bar">
       <div v-for="(filter, index) in filters" :key="index" class="filter-item">
-        <el-select v-model="filter.field" placeholder="字段" style="width: 130px" @change="onFilterFieldChange(filter)">
+        <el-select v-model="filter.field" placeholder="列" style="width: 130px" @change="onFilterFieldChange(filter)">
           <el-option v-for="f in sortableFields" :key="f.key" :label="f.name" :value="f.key" />
         </el-select>
         <el-select v-model="filter.op" style="width: 104px">
@@ -102,8 +102,8 @@
 
     <div class="page-body">
       <div v-if="!fields.length" class="empty-hint">
-        <div>这张表还没有字段</div>
-        <el-button class="btn-tonal" @click="fieldsOpen = true">添加字段</el-button>
+        <div>这张表格还没有列</div>
+        <el-button class="btn-tonal" @click="fieldsOpen = true">添加一列</el-button>
       </div>
       <template v-else>
         <div class="table-scroll">
@@ -160,9 +160,9 @@
         <div class="pager">
           <div class="toolbar-actions">
             <el-button v-if="selection.length" size="small" @click="batchDelete">
-              删除选中 {{ selection.length }} 条
+              删除选中的 {{ selection.length }} 行
             </el-button>
-            <span v-if="!rows.length" class="text-12 muted">没有匹配的数据</span>
+            <span v-if="!rows.length" class="text-12 muted">没有符合条件的内容</span>
           </div>
           <div class="spacer" />
           <el-pagination
@@ -190,13 +190,13 @@
     <ImportWizard v-model="importOpen" :table-id="tableId" :existing-fields="fields" @done="loadRecords" />
 
     <!-- 导出 -->
-    <el-dialog v-model="exportOpen" title="导出数据" width="420px">
+    <el-dialog v-model="exportOpen" title="导出表格" width="420px">
       <el-radio-group v-model="exportScope">
-        <el-radio value="all">全表（{{ total }} 条）</el-radio>
+        <el-radio value="all">整张表格（{{ total }} 行）</el-radio>
         <el-radio value="filtered">当前筛选结果</el-radio>
       </el-radio-group>
       <div v-if="exportScope === 'filtered'" class="text-12 muted" style="margin-top: 8px">
-        导出全部匹配数据（不只当前页），并沿用当前排序。
+        导出所有符合条件的内容（不只是这一页），顺序照当前排序。
       </div>
       <template #footer>
         <div class="toolbar-actions" style="justify-content: flex-end">
@@ -448,7 +448,7 @@ function openEdit(row: any) {
 
 async function removeRecord(row: any) {
   try {
-    await ElMessageBox.confirm('删除这条数据？删除后可在回收站保留 30 天。', '删除数据', {
+    await ElMessageBox.confirm('删除这一行？删除后会在回收站保留 30 天。', '删除行', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消',
@@ -463,7 +463,7 @@ async function removeRecord(row: any) {
 
 async function batchDelete() {
   try {
-    await ElMessageBox.confirm(`删除选中的 ${selection.value.length} 条数据？单批最多 100 条。`, '删除数据', {
+    await ElMessageBox.confirm(`删除选中的 ${selection.value.length} 行？一次最多 100 行。`, '删除行', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消',
@@ -488,7 +488,7 @@ async function doExport() {
       body.sorts = sorts.value
     }
     const { data } = await http.post(`/tables/${tableId}/exports`, body)
-    ElMessage.success(`已导出 ${data.rows} 条数据`)
+    ElMessage.success(`已导出 ${data.rows} 行`)
     exportOpen.value = false
     window.open(data.download_url, '_blank')
   } catch (error) {

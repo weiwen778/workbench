@@ -12,10 +12,10 @@
 
     <el-radio-group v-model="kind" size="small" @change="load">
       <el-radio-button value="">全部</el-radio-button>
-      <el-radio-button value="table">数据表</el-radio-button>
-      <el-radio-button value="record">数据记录</el-radio-button>
+      <el-radio-button value="table">表格</el-radio-button>
+      <el-radio-button value="record">表格行</el-radio-button>
       <el-radio-button value="note">笔记</el-radio-button>
-      <el-radio-button value="memo">便签</el-radio-button>
+      <el-radio-button value="memo">便利贴</el-radio-button>
     </el-radio-group>
 
     <div class="page-body">
@@ -43,7 +43,7 @@
       <div v-if="!items.length && !loading" class="empty-hint">
         <div>回收站是空的</div>
         <div class="text-12">
-          数据表、数据记录、笔记、便签删除后会在这里保留 30 天；待办、打卡对象不进入回收站
+          表格、表格里的行、笔记、便利贴删除后会在这里保留 30 天；待办、店铺、社媒账号不进回收站
         </div>
       </div>
     </div>
@@ -87,9 +87,9 @@ async function restore(row: any) {
   } catch (error: any) {
     const body = error?.response?.data
     if (body?.code === 'NAME_CONFLICT') {
-      ElMessage.error('已有同名数据表，请先给现有表改名再恢复')
+      ElMessage.error('已经有同名表格，请先给现有表格改名再恢复')
     } else if (body?.code === 'PARENT_TABLE_DELETED') {
-      ElMessage.error('所属数据表还没恢复，请先恢复该表')
+      ElMessage.error('它所属的表格还没恢复，请先恢复表格')
     } else {
       ElMessage.error(apiError(error).message)
     }
@@ -99,7 +99,7 @@ async function restore(row: any) {
 async function purge(row: any) {
   try {
     await ElMessageBox.confirm(
-      `彻底删除「${row.name}」？删除后不能恢复，相关附件也会在没有其他引用时一并清理。`,
+      `彻底删除「${row.name}」？删了就找不回来；附件如果没别的地方在用，也会一起清掉。`,
       '彻底删除',
       { type: 'warning', confirmButtonText: '彻底删除', cancelButtonText: '取消' },
     )

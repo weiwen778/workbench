@@ -1,25 +1,25 @@
 <template>
   <div class="page">
     <div class="page-toolbar">
-      <div class="title-15">数据表</div>
-      <span class="text-12 muted">共 {{ tables.length }} 张表</span>
+      <div class="title-15">表格</div>
+      <span class="text-12 muted">共 {{ tables.length }} 张表格</span>
       <div class="spacer" />
       <div class="toolbar-actions">
         <el-button text :icon="Refresh" @click="load">刷新</el-button>
-        <el-button :icon="Upload" @click="importOpen = true">Excel 建表</el-button>
-        <el-button class="btn-tonal" :icon="Plus" @click="createOpen = true">新建数据表</el-button>
+        <el-button :icon="Upload" @click="importOpen = true">从 Excel 导入</el-button>
+        <el-button class="btn-tonal" :icon="Plus" @click="createOpen = true">新建表格</el-button>
       </div>
     </div>
 
     <div class="page-body">
       <el-table :data="tables" v-loading="loading" size="default">
-        <el-table-column prop="name" label="表名" min-width="180" show-overflow-tooltip>
+        <el-table-column prop="name" label="表格名称" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
             <el-link type="primary" :underline="false" @click="open(row)">{{ row.name }}</el-link>
           </template>
         </el-table-column>
         <el-table-column prop="note" label="说明" min-width="200" show-overflow-tooltip />
-        <el-table-column label="字段" width="80" align="center">
+        <el-table-column label="列" width="80" align="center">
           <template #default="{ row }">{{ row.field_count ?? '—' }}</template>
         </el-table-column>
         <el-table-column label="数据" width="80" align="center">
@@ -36,31 +36,31 @@
         </el-table-column>
       </el-table>
       <div v-if="!tables.length && !loading" class="empty-hint">
-        <div>还没有数据表</div>
-        <div class="text-12">新建后可以自定义字段，再从侧栏直接打开这张表</div>
-        <el-button class="btn-tonal" @click="createOpen = true">新建一张表</el-button>
+        <div>还没有表格</div>
+        <div class="text-12">新建后可以自己加列；也可以点右上角「从 Excel 导入」，用一个现成的表格直接生成</div>
+        <el-button class="btn-tonal" @click="createOpen = true">新建一张表格</el-button>
       </div>
     </div>
 
     <!-- 新建 -->
-    <el-dialog v-model="createOpen" title="新建数据表" width="520px">
+    <el-dialog v-model="createOpen" title="新建表格" width="520px">
       <el-form label-position="top">
-        <el-form-item label="表名" required>
+        <el-form-item label="表格名称" required>
           <el-input v-model="form.name" maxlength="100" placeholder="例如：商品台账" />
         </el-form-item>
         <el-form-item label="说明">
           <el-input v-model="form.note" type="textarea" :rows="2" maxlength="2000" />
         </el-form-item>
-        <el-form-item label="初始字段（可选，也可创建后在表内添加）">
+        <el-form-item label="初始的列（可选，创建后也能再加）">
           <div style="width: 100%">
             <div v-for="(field, index) in form.fields" :key="index" class="field-row">
-              <el-input v-model="field.name" placeholder="字段名" maxlength="50" style="flex: 1" />
+              <el-input v-model="field.name" placeholder="列名" maxlength="50" style="flex: 1" />
               <el-select v-model="field.type" style="width: 120px">
                 <el-option v-for="t in fieldTypes" :key="t.value" :label="t.label" :value="t.value" />
               </el-select>
               <el-button text :icon="Delete" @click="form.fields.splice(index, 1)" />
             </div>
-            <el-button text :icon="Plus" size="small" @click="addFieldDraft">添加字段</el-button>
+            <el-button text :icon="Plus" size="small" @click="addFieldDraft">添加一列</el-button>
           </div>
         </el-form-item>
       </el-form>
@@ -126,7 +126,7 @@ function addFieldDraft() {
 
 async function createTable() {
   if (!form.name.trim()) {
-    ElMessage.warning('请填写表名')
+    ElMessage.warning('请填写表格名称')
     return
   }
   creating.value = true
@@ -155,10 +155,10 @@ function open(row: any) {
 
 async function rename(row: any) {
   try {
-    const { value } = await ElMessageBox.prompt('新的表名', '重命名数据表', {
+    const { value } = await ElMessageBox.prompt('新的表格名称', '重命名表格', {
       inputValue: row.name,
       inputPattern: /\S+/,
-      inputErrorMessage: '请输入表名',
+      inputErrorMessage: '请输入表格名称',
     })
     await http.patch(`/tables/${row.id}`, { name: value.trim() })
     await load()
@@ -172,8 +172,8 @@ async function rename(row: any) {
 async function remove(row: any) {
   try {
     await ElMessageBox.confirm(
-      `删除整张表「${row.name}」及其 ${row.record_count} 条数据？删除后可在回收站保留 30 天。`,
-      '删除数据表',
+      `删除整张表格「${row.name}」和里面的 ${row.record_count} 行内容？删除后会在回收站保留 30 天。`,
+      '删除表格',
       { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
     )
     await http.delete(`/tables/${row.id}`)

@@ -2,7 +2,7 @@
   <div class="login-page">
     <div class="login-card">
       <div class="login-title">个人工作台</div>
-      <div class="login-sub muted">登录后按工作类型集中处理店铺与社媒的周期工作</div>
+      <div class="login-sub muted">登录后，按店铺和社媒分别处理每天的打卡</div>
       <el-form label-position="top" :model="form" @submit.prevent="submit">
         <el-form-item label="用户名">
           <el-input v-model="form.username" autocomplete="username" placeholder="请输入用户名" />
@@ -21,7 +21,7 @@
           登录
         </el-button>
       </el-form>
-      <div class="login-foot muted text-12">会话保持 30 天，关闭浏览器后重新打开仍可使用</div>
+      <div class="login-foot muted text-12">登录状态保持 30 天，关了浏览器再打开也不用重新登</div>
     </div>
   </div>
 </template>

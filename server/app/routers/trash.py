@@ -28,7 +28,7 @@ from ..utils import iso_z
 
 router = APIRouter(tags=["trash"], dependencies=[Depends(get_current_user)])
 
-KIND_LABEL = {"table": "数据表", "record": "数据记录", "note": "笔记", "memo": "便签"}
+KIND_LABEL = {"table": "表格", "record": "表格行", "note": "笔记", "memo": "便利贴"}
 
 
 @router.get("/trash")
@@ -89,14 +89,14 @@ def restore(kind: str, entity_id: int, db: Session = Depends(get_db)):
     if kind == "table":
         table = db.get(DataTable, entity_id)
         if not table:
-            raise ApiError("NOT_FOUND", "数据表已不存在", 404)
+            raise ApiError("NOT_FOUND", "表格已经不存在", 404)
         conflict = db.scalar(
             select(DataTable).where(
                 DataTable.name == table.name, DataTable.deleted_at.is_(None), DataTable.id != table.id
             )
         )
         if conflict:
-            raise ApiError("NAME_CONFLICT", "已有同名数据表，请先改名再恢复", 409, {"name": table.name})
+            raise ApiError("NAME_CONFLICT", "已经有同名表格，请先改名再恢复", 409, {"name": table.name})
         table.deleted_at = None
 
     elif kind == "record":
@@ -105,7 +105,7 @@ def restore(kind: str, entity_id: int, db: Session = Depends(get_db)):
             raise ApiError("NOT_FOUND", "数据已不存在", 404)
         table = db.get(DataTable, record.table_id)
         if not table or table.deleted_at is not None:
-            raise ApiError("PARENT_TABLE_DELETED", "所属数据表尚未恢复，请先恢复该表", 409)
+            raise ApiError("PARENT_TABLE_DELETED", "所属表格还没恢复，请先恢复表格", 409)
         fields = list(
             db.scalars(
                 select(DataField).where(DataField.table_id == table.id).order_by(DataField.sort_order)
@@ -150,7 +150,7 @@ def restore(kind: str, entity_id: int, db: Session = Depends(get_db)):
     else:  # memo
         memo = db.get(Memo, entity_id)
         if not memo:
-            raise ApiError("NOT_FOUND", "便签已不存在", 404)
+            raise ApiError("NOT_FOUND", "便利贴已不存在", 404)
         snapshot = entry.snapshot or {}
         if not memo.title and snapshot.get("title"):
             memo.title = snapshot["title"]

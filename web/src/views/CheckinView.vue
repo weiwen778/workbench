@@ -7,7 +7,7 @@
         <el-radio-button value="monthly">本月</el-radio-button>
       </el-radio-group>
 
-      <el-select v-model="targetId" placeholder="全部对象" clearable style="width: 150px" @change="load">
+      <el-select v-model="targetId" :placeholder="'全部' + kindLabel" clearable style="width: 150px" @change="load">
         <el-option v-for="t in targets" :key="t.id" :label="t.name" :value="t.id" />
       </el-select>
 
@@ -30,7 +30,8 @@
       <div class="toolbar-actions">
         <el-button text :icon="Refresh" @click="load">刷新</el-button>
         <el-button text :icon="Clock" @click="historyOpen = true">历史</el-button>
-        <el-button class="btn-tonal" :icon="Setting" @click="manageOpen = true">管理对象</el-button>
+        <el-button text :icon="Upload" @click="openImport">导入</el-button>
+        <el-button class="btn-tonal" :icon="Setting" @click="manageOpen = true">管理{{ kindLabel }}</el-button>
       </div>
     </div>
 
@@ -97,8 +98,8 @@
       </div>
     </div>
 
-    <!-- 对象管理 -->
-    <el-drawer v-model="manageOpen" :title="`${kindLabel}与分组`" size="520px" :append-to-body="true">
+    <!-- 店铺 / 社媒账号管理 -->
+    <el-drawer v-model="manageOpen" :title="`${kindLabel}与分类`" size="520px" :append-to-body="true">
       <div class="toolbar-actions" style="margin-bottom: 12px">
         <el-input v-model="newTarget.name" placeholder="名称" style="width: 180px" maxlength="100" />
         <el-input v-model="newTarget.platform" placeholder="平台（可选）" style="width: 140px" maxlength="100" />
@@ -108,25 +109,25 @@
       <el-table :data="allTargets" size="small" style="width: 100%">
         <el-table-column prop="name" label="名称" min-width="110" show-overflow-tooltip />
         <el-table-column prop="platform" label="平台" width="80" />
-        <el-table-column label="启用事项" width="76" align="center">
+        <el-table-column label="任务数" width="76" align="center">
           <template #default="{ row }">{{ row.rule_count }}</template>
         </el-table-column>
         <el-table-column label="状态" width="80">
           <template #default="{ row }">
-            <el-tag v-if="row.status === 'archived'" size="small" type="info" effect="plain">已归档</el-tag>
+            <el-tag v-if="row.status === 'archived'" size="small" type="info" effect="plain">已暂停</el-tag>
             <span v-else class="text-12 secondary">使用中</span>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="146">
           <template #default="{ row }">
             <div class="actions-group">
-              <el-button text size="small" @click="openTarget(row)">资料与事项</el-button>
+              <el-button text size="small" @click="openTarget(row)">资料与任务</el-button>
               <el-button
                 v-if="row.status === 'active'"
                 text
                 size="small"
                 @click="archive(row)"
-              >归档</el-button>
+              >暂停</el-button>
               <el-button v-else text size="small" @click="restore(row)">恢复</el-button>
             </div>
           </template>
@@ -134,14 +135,14 @@
       </el-table>
       </div>
 
-      <div class="group-title" style="margin-top: 16px">工作分组</div>
+      <div class="group-title" style="margin-top: 16px">分类</div>
       <div class="toolbar-actions" style="margin-bottom: 8px">
-        <el-input v-model="newGroupName" placeholder="新分组名称" style="width: 180px" maxlength="100" />
-        <el-button :icon="Plus" @click="createGroup">添加分组</el-button>
+        <el-input v-model="newGroupName" placeholder="新分类名称" style="width: 180px" maxlength="100" />
+        <el-button :icon="Plus" @click="createGroup">添加分类</el-button>
       </div>
       <el-table :data="groupList" size="small">
-        <el-table-column prop="name" label="分组" min-width="120" />
-        <el-table-column label="启用事项" width="86" align="center">
+        <el-table-column prop="name" label="分类" min-width="120" />
+        <el-table-column label="任务数" width="86" align="center">
           <template #default="{ row }">{{ row.rule_count }}</template>
         </el-table-column>
         <el-table-column label="操作" width="110">
@@ -151,6 +152,45 @@
         </el-table-column>
       </el-table>
     </el-drawer>
+
+    <!-- 从 JSON 导入 -->
+    <el-dialog v-model="importOpen" :title="`导入${kindLabel}`" width="560px" :append-to-body="true">
+      <div class="text-13 secondary" style="margin-bottom: 10px">
+        一次可以导入{{ kindLabel }}、分类和打卡任务。已经有同名的不会重复创建，同一个对象下同名的任务会跳过。
+      </div>
+      <div class="toolbar-actions" style="margin-bottom: 10px">
+        <el-button :icon="Download" @click="downloadTemplate">下载模板</el-button>
+        <span class="text-12 muted">用记事本打开模板照着填，另存为 .json 文件</span>
+      </div>
+      <el-upload
+        ref="importUpload"
+        drag
+        :auto-upload="false"
+        :show-file-list="false"
+        accept=".json,application/json"
+        :on-change="onImportFile"
+      >
+        <div style="padding: 18px 12px">
+          <div>把填好的 .json 文件拖到这里，或点一下选择</div>
+          <div class="text-12 muted" style="margin-top: 6px">不确定怎么填就先点上面的「下载模板」</div>
+        </div>
+      </el-upload>
+      <div v-if="importError" class="text-13" style="color: var(--el-color-danger); margin-top: 10px; white-space: pre-wrap">
+        {{ importError }}
+      </div>
+      <div v-if="importResult" class="text-13" style="margin-top: 10px">
+        已导入 {{ importResult.created.targets }} 个{{ kindLabel }}、{{ importResult.created.groups }} 个分类、{{ importResult.created.rules }} 个任务。
+        <div v-if="importResult.reused.targets || importResult.reused.groups" class="muted" style="margin-top: 4px">
+          另有 {{ importResult.reused.targets }} 个{{ kindLabel }}、{{ importResult.reused.groups }} 个分类本来就存在，直接沿用了。
+        </div>
+        <div v-if="importResult.skipped_total" class="muted" style="margin-top: 4px">
+          跳过 {{ importResult.skipped_total }} 个同名任务（这些任务之前就有）。
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="importOpen = false">关闭</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 历史 -->
     <el-drawer v-model="historyOpen" title="打卡历史" size="680px" :append-to-body="true">
@@ -173,10 +213,10 @@
       </div>
       <div class="table-scroll">
         <el-table :data="historyItems" size="small" v-loading="historyLoading" style="width: 100%">
-          <el-table-column prop="period_start" label="周期" width="96" />
-          <el-table-column prop="target_name" label="对象" width="96" show-overflow-tooltip />
-          <el-table-column prop="group_name" label="分组" width="84" show-overflow-tooltip />
-          <el-table-column prop="title" label="事项" min-width="130" show-overflow-tooltip />
+          <el-table-column prop="period_start" label="时间段" width="96" />
+          <el-table-column prop="target_name" :label="kindLabel" width="96" show-overflow-tooltip />
+          <el-table-column prop="group_name" label="分类" width="84" show-overflow-tooltip />
+          <el-table-column prop="title" label="任务" min-width="130" show-overflow-tooltip />
           <el-table-column label="状态" width="78">
             <template #default="{ row }">
               <el-tag v-if="row.completed" size="small" type="success" effect="plain">已完成</el-tag>
@@ -201,7 +241,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Clock, InfoFilled, Plus, Refresh, Setting } from '@element-plus/icons-vue'
+import { Clock, Download, InfoFilled, Plus, Refresh, Setting, Upload } from '@element-plus/icons-vue'
 import { apiError, http } from '@/api/client'
 
 const route = useRoute()
@@ -231,6 +271,10 @@ const newGroupName = ref('')
 const creatingTarget = ref(false)
 
 const historyOpen = ref(false)
+const importOpen = ref(false)
+const importError = ref('')
+const importResult = ref<any>(null)
+const importUpload = ref<any>(null)
 const historyItems = ref<any[]>([])
 const historyTotal = ref(0)
 const historyLoading = ref(false)
@@ -243,9 +287,9 @@ const periodUnit = computed(() => ({ daily: '日', weekly: '周', monthly: '月'
 const periodLabel = computed(() => ({ daily: '今天', weekly: '本周', monthly: '本月' }[period.value]))
 const emptyText = computed(() => {
   if (!targets.value.length) return `还没有${kindLabel.value}，先添加一个`
-  if (status.value === 'pending') return '没有未完成事项'
-  if (status.value === 'done') return '本周期还没有完成记录'
-  return '当前没有需要处理的打卡事项'
+  if (status.value === 'pending') return '没有未完成的任务'
+  if (status.value === 'done') return '这一轮还没有完成记录'
+  return '当前没有要做的打卡'
 })
 
 function formatTime(value: string) {
@@ -357,7 +401,7 @@ async function createTarget() {
 
 async function createGroup() {
   if (!newGroupName.value.trim()) {
-    ElMessage.warning('请填写分组名称')
+    ElMessage.warning('请填写分类名称')
     return
   }
   try {
@@ -371,7 +415,7 @@ async function createGroup() {
 
 async function removeGroup(row: any) {
   try {
-    await ElMessageBox.confirm(`删除分组「${row.name}」？分组仍有启用事项或未完成工作时不能删除。`, '删除分组', {
+    await ElMessageBox.confirm(`删除分类「${row.name}」？分类里还有启用的任务或没做完的工作时，不能删除。`, '删除分类', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消',
@@ -393,9 +437,9 @@ function openTarget(row: any) {
 async function archive(row: any) {
   try {
     await ElMessageBox.confirm(
-      `归档「${row.name}」后将从日常清单隐藏并停止生成新工作，已有记录保留并锁定。`,
-      '归档确认',
-      { type: 'warning', confirmButtonText: '归档', cancelButtonText: '取消' },
+      `暂停「${row.name}」后从日常清单里隐藏，不再生成新的打卡；已有记录保留，只能查看。`,
+      '暂停打卡',
+      { type: 'warning', confirmButtonText: '暂停打卡', cancelButtonText: '取消' },
     )
     await http.post(`/work-targets/${row.id}/archive`)
     await loadTargets()
@@ -409,11 +453,64 @@ async function archive(row: any) {
 async function restore(row: any) {
   try {
     await http.post(`/work-targets/${row.id}/restore`)
-    ElMessage.success('已恢复，从下一个对应周期继续')
+    ElMessage.success('已恢复，下一轮开始继续')
     await loadTargets()
     await load()
   } catch (error) {
     ElMessage.error(apiError(error).message)
+  }
+}
+
+function openImport() {
+  importError.value = ''
+  importResult.value = null
+  importOpen.value = true
+  resetImportInput()
+}
+
+function downloadTemplate() {
+  const link = document.createElement('a')
+  link.href = `/api/v1/checkin-imports/template?kind=${kind.value}`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
+
+function resetImportInput() {
+  // 浏览器在 input.value 未变时不会触发 change，导致同一个文件二次选择无反应
+  const input = importUpload.value?.$el?.querySelector('input[type=file]') as HTMLInputElement | null
+  if (input) input.value = ''
+  importUpload.value?.clearFiles?.()
+}
+
+async function onImportFile(file: any) {
+  importError.value = ''
+  importResult.value = null
+  const raw = file?.raw as File | undefined
+  if (!raw) return
+  try {
+    let parsed: any
+    try {
+      parsed = JSON.parse(await raw.text())
+    } catch {
+      importError.value = '这个文件不是有效的 JSON。常见原因是多了或少了逗号、引号没成对。建议重新下载模板再填。'
+      return
+    }
+    try {
+      const { data } = await http.post('/checkin-imports', parsed, { params: { kind: kind.value } })
+      importResult.value = data
+      ElMessage.success('导入完成')
+      await load()
+      await loadTargets()
+    } catch (error) {
+      const info = apiError(error)
+      const list = info.details?.errors
+      importError.value = Array.isArray(list) && list.length
+        ? `${info.message}\n${list.slice(0, 6).join('\n')}${list.length > 6 ? `\n…还有 ${list.length - 6} 处` : ''}`
+        : info.message
+    }
+  } finally {
+    resetImportInput()
   }
 }
 

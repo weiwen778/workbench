@@ -45,7 +45,7 @@ def _create_instance(
         target_id=target.id,
         target_name=target.name,
         group_id=rule.group_id,
-        group_name=group.name if group else "未分组",
+        group_name=group.name if group else "未分类",
         period_type=period_type,
         period_start=start,
         period_end=end,
@@ -139,7 +139,7 @@ def sync_snapshot_from_rule(inst: CheckinInstance, rule: CheckinRule, group: Che
 def complete_instance(db: Session, inst: CheckinInstance, note: str | None) -> CheckinInstance:
     refresh_locks(db, [inst])
     if inst.locked:
-        raise ApiError("PERIOD_LOCKED", "本周期已结束，不能补打卡", 409)
+        raise ApiError("PERIOD_LOCKED", "这一轮已经结束，不能补打卡", 409)
     if inst.completed_at:
         # 重复提交不刷新完成时间、不重复计数
         if note is not None and note != inst.note:
@@ -156,7 +156,7 @@ def complete_instance(db: Session, inst: CheckinInstance, note: str | None) -> C
 def cancel_instance(db: Session, inst: CheckinInstance) -> CheckinInstance:
     refresh_locks(db, [inst])
     if inst.locked:
-        raise ApiError("PERIOD_LOCKED", "本周期已结束，不能取消", 409)
+        raise ApiError("PERIOD_LOCKED", "这一轮已经结束，不能取消", 409)
     if inst.completed_at is None:
         return inst
     inst.completed_at = None
@@ -199,7 +199,7 @@ def statistics(db: Session, period_type: str, target_ids: list[int] | None = Non
     ).where(
         CheckinInstance.period_type == period_type,
         CheckinInstance.period_start == start,
-        CheckinInstance.lock_reason.is_(None) | (CheckinInstance.lock_reason != "对象已归档"),
+        CheckinInstance.lock_reason.is_(None) | (CheckinInstance.lock_reason != "已暂停"),
     )
     if target_ids is not None:
         stmt = stmt.where(CheckinInstance.target_id.in_(target_ids))

@@ -36,7 +36,7 @@ def payload(m: Memo) -> dict:
     return {
         "id": m.id,
         "title": m.title or "",
-        "display_title": m.title or "无标题便签",
+        "display_title": m.title or "无标题便利贴",
         "content": m.content,
         "category": m.category or "",
         "display_category": m.category or "未分类",
@@ -85,9 +85,9 @@ def categories(db: Session = Depends(get_db)):
 def create_memo(payload_in: MemoIn, db: Session = Depends(get_db)):
     content = payload_in.content.strip("\n")
     if not content.strip():
-        raise ApiError("MEMO_CONTENT_REQUIRED", "便签正文不能为空", 422, {"fields": {"content": "正文不能为空"}})
+        raise ApiError("MEMO_CONTENT_REQUIRED", "便利贴正文不能为空", 422, {"fields": {"content": "正文不能为空"}})
     if payload_in.color not in COLORS:
-        raise ApiError("INVALID_COLOR", "便签颜色不合法", 422)
+        raise ApiError("INVALID_COLOR", "便利贴颜色不合法", 422)
     if len(content) > 2000:
         raise ApiError("MEMO_TOO_LONG", "正文最多 2000 个字符", 422)
     memo = Memo(
@@ -105,14 +105,14 @@ def create_memo(payload_in: MemoIn, db: Session = Depends(get_db)):
 def update_memo(memo_id: int, payload_in: MemoPatch, db: Session = Depends(get_db)):
     memo = db.get(Memo, memo_id)
     if not memo or memo.deleted_at is not None:
-        raise ApiError("NOT_FOUND", "便签不存在", 404)
+        raise ApiError("NOT_FOUND", "便利贴不存在", 404)
     if payload_in.version is not None and payload_in.version != memo.version:
-        raise ApiError("VERSION_CONFLICT", "这张便签已在其他位置修改，请刷新后重试", 409,
+        raise ApiError("VERSION_CONFLICT", "这张便利贴已在其他位置修改，请刷新后重试", 409,
                        {"current_version": memo.version})
     if payload_in.content is not None:
         content = payload_in.content.strip("\n")
         if not content.strip():
-            raise ApiError("MEMO_CONTENT_REQUIRED", "便签正文不能为空", 422)
+            raise ApiError("MEMO_CONTENT_REQUIRED", "便利贴正文不能为空", 422)
         if len(content) > 2000:
             raise ApiError("MEMO_TOO_LONG", "正文最多 2000 个字符", 422)
         memo.content = content
@@ -122,7 +122,7 @@ def update_memo(memo_id: int, payload_in: MemoPatch, db: Session = Depends(get_d
         memo.category = _clean_category(payload_in.category)
     if payload_in.color is not None:
         if payload_in.color not in COLORS:
-            raise ApiError("INVALID_COLOR", "便签颜色不合法", 422)
+            raise ApiError("INVALID_COLOR", "便利贴颜色不合法", 422)
         memo.color = payload_in.color
     memo.version += 1
     memo.updated_at = utcnow()
@@ -134,7 +134,7 @@ def update_memo(memo_id: int, payload_in: MemoPatch, db: Session = Depends(get_d
 def delete_memo(memo_id: int, db: Session = Depends(get_db)):
     memo = db.get(Memo, memo_id)
     if not memo or memo.deleted_at is not None:
-        raise ApiError("NOT_FOUND", "便签不存在", 404)
+        raise ApiError("NOT_FOUND", "便利贴不存在", 404)
     memo.deleted_at = utcnow()
     push(
         db,

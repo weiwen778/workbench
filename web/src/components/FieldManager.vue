@@ -1,17 +1,17 @@
 <template>
   <el-drawer
     :model-value="modelValue"
-    title="字段设置"
+    title="列设置"
     size="560px"
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <div class="toolbar-actions" style="margin-bottom: 10px">
-      <el-button class="btn-tonal" :icon="Plus" @click="openAdd">添加字段</el-button>
-      <span class="text-12 muted">共 {{ fields.length }} / 50 个字段</span>
+      <el-button class="btn-tonal" :icon="Plus" @click="openAdd">添加一列</el-button>
+      <span class="text-12 muted">共 {{ fields.length }} / 50 列</span>
     </div>
 
     <el-table :data="fields" size="small">
-      <el-table-column prop="name" label="字段" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="name" label="列" min-width="120" show-overflow-tooltip />
       <el-table-column label="类型" width="86">
         <template #default="{ row }">{{ typeText(row.type) }}</template>
       </el-table-column>
@@ -35,19 +35,19 @@
 
     <el-dialog
       v-model="dialogOpen"
-      :title="editing ? '编辑字段' : '添加字段'"
+      :title="editing ? '编辑列' : '添加一列'"
       width="460px"
       :append-to-body="true"
     >
       <el-form label-position="top">
-        <el-form-item label="字段名称" required>
+        <el-form-item label="列名称" required>
           <el-input v-model="form.name" maxlength="50" />
         </el-form-item>
         <el-form-item label="类型">
           <el-select v-model="form.type" :disabled="!!editing" style="width: 100%">
             <el-option v-for="t in fieldTypes" :key="t.value" :label="t.label" :value="t.value" />
           </el-select>
-          <div v-if="editing" class="text-12 muted">已有数据的字段不能直接改类型；如需改类型请新建字段并迁移数据</div>
+          <div v-if="editing" class="text-12 muted">已经有内容的列不能直接换类型；要换就新加一列，再把内容搬过去</div>
         </el-form-item>
         <el-form-item label="必填">
           <el-switch v-model="form.required" />
@@ -63,7 +63,7 @@
             </el-button>
           </div>
         </el-form-item>
-        <el-form-item v-if="!editing" label="默认值（表中已有数据时，新增必填字段需要填默认值）">
+        <el-form-item v-if="!editing" label="默认值（表格里已经有内容时，新增必填列要填默认值）">
           <el-select
             v-if="form.type === 'select' || form.type === 'multiselect'"
             v-model="form.default_value"
@@ -148,7 +148,7 @@ function openEdit(row: any) {
 
 async function save() {
   if (!form.name.trim()) {
-    ElMessage.warning('请填写字段名称')
+    ElMessage.warning('请填写列名称')
     return
   }
   saving.value = true
@@ -180,9 +180,9 @@ async function save() {
   } catch (error: any) {
     const details = error?.response?.data?.details
     if (details?.empty_count) {
-      ElMessage.error(`已有 ${details.empty_count} 条数据的该字段为空，请先补齐再设为必填`)
+      ElMessage.error(`有 ${details.empty_count} 行的这一列还是空的，请先补上再设为必填`)
     } else if (details?.used) {
-      ElMessage.error(`有 ${details.used} 条数据仍在使用要删除的选项，请先调整这些数据`)
+      ElMessage.error(`有 ${details.used} 行还在用要删掉的选项，请先改掉这些行`)
     } else {
       ElMessage.error(apiError(error).message)
     }
@@ -194,19 +194,19 @@ async function save() {
 async function removeField(row: any) {
   try {
     await http.delete(`/fields/${row.id}`)
-    ElMessage.success('字段已删除')
+    ElMessage.success('列已删除')
     emit('updated')
   } catch (error: any) {
     const body = error?.response?.data
     if (body?.code === 'DELETE_CONFIRM_REQUIRED') {
       try {
         await ElMessageBox.confirm(
-          `该字段在 ${body.details.active} 条活动数据和 ${body.details.trashed} 条回收站数据中有值。删除后这些值不再显示，字段也不进入回收站。`,
-          '确认删除字段',
+          `这一列在 ${body.details.active} 行内容和回收站的 ${body.details.trashed} 行里有值。删掉后这些值不再显示，这一列也不会进回收站。`,
+          '确认删除列',
           { type: 'warning', confirmButtonText: '仍要删除', cancelButtonText: '取消' },
         )
         await http.delete(`/fields/${row.id}`, { params: { confirm: true } })
-        ElMessage.success('字段已删除')
+        ElMessage.success('列已删除')
         emit('updated')
       } catch (inner: any) {
         if (inner === 'cancel' || inner === 'close') return

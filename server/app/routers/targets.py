@@ -103,7 +103,7 @@ def _ensure_name_free(db: Session, kind: str, name: str, exclude_id: int | None 
     if exclude_id:
         stmt = stmt.where(WorkTarget.id != exclude_id)
     if db.scalar(stmt):
-        raise ApiError("NAME_DUPLICATED", "同类型下已有同名对象，请换一个名称", 409, {"field": "name"})
+        raise ApiError("NAME_DUPLICATED", "同类型下已经有同名的了，换个名称", 409, {"field": "name"})
 
 
 @router.get("/work-targets")
@@ -154,7 +154,7 @@ def create_target(payload: TargetIn, db: Session = Depends(get_db)):
 def get_target(target_id: int, db: Session = Depends(get_db)):
     target = db.get(WorkTarget, target_id)
     if not target:
-        raise ApiError("NOT_FOUND", "对象不存在", 404)
+        raise ApiError("NOT_FOUND", "店铺/账号不存在", 404)
     return target_payload(target)
 
 
@@ -162,7 +162,7 @@ def get_target(target_id: int, db: Session = Depends(get_db)):
 def update_target(target_id: int, payload: TargetPatch, db: Session = Depends(get_db)):
     target = db.get(WorkTarget, target_id)
     if not target:
-        raise ApiError("NOT_FOUND", "对象不存在", 404)
+        raise ApiError("NOT_FOUND", "店铺/账号不存在", 404)
     if payload.name is not None:
         name = payload.name.strip()
         _ensure_name_free(db, target.kind, name, exclude_id=target.id)
@@ -188,7 +188,7 @@ def update_target(target_id: int, payload: TargetPatch, db: Session = Depends(ge
 def archive_target(target_id: int, db: Session = Depends(get_db)):
     target = db.get(WorkTarget, target_id)
     if not target:
-        raise ApiError("NOT_FOUND", "对象不存在", 404)
+        raise ApiError("NOT_FOUND", "店铺/账号不存在", 404)
     if target.status == "archived":
         return target_payload(target)
     target.status = "archived"
@@ -203,7 +203,7 @@ def archive_target(target_id: int, db: Session = Depends(get_db)):
         interval.end_at = utcnow()
     # 已有记录保留并锁定，不进入回收站
     db.query(CheckinInstance).filter(CheckinInstance.target_id == target.id).update(
-        {CheckinInstance.locked: True, CheckinInstance.lock_reason: "对象已归档"},
+        {CheckinInstance.locked: True, CheckinInstance.lock_reason: "已暂停"},
         synchronize_session=False,
     )
     db.commit()
@@ -214,7 +214,7 @@ def archive_target(target_id: int, db: Session = Depends(get_db)):
 def restore_target(target_id: int, db: Session = Depends(get_db)):
     target = db.get(WorkTarget, target_id)
     if not target:
-        raise ApiError("NOT_FOUND", "对象不存在", 404)
+        raise ApiError("NOT_FOUND", "店铺/账号不存在", 404)
     if target.status == "active":
         return target_payload(target)
     _ensure_name_free(db, target.kind, target.name, exclude_id=target.id)
@@ -262,7 +262,7 @@ def list_groups(db: Session = Depends(get_db)):
 def create_group(payload: GroupIn, db: Session = Depends(get_db)):
     name = payload.name.strip()
     if db.scalar(select(CheckinGroup).where(CheckinGroup.name == name)):
-        raise ApiError("NAME_DUPLICATED", "分组名称已存在", 409, {"field": "name"})
+        raise ApiError("NAME_DUPLICATED", "分类名称已存在", 409, {"field": "name"})
     group = CheckinGroup(name=name, sort_order=payload.sort_order)
     db.add(group)
     db.commit()
@@ -273,11 +273,11 @@ def create_group(payload: GroupIn, db: Session = Depends(get_db)):
 def rename_group(group_id: int, payload: GroupIn, db: Session = Depends(get_db)):
     group = db.get(CheckinGroup, group_id)
     if not group:
-        raise ApiError("NOT_FOUND", "分组不存在", 404)
+        raise ApiError("NOT_FOUND", "分类不存在", 404)
     name = payload.name.strip()
     dup = db.scalar(select(CheckinGroup).where(CheckinGroup.name == name, CheckinGroup.id != group_id))
     if dup:
-        raise ApiError("NAME_DUPLICATED", "分组名称已存在", 409, {"field": "name"})
+        raise ApiError("NAME_DUPLICATED", "分类名称已存在", 409, {"field": "name"})
     group.name = name
     group.sort_order = payload.sort_order
     # 历史快照保留当时名称，仅更新未锁定实例的分组名
@@ -292,7 +292,7 @@ def rename_group(group_id: int, payload: GroupIn, db: Session = Depends(get_db))
 def delete_group(group_id: int, db: Session = Depends(get_db)):
     group = db.get(CheckinGroup, group_id)
     if not group:
-        raise ApiError("NOT_FOUND", "分组不存在", 404)
+        raise ApiError("NOT_FOUND", "分类不存在", 404)
     active_rules = db.scalar(
         select(func.count(CheckinRule.id)).where(
             CheckinRule.group_id == group_id, CheckinRule.active.is_(True)
@@ -308,7 +308,7 @@ def delete_group(group_id: int, db: Session = Depends(get_db)):
     if active_rules or pending:
         raise ApiError(
             "GROUP_IN_USE",
-            "该分组仍有启用事项或未完成工作，请先调整归属再删除",
+            "该分类仍有启用任务或未完成工作，请先调整归属再删除",
             409,
             {"active_rules": active_rules or 0, "pending_instances": pending or 0},
         )
@@ -324,7 +324,7 @@ def delete_group(group_id: int, db: Session = Depends(get_db)):
 def list_rules(target_id: int, include_inactive: bool = Query(default=True), db: Session = Depends(get_db)):
     target = db.get(WorkTarget, target_id)
     if not target:
-        raise ApiError("NOT_FOUND", "对象不存在", 404)
+        raise ApiError("NOT_FOUND", "店铺/账号不存在", 404)
     ensure_target_period(db, target, "daily")
     db.commit()
     groups = {g.id: g.name for g in db.scalars(select(CheckinGroup)).all()}
@@ -339,14 +339,14 @@ def list_rules(target_id: int, include_inactive: bool = Query(default=True), db:
 def create_rule(target_id: int, payload: RuleIn, db: Session = Depends(get_db)):
     target = db.get(WorkTarget, target_id)
     if not target:
-        raise ApiError("NOT_FOUND", "对象不存在", 404)
+        raise ApiError("NOT_FOUND", "店铺/账号不存在", 404)
     if target.status != "active":
-        raise ApiError("TARGET_ARCHIVED", "对象已归档，请先恢复", 409)
+        raise ApiError("TARGET_ARCHIVED", "已经暂停了，请先恢复", 409)
     group = db.get(CheckinGroup, payload.group_id)
     if not group:
-        raise ApiError("GROUP_NOT_FOUND", "分组不存在", 422, {"field": "group_id"})
+        raise ApiError("GROUP_NOT_FOUND", "分类不存在", 422, {"field": "group_id"})
     if payload.period not in {"daily", "weekly", "monthly"}:
-        raise ApiError("INVALID_PERIOD", "周期只能是今日／本周／本月", 422)
+        raise ApiError("INVALID_PERIOD", "时间范围只能是今日／本周／本月", 422)
     rule = CheckinRule(
         target_id=target_id,
         group_id=payload.group_id,
@@ -365,7 +365,7 @@ def create_rule(target_id: int, payload: RuleIn, db: Session = Depends(get_db)):
             group_id=rule.group_id,
             group_name=group.name,
             period=rule.period,
-            change_summary="创建事项",
+            change_summary="创建任务",
         )
     )
     # 新增立即进入当前对应周期
@@ -378,7 +378,7 @@ def create_rule(target_id: int, payload: RuleIn, db: Session = Depends(get_db)):
 def update_rule(rule_id: int, payload: RulePatch, db: Session = Depends(get_db)):
     rule = db.get(CheckinRule, rule_id)
     if not rule:
-        raise ApiError("NOT_FOUND", "事项不存在", 404)
+        raise ApiError("NOT_FOUND", "任务不存在", 404)
     target = db.get(WorkTarget, rule.target_id)
     group = db.get(CheckinGroup, rule.group_id)
     changes: list[str] = []
@@ -391,10 +391,10 @@ def update_rule(rule_id: int, payload: RulePatch, db: Session = Depends(get_db))
     if payload.group_id is not None and payload.group_id != rule.group_id:
         new_group = db.get(CheckinGroup, payload.group_id)
         if not new_group:
-            raise ApiError("GROUP_NOT_FOUND", "分组不存在", 422, {"field": "group_id"})
+            raise ApiError("GROUP_NOT_FOUND", "分类不存在", 422, {"field": "group_id"})
         rule.group_id = new_group.id
         group = new_group
-        changes.append("调整分组")
+        changes.append("调整分类")
     if payload.title is not None and payload.title.strip() != rule.title:
         rule.title = payload.title.strip()
         changes.append("修改标题")
@@ -448,7 +448,7 @@ def disable_rule(rule_id: int, db: Session = Depends(get_db)):
     """停用事项：停止后续生成，已有实例按原周期规则处理。"""
     rule = db.get(CheckinRule, rule_id)
     if not rule:
-        raise ApiError("NOT_FOUND", "事项不存在", 404)
+        raise ApiError("NOT_FOUND", "任务不存在", 404)
     rule.active = False
     rule.version += 1
     group = db.get(CheckinGroup, rule.group_id)
@@ -460,7 +460,7 @@ def disable_rule(rule_id: int, db: Session = Depends(get_db)):
             group_id=rule.group_id,
             group_name=group.name if group else "",
             period=rule.period,
-            change_summary="停用事项",
+            change_summary="停用任务",
         )
     )
     db.commit()

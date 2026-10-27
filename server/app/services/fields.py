@@ -63,19 +63,19 @@ def validate_value(db: Session, field, raw, *, table_id: int) -> object:
         if raw is None or raw == "":
             return None
         if not isinstance(raw, bool):
-            _fail(fname, "勾选字段只能是是或否")
+            _fail(fname, "勾选列只能是是或否")
         return raw
 
     if ftype == "multiselect":
         if raw is None or raw == "":
             raw = []
         if not isinstance(raw, list):
-            _fail(fname, "多选字段需要数组")
+            _fail(fname, "多选列需要数组")
         option_ids = {o["id"] for o in (field.options or [])}
         cleaned: list[str] = []
         for item in raw:
             if item not in option_ids:
-                _fail(fname, "包含不属于该字段的选项")
+                _fail(fname, "包含不属于该列的选项")
             if item not in cleaned:
                 cleaned.append(item)
         return cleaned
@@ -109,7 +109,7 @@ def validate_value(db: Session, field, raw, *, table_id: int) -> object:
     if ftype == "select":
         option_ids = {o["id"] for o in (field.options or [])}
         if raw not in option_ids:
-            _fail(fname, "选项不属于该字段")
+            _fail(fname, "选项不属于该列")
         return raw
 
     if ftype == "url":
@@ -135,7 +135,7 @@ def validate_value(db: Session, field, raw, *, table_id: int) -> object:
             pass
         return file_id
 
-    _fail(fname, "未知字段类型")
+    _fail(fname, "未知列类型")
     return None
 
 
@@ -149,7 +149,7 @@ def validate_record(db: Session, fields: list, data: dict, *, table_id: int) -> 
     known_keys = {f.key for f in fields}
     unknown = [k for k in data if k not in known_keys]
     if unknown:
-        raise ApiError("UNKNOWN_FIELD", "提交了不存在的字段", 422, {"fields": {unknown[0]: "字段不存在"}})
+        raise ApiError("UNKNOWN_FIELD", "提交了不存在的列", 422, {"fields": {unknown[0]: "列不存在"}})
     for field in fields:
         raw = data.get(field.key)
         value = validate_value(db, field, raw, table_id=table_id)
@@ -158,7 +158,7 @@ def validate_record(db: Session, fields: list, data: dict, *, table_id: int) -> 
                 if field.default_value is not None:
                     value = field.default_value
                 else:
-                    _fail(field.name, "必填字段不能为空")
+                    _fail(field.name, "必填列不能为空")
         result[field.key] = value
     return result
 

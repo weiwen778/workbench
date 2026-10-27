@@ -52,7 +52,7 @@ def build_conditions(db: Session, fields: dict[str, DataField], filters: list[di
         value = item.get("value")
         field = fields.get(key) if key else None
         if field is None:
-            raise ApiError("UNKNOWN_FILTER_FIELD", "筛选字段不存在", 422, {"field": key})
+            raise ApiError("UNKNOWN_FILTER_FIELD", "筛选列不存在", 422, {"field": key})
         expr = _json_text(db, field.key)
         if op == "empty":
             conditions.append(or_(expr.is_(None), expr == ""))
@@ -105,13 +105,13 @@ def build_conditions(db: Session, fields: dict[str, DataField], filters: list[di
 
 def build_order(db: Session, fields: dict[str, DataField], sorts: list[dict]) -> list:
     if len(sorts) > MAX_SORTS:
-        raise ApiError("TOO_MANY_SORTS", f"最多支持 {MAX_SORTS} 个排序字段", 422)
+        raise ApiError("TOO_MANY_SORTS", f"最多支持 {MAX_SORTS} 个排序列", 422)
     clauses = []
     for item in sorts:
         key = item.get("field") or item.get("key")
         field = fields.get(key) if key else None
         if field is None:
-            raise ApiError("UNKNOWN_SORT_FIELD", "排序字段不存在", 422, {"field": key})
+            raise ApiError("UNKNOWN_SORT_FIELD", "排序列不存在", 422, {"field": key})
         if field.type in UNSORTABLE:
             raise ApiError("FIELD_NOT_SORTABLE", f"{field.name} 不支持排序", 422, {"field": key})
         direction = (item.get("order") or item.get("direction") or "asc").lower()

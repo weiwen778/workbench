@@ -2,11 +2,11 @@
   <div class="page">
     <div class="page-toolbar">
       <el-button text :icon="ArrowLeft" @click="goBack">返回打卡</el-button>
-      <div class="title-15">{{ target?.name || '对象资料' }}</div>
-      <el-tag v-if="target?.status === 'archived'" size="small" type="info" effect="plain">已归档</el-tag>
+      <div class="title-15">{{ target?.name || '资料' }}</div>
+      <el-tag v-if="target?.status === 'archived'" size="small" type="info" effect="plain">已暂停</el-tag>
       <div class="spacer" />
       <div class="toolbar-actions">
-        <el-button class="btn-tonal" :icon="Plus" @click="openRuleDialog()">添加事项</el-button>
+        <el-button class="btn-tonal" :icon="Plus" @click="openRuleDialog()">添加任务</el-button>
         <el-button text :icon="Refresh" @click="loadAll">刷新</el-button>
       </div>
     </div>
@@ -28,18 +28,18 @@
           </el-form-item>
           <div class="toolbar-actions">
             <el-button type="primary" :loading="saving" @click="saveTarget">保存资料</el-button>
-            <el-button v-if="target?.status === 'active'" @click="archiveTarget">归档对象</el-button>
-            <el-button v-else @click="restoreTarget">恢复对象</el-button>
+            <el-button v-if="target?.status === 'active'" @click="archiveTarget">暂停</el-button>
+            <el-button v-else @click="restoreTarget">恢复</el-button>
           </div>
         </el-form>
       </el-card>
 
       <el-card shadow="never" class="block">
-        <div class="group-title">打卡事项</div>
+        <div class="group-title">打卡任务</div>
         <el-table :data="rules" size="small" v-loading="loading">
-          <el-table-column prop="title" label="事项" min-width="160" show-overflow-tooltip />
-          <el-table-column prop="group_name" label="分组" width="110" />
-          <el-table-column label="周期" width="100">
+          <el-table-column prop="title" label="任务" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="group_name" label="分类" width="110" />
+          <el-table-column label="频率" width="100">
             <template #default="{ row }">
               {{ periodText(row.effective_period) }}
               <el-tooltip v-if="row.pending_period" :content="`${row.pending_effective_from} 起改为${periodText(row.pending_period)}`">
@@ -57,7 +57,7 @@
             <template #default="{ row }">
               <div class="actions-group">
                 <el-button text size="small" @click="openRuleDialog(row)">编辑</el-button>
-                <el-button text size="small" @click="openVersions(row)">修改记录</el-button>
+                <el-button text size="small" @click="openVersions(row)">改动历史</el-button>
                 <el-button v-if="row.active" text size="small" @click="disableRule(row)">停用</el-button>
                 <el-button v-else text size="small" @click="enableRule(row)">启用</el-button>
               </div>
@@ -65,24 +65,24 @@
           </el-table-column>
         </el-table>
         <div v-if="!rules.length" class="empty-hint">
-          <div>还没有打卡事项</div>
-          <el-button class="btn-tonal" @click="openRuleDialog()">添加第一个事项</el-button>
+          <div>还没有打卡任务</div>
+          <el-button class="btn-tonal" @click="openRuleDialog()">添加第一个任务</el-button>
         </div>
       </el-card>
     </div>
 
-    <el-dialog v-model="ruleDialog" :title="editingRule ? '编辑事项' : '添加事项'" width="520px">
+    <el-dialog v-model="ruleDialog" :title="editingRule ? '编辑任务' : '添加任务'" width="520px">
       <el-form label-position="top" :model="ruleForm">
         <el-form-item label="标题" required>
           <el-input v-model="ruleForm.title" maxlength="200" />
         </el-form-item>
         <div class="form-grid">
-          <el-form-item label="分组" required>
-            <el-select v-model="ruleForm.group_id" placeholder="选择分组" style="width: 100%">
+          <el-form-item label="分类" required>
+            <el-select v-model="ruleForm.group_id" placeholder="选择分类" style="width: 100%">
               <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
             </el-select>
           </el-form-item>
-          <el-form-item label="周期">
+          <el-form-item label="频率">
             <el-select v-model="ruleForm.period" style="width: 100%">
               <el-option label="每天" value="daily" />
               <el-option label="每周" value="weekly" />
@@ -90,7 +90,7 @@
             </el-select>
           </el-form-item>
         </div>
-        <el-form-item label="事项说明">
+        <el-form-item label="任务说明">
           <el-input v-model="ruleForm.description" type="textarea" :rows="3" maxlength="5000" show-word-limit />
         </el-form-item>
         <el-alert
@@ -98,7 +98,7 @@
           type="warning"
           :closable="false"
           show-icon
-          title="修改周期属于特殊变更：当前周期的旧规则实例保留，新周期从下一个对应周期开始生效"
+          title="改频率要等下一轮才生效：这一轮仍按原频率算，从下一轮起按新频率"
         />
       </el-form>
       <template #footer>
@@ -109,7 +109,7 @@
       </template>
     </el-dialog>
 
-    <el-drawer v-model="versionsOpen" title="事项修改记录" size="480px">
+    <el-drawer v-model="versionsOpen" title="任务改动历史" size="480px">
       <el-timeline v-if="versions.length">
         <el-timeline-item
           v-for="v in versions"
@@ -124,7 +124,7 @@
           </div>
         </el-timeline-item>
       </el-timeline>
-      <div v-else class="empty-hint">暂无修改记录</div>
+      <div v-else class="empty-hint">暂无改动历史</div>
     </el-drawer>
   </div>
 </template>
@@ -212,9 +212,9 @@ async function saveTarget() {
 
 async function archiveTarget() {
   try {
-    await ElMessageBox.confirm('归档后从日常清单隐藏并停止生成新工作，已有记录保留并锁定。', '归档确认', {
+    await ElMessageBox.confirm('暂停后从日常清单里隐藏，不再生成新的打卡；已有记录保留，只能查看。', '暂停打卡', {
       type: 'warning',
-      confirmButtonText: '归档',
+      confirmButtonText: '暂停打卡',
       cancelButtonText: '取消',
     })
     await http.post(`/work-targets/${targetId}/archive`)
@@ -242,7 +242,7 @@ function openRuleDialog(rule?: any) {
   ruleForm.period = rule?.effective_period || 'daily'
   ruleForm.description = rule?.description || ''
   if (!groups.value.length) {
-    ElMessage.warning('请先在打卡页面添加工作分组')
+    ElMessage.warning('请先在打卡页添加分类')
     return
   }
   ruleDialog.value = true
@@ -250,7 +250,7 @@ function openRuleDialog(rule?: any) {
 
 async function saveRule() {
   if (!ruleForm.title.trim() || !ruleForm.group_id) {
-    ElMessage.warning('请填写标题并选择分组')
+    ElMessage.warning('请填写标题并选择分类')
     return
   }
   savingRule.value = true
@@ -264,7 +264,7 @@ async function saveRule() {
       }
       const { data } = await http.patch(`/checkin-rules/${editingRule.value.id}`, payload)
       if (data.period_change?.pending) {
-        ElMessage.success(`已保存，新周期从 ${data.period_change.effective_from} 开始生效`)
+        ElMessage.success(`已保存，${data.period_change.effective_from} 起按新频率执行`)
       } else {
         ElMessage.success('已保存')
       }
@@ -275,7 +275,7 @@ async function saveRule() {
         period: ruleForm.period,
         description: ruleForm.description,
       })
-      ElMessage.success('已添加，立即进入当前周期')
+      ElMessage.success('已添加，马上出现在这一轮里')
     }
     ruleDialog.value = false
     await loadAll()
@@ -289,8 +289,8 @@ async function saveRule() {
 async function disableRule(rule: any) {
   try {
     await ElMessageBox.confirm(
-      '停用后停止生成新的周期工作，已有记录按原周期规则处理。',
-      '停用事项',
+      '停用后不再生成新的打卡任务，已有记录按原来的频率保留。',
+      '停用任务',
       { type: 'warning', confirmButtonText: '停用', cancelButtonText: '取消' },
     )
     await http.delete(`/checkin-rules/${rule.id}`)

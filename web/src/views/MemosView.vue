@@ -14,19 +14,19 @@
         <el-option label="未分类" value="__uncategorized__" />
         <el-option v-for="name in categories" :key="name" :label="name" :value="name" />
       </el-select>
-      <span class="text-12 muted">{{ memos.length }} 张便签</span>
+      <span class="text-12 muted">{{ memos.length }} 张便利贴</span>
       <div class="spacer" />
       <div class="toolbar-actions">
         <el-button text :icon="Refresh" @click="load">刷新</el-button>
-        <el-button class="btn-tonal" :icon="Plus" @click="openCreate">新建便签</el-button>
+        <el-button class="btn-tonal" :icon="Plus" @click="openCreate">新建便利贴</el-button>
       </div>
     </div>
 
     <div class="page-body scroll-area">
       <div v-if="!memos.length && !loading" class="empty-hint">
-        <div>还没有便签</div>
+        <div>还没有便利贴</div>
         <div class="text-12">记录供应商信息、临时号码这类短内容，可以直接复制正文</div>
-        <el-button class="btn-tonal" @click="openCreate">写一张便签</el-button>
+        <el-button class="btn-tonal" @click="openCreate">写一张便利贴</el-button>
       </div>
 
       <div class="memo-grid">
@@ -50,13 +50,13 @@
 
     <el-dialog
       v-model="dialogOpen"
-      :title="editing ? '编辑便签' : '新建便签'"
+      :title="editing ? '编辑便利贴' : '新建便利贴'"
       width="540px"
       :close-on-click-modal="false"
     >
       <el-form label-position="top">
         <el-form-item label="标题（可选）">
-          <el-input v-model="form.title" maxlength="200" placeholder="不填则显示为无标题便签" />
+          <el-input v-model="form.title" maxlength="200" placeholder="不填则显示为无标题便利贴" />
         </el-form-item>
         <el-form-item label="正文" required>
           <el-input
@@ -221,7 +221,7 @@ async function save() {
 
 async function remove(memo: any) {
   try {
-    await ElMessageBox.confirm('删除这张便签？删除后可在回收站保留 30 天。', '删除便签', {
+    await ElMessageBox.confirm('删除这张便利贴？删除后可在回收站保留 30 天。', '删除便利贴', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消',
@@ -239,7 +239,7 @@ async function copyContent(memo: any) {
   if (ok) {
     ElMessage.success('已复制正文')
   } else {
-    ElMessage.warning('浏览器不允许自动复制，请打开便签后手动选择复制')
+    ElMessage.warning('浏览器不让自动复制，请打开便利贴后手动选中复制')
   }
 }
 

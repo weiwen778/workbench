@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import csv
 import io
+import json
 import re
 import uuid
 from datetime import date, datetime, timedelta
@@ -26,6 +28,8 @@ router = APIRouter(tags=["transfer"], dependencies=[Depends(get_current_user)])
 
 MAX_ROWS = 10_000
 MAX_COLS = 50
+SUPPORTED_EXTS = {".xlsx", ".xlsm", ".xls", ".csv", ".json"}
+JSON_LIST_KEYS = ("data", "rows", "items", "list", "records", "values")
 TRUE_WORDS = {"true", "是", "1", "yes", "y", "对"}
 FALSE_WORDS = {"false", "否", "0", "no", "n", "错"}
 MULTI_SEP = re.compile(r"[,;、，；|]")
@@ -85,6 +89,94 @@ def _read_sheets(raw: bytes) -> tuple[dict[str, list[list]], str]:
     return sheets, wb.sheetnames[0] if wb.sheetnames else ""
 
 
+def _decode_text(raw: bytes) -> str:
+    """CSV / JSON 解码：优先 UTF-8（含 BOM），再退回 GB18030（兼容 GBK）。"""
+    for enc in ("utf-8-sig", "utf-8", "gb18030"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("latin-1", errors="replace")
+
+
+def _read_csv(raw: bytes) -> list[list]:
+    text = _decode_text(raw)
+    if not text.strip():
+        return []
+    delimiter = ","
+    try:
+        delimiter = csv.Sniffer().sniff(text[:8192], delimiters=",;\t|").delimiter
+    except csv.Error:
+        pass
+    return [list(row) for row in csv.reader(io.StringIO(text), delimiter=delimiter)]
+
+
+def _read_json(raw: bytes) -> list[list]:
+    data = json.loads(_decode_text(raw))
+    if isinstance(data, dict):
+        for key in JSON_LIST_KEYS:
+            if isinstance(data.get(key), list):
+                data = data[key]
+                break
+        else:
+            data = [data]
+    if not isinstance(data, list):
+        raise ValueError("JSON 顶层必须是数组")
+    if not data:
+        return []
+    if all(isinstance(item, list) for item in data):
+        return [list(item) for item in data]
+    if not all(isinstance(item, dict) for item in data):
+        raise ValueError("JSON 数组里必须是对象或数组")
+    headers: list[str] = []
+    for item in data:
+        for key in item:
+            if key not in headers:
+                headers.append(key)
+    rows = [headers]
+    for item in data:
+        rows.append([item.get(key) for key in headers])
+    return rows
+
+
+def _read_xls(raw: bytes) -> list[list]:
+    import xlrd
+
+    book = xlrd.open_workbook(file_contents=raw)
+    sheet = book.sheet_by_index(0)
+    rows = []
+    for r in range(sheet.nrows):
+        row = []
+        for c in range(sheet.ncols):
+            cell = sheet.cell(r, c)
+            if cell.ctype == xlrd.XL_CELL_DATE:
+                try:
+                    row.append(xlrd.xldate.xldate_as_datetime(cell.value, book.datemode))
+                except Exception:
+                    row.append(cell.value)
+            elif cell.ctype == xlrd.XL_CELL_BOOLEAN:
+                row.append(bool(cell.value))
+            elif cell.ctype in (xlrd.XL_CELL_EMPTY, xlrd.XL_CELL_BLANK):
+                row.append(None)
+            else:
+                row.append(cell.value)
+        rows.append(row)
+    return rows
+
+
+def _read_any(filename: str, raw: bytes) -> tuple[dict[str, list[list]], str]:
+    ext = Path(filename or "").suffix.lower()
+    if ext in (".xlsx", ".xlsm"):
+        return _read_sheets(raw)
+    if ext == ".xls":
+        return {"数据": _read_xls(raw)}, "数据"
+    if ext == ".csv":
+        return {"数据": _read_csv(raw)}, "数据"
+    if ext == ".json":
+        return {"数据": _read_json(raw)}, "数据"
+    raise ApiError("UNSUPPORTED_FILE", "只支持 .xlsx、.xls、.csv、.json 文件", 415)
+
+
 def _cell_text(value) -> str:
     if value is None:
         return ""
@@ -136,13 +228,14 @@ async def preview_import(
     raw = await file.read()
     if len(raw) > settings.max_upload_bytes:
         raise ApiError("FILE_TOO_LARGE", "文件不能超过 20 MB", 413)
-    if not (file.filename or "").lower().endswith(".xlsx"):
-        raise ApiError("UNSUPPORTED_FILE", "当前只支持 .xlsx 文件", 415)
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in SUPPORTED_EXTS:
+        raise ApiError("UNSUPPORTED_FILE", "只支持 .xlsx、.xls、.csv、.json 文件", 415)
 
     try:
-        sheets, first_sheet = _read_sheets(raw)
+        sheets, first_sheet = _read_any(file.filename or "", raw)
     except Exception:
-        raise ApiError("INVALID_WORKBOOK", "无法解析这个 Excel 文件，请确认是有效的 .xlsx", 422)
+        raise ApiError("INVALID_WORKBOOK", "这个文件打不开，请确认是有效的 Excel、CSV 或 JSON 文件", 422)
 
     sheet_name = sheet or first_sheet
     if sheet_name not in sheets:
@@ -151,15 +244,15 @@ async def preview_import(
     while rows and all(v in (None, "") for v in rows[-1]):
         rows.pop()
     if not rows:
-        raise ApiError("EMPTY_SHEET", "这个工作表没有内容", 422)
+        raise ApiError("EMPTY_SHEET", "这个文件没有内容", 422)
 
     headers = [_cell_text(v) for v in rows[0]]
     if len(headers) > MAX_COLS:
-        raise ApiError("TOO_MANY_COLUMNS", f"最多支持 {MAX_COLS} 个字段", 422)
+        raise ApiError("TOO_MANY_COLUMNS", f"最多支持 {MAX_COLS} 列", 422)
     if any(not h for h in headers):
-        raise ApiError("EMPTY_HEADER", "表头中有空列名，请先补全再导入", 422)
+        raise ApiError("EMPTY_HEADER", "第一行有空列名，请先补全再导入", 422)
     if len(set(headers)) != len(headers):
-        raise ApiError("DUPLICATE_HEADER", "表头有重复列名，请先修正", 422)
+        raise ApiError("DUPLICATE_HEADER", "第一行有重复的列名，请先改正", 422)
 
     data_rows: list[tuple[int, list]] = []
     for index, row in enumerate(rows[1:], start=2):
@@ -169,7 +262,7 @@ async def preview_import(
     if len(data_rows) > MAX_ROWS:
         raise ApiError("TOO_MANY_ROWS", f"单批最多 {MAX_ROWS} 条数据", 422)
     if not data_rows:
-        raise ApiError("NO_DATA_ROWS", "工作表里没有数据行", 422)
+        raise ApiError("NO_DATA_ROWS", "文件里没有数据行", 422)
 
     fields: list[DataField] = []
     mode = "existing"
@@ -177,7 +270,7 @@ async def preview_import(
     if table_id:
         table = db.get(DataTable, table_id)
         if not table or table.deleted_at is not None:
-            raise ApiError("TABLE_NOT_FOUND", "数据表不存在", 404)
+            raise ApiError("TABLE_NOT_FOUND", "表格不存在", 404)
         fields = list(
             db.scalars(
                 select(DataField).where(DataField.table_id == table_id).order_by(DataField.sort_order)
@@ -250,7 +343,7 @@ def _to_field_value(field: dict, text: str) -> tuple[bool, object, str | None]:
     """返回 (ok, value, error_message)。"""
     if text == "":
         if field.get("required"):
-            return False, None, "必填字段为空"
+            return False, None, "必填列为空"
         return True, None, None
     ftype = field["type"]
     if ftype == "number":
@@ -274,14 +367,14 @@ def _to_field_value(field: dict, text: str) -> tuple[bool, object, str | None]:
         opts = {o["name"]: o["id"] for o in field.get("options") or []}
         if text in opts:
             return True, opts[text], None
-        return False, None, "不在该字段的选项中"
+        return False, None, "不在该列的选项中"
     if ftype == "multiselect":
         opts = {o["name"]: o["id"] for o in field.get("options") or []}
         parts = [p.strip() for p in MULTI_SEP.split(text) if p.strip()]
         ids = []
         for part in parts:
             if part not in opts:
-                return False, None, f"选项「{part}」不在该字段中"
+                return False, None, f"选项「{part}」不在该列中"
             if opts[part] not in ids:
                 ids.append(opts[part])
         return True, ids, None
@@ -313,7 +406,7 @@ def _validate_rows(job: DataTransferJob, fields: list[dict]) -> list[dict]:
             col = int(col_str)
             field = by_key.get(field_key)
             if not field:
-                errors.append({"row": excel_row, "column": headers[col], "message": "字段不存在"})
+                errors.append({"row": excel_row, "column": headers[col], "message": "列不存在"})
                 continue
             text = row[col] if col < len(row) else ""
             ok, _value, message = _to_field_value(field, text or "")
@@ -373,14 +466,14 @@ def confirm_import(job_id: int, db: Session = Depends(get_db)):
     if data.get("mode") == "new_table":
         fields_def = data.get("fields") or []
         if not fields_def:
-            raise ApiError("NO_FIELDS", "请先确认字段配置", 422)
+            raise ApiError("NO_FIELDS", "请先确认每一列对应到哪里", 422)
         name = (data.get("table_name") or "导入数据").strip()[:100]
         if db.scalar(select(DataTable).where(DataTable.name == name, DataTable.deleted_at.is_(None))):
-            raise ApiError("NAME_DUPLICATED", "已有同名数据表，请换个表名", 409)
+            raise ApiError("NAME_DUPLICATED", "已有同名表格，请换个表名", 409)
     else:
         table = db.get(DataTable, job.table_id) if job.table_id else None
         if not table or table.deleted_at is not None:
-            raise ApiError("TABLE_NOT_FOUND", "数据表不存在", 404)
+            raise ApiError("TABLE_NOT_FOUND", "表格不存在", 404)
         fields_def = [
             {"key": f.key, "name": f.name, "type": f.type, "required": f.required, "options": f.options or []}
             for f in db.scalars(select(DataField).where(DataField.table_id == table.id)).all()
@@ -483,7 +576,7 @@ def download_job(job_id: int, db: Session = Depends(get_db)):
 def export_table(table_id: int, payload: ExportIn, db: Session = Depends(get_db)):
     table = db.get(DataTable, table_id)
     if not table or table.deleted_at is not None:
-        raise ApiError("TABLE_NOT_FOUND", "数据表不存在", 404)
+        raise ApiError("TABLE_NOT_FOUND", "表格不存在", 404)
     fields = list(
         db.scalars(
             select(DataField).where(DataField.table_id == table_id).order_by(DataField.sort_order)

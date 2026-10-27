@@ -33,7 +33,7 @@
             <el-input v-model="passwordForm.confirm" type="password" show-password autocomplete="new-password" />
           </el-form-item>
           <el-button type="primary" :loading="savingPassword" @click="changePassword">修改密码</el-button>
-          <div class="text-12 muted" style="margin-top: 6px">修改后其他设备的登录会话会失效，当前会话保留。</div>
+          <div class="text-12 muted" style="margin-top: 6px">改完后其他设备上的登录会失效，当前这台不受影响。</div>
         </el-form>
       </el-card>
 
@@ -41,7 +41,7 @@
         <div class="group-title">翻译服务</div>
         <div class="row">
           <span class="text-13 secondary">
-            百度、有道、DeepSeek 的凭据在翻译页的「服务设置」中维护，保存后只显示脱敏内容
+            百度、有道、DeepSeek 的密钥在翻译页「服务设置」里填，保存后只显示打码内容
           </span>
           <div class="spacer" />
           <el-button class="btn-tonal" @click="$router.push('/translate')">前往翻译页</el-button>
@@ -59,10 +59,10 @@
       </el-card>
 
       <el-card shadow="never" class="block">
-        <div class="group-title">运行信息</div>
+        <div class="group-title">系统状态</div>
         <div class="usage-grid">
           <div class="usage-item"><span class="muted">服务状态</span><span>{{ health.status || '未知' }}</span></div>
-          <div class="usage-item"><span class="muted">数据库</span><span>{{ health.database || '未知' }}</span></div>
+          <div class="usage-item"><span class="muted">数据存储</span><span>{{ health.database || '未知' }}</span></div>
           <div class="usage-item"><span class="muted">时区</span><span>Asia/Shanghai（北京时间）</span></div>
         </div>
       </el-card>
@@ -81,14 +81,14 @@ const savingPassword = ref(false)
 const health = reactive<Record<string, any>>({})
 
 const usage = [
-  { k: '每天的工作', v: '登录后默认进入店铺打卡／今日，按分组处理，完成后手动打勾；日／周／月切换在顶部' },
-  { k: '周期规则', v: '每日事项当天有效，每周从周一 00:00 起，每月按自然月；周期结束后只读，不能补打卡' },
-  { k: '待办', v: '父任务有子任务时完成状态由子任务决定；逾期仍可完成，不会自动移入历史' },
-  { k: '数据表', v: '点击一行打开表单修改；筛选与排序只在本次生效，重新进入按默认规则加载' },
-  { k: '附件', v: '每个附件字段一个文件，单个文件最大 20 MB；预览和下载都需要登录' },
-  { k: '笔记', v: '停止输入约 1.5 秒自动保存，手动保存与每 5 分钟会保留历史版本，最多 100 个' },
-  { k: '回收站', v: '数据表、记录、笔记、便签保留 30 天；待办、打卡对象不进入回收站' },
-  { k: '翻译', v: '三家服务分别配置；译文只读，历史在页面下方，只支持查看和复制' },
+  { k: '每天的工作', v: '登录后默认进入店铺打卡／今日，按分类处理，完成后手动打勾；日／周／月切换在顶部' },
+  { k: '多久做一次', v: '每天的任务当天有效；每周从周一 0 点开始；每月按自然月算。一轮结束后只能看，不能补打卡' },
+  { k: '待办', v: '待办下面挂了子任务时，完成与否看子任务；过了截止时间也能补完成，不会自动挪走' },
+  { k: '表格', v: '点一行就能打开表单修改；筛选和排序只在这次有效，重新进来会恢复默认' },
+  { k: '附件', v: '每个附件只能放一个文件，最大 20 MB；预览和下载都要先登录' },
+  { k: '笔记', v: '停手约 1.5 秒就自动保存；手动保存和每 5 分钟会留一个旧版本，最多留 100 个' },
+  { k: '回收站', v: '表格、表格里的行、笔记、便利贴保留 30 天；待办、店铺、社媒账号不进回收站' },
+  { k: '翻译', v: '三个翻译服务各自配置；译文不能直接改，历史在页面下方，只能看和复制' },
 ]
 
 async function changeTheme(value: any) {

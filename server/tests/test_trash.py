@@ -25,7 +25,7 @@ def test_trash_list_and_counts(auth):
     assert body["counts"]["table"] == 1
     assert body["counts"]["memo"] == 1
     assert all(item["remaining_days"] == 30 for item in body["items"])
-    assert {item["kind_label"] for item in body["items"]} == {"数据表", "便签"}
+    assert {item["kind_label"] for item in body["items"]} == {"表格", "便利贴"}
 
     only_memos = auth.get("/api/v1/trash?kind=memo").json()
     assert only_memos["total"] == 1

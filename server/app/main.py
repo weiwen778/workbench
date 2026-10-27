@@ -96,6 +96,7 @@ def create_app() -> FastAPI:
 
     from .routers import (
         auth,
+        checkin_import,
         checkins,
         files,
         health,
@@ -116,6 +117,7 @@ def create_app() -> FastAPI:
     app.include_router(preferences.router, prefix=api)
     app.include_router(targets.router, prefix=api)
     app.include_router(checkins.router, prefix=api)
+    app.include_router(checkin_import.router, prefix=api)
     app.include_router(todos.router, prefix=api)
     app.include_router(tables.router, prefix=api)
     app.include_router(transfers.router, prefix=api)

@@ -103,7 +103,7 @@ def record_payload(r: DataRecord) -> dict:
 def _get_table(db: Session, table_id: int) -> DataTable:
     table = db.get(DataTable, table_id)
     if not table or table.deleted_at is not None:
-        raise ApiError("TABLE_NOT_FOUND", "数据表不存在或已删除", 404)
+        raise ApiError("TABLE_NOT_FOUND", "表格不存在或已删除", 404)
     return table
 
 
@@ -117,14 +117,14 @@ def _fields(db: Session, table_id: int) -> list[DataField]:
 
 def _check_field_payload(payload: FieldIn, existing_names: set[str]) -> None:
     if payload.type not in FIELD_TYPES:
-        raise ApiError("INVALID_FIELD_TYPE", "字段类型不合法", 422, {"field": payload.name})
+        raise ApiError("INVALID_FIELD_TYPE", "列类型不合法", 422, {"field": payload.name})
     name = payload.name.strip()
     if name in existing_names:
-        raise ApiError("FIELD_NAME_DUPLICATED", "同表内字段名称不能重复", 409, {"field": name})
+        raise ApiError("FIELD_NAME_DUPLICATED", "同一张表格里列名不能重复", 409, {"field": name})
     if payload.type in {"select", "multiselect"}:
         options = payload.options or []
         if len(options) > MAX_OPTIONS:
-            raise ApiError("TOO_MANY_OPTIONS", f"每个选择字段最多 {MAX_OPTIONS} 个选项", 422)
+            raise ApiError("TOO_MANY_OPTIONS", f"每个单选／多选列最多 {MAX_OPTIONS} 个选项", 422)
         ids = [o.get("id") for o in options]
         if any(not i for i in ids) or len(set(ids)) != len(ids):
             raise ApiError("INVALID_OPTIONS", "选项标识缺失或重复", 422)
@@ -171,9 +171,9 @@ def list_tables(db: Session = Depends(get_db)):
 def create_table(payload: TableIn, db: Session = Depends(get_db)):
     name = payload.name.strip()
     if db.scalar(select(DataTable).where(DataTable.name == name, DataTable.deleted_at.is_(None))):
-        raise ApiError("NAME_DUPLICATED", "已有同名数据表", 409, {"field": "name"})
+        raise ApiError("NAME_DUPLICATED", "已有同名表格", 409, {"field": "name"})
     if len(payload.fields) > MAX_FIELDS:
-        raise ApiError("TOO_MANY_FIELDS", f"每表最多 {MAX_FIELDS} 个字段", 422)
+        raise ApiError("TOO_MANY_FIELDS", f"每张表格最多 {MAX_FIELDS} 列", 422)
     names: set[str] = set()
     for f in payload.fields:
         _check_field_payload(f, names)
@@ -233,7 +233,7 @@ def update_table(table_id: int, payload: TablePatch, db: Session = Depends(get_d
             )
         )
         if dup:
-            raise ApiError("NAME_DUPLICATED", "已有同名数据表", 409, {"field": "name"})
+            raise ApiError("NAME_DUPLICATED", "已有同名表格", 409, {"field": "name"})
         table.name = name
     if payload.note is not None:
         table.note = payload.note
@@ -288,13 +288,13 @@ def add_field(table_id: int, payload: FieldIn, db: Session = Depends(get_db)):
     table = _get_table(db, table_id)
     fields = _fields(db, table_id)
     if len(fields) >= MAX_FIELDS:
-        raise ApiError("TOO_MANY_FIELDS", f"每表最多 {MAX_FIELDS} 个字段", 422)
+        raise ApiError("TOO_MANY_FIELDS", f"每张表格最多 {MAX_FIELDS} 列", 422)
     _check_field_payload(payload, {f.name for f in fields})
     has_data = _has_any_data(db, table_id)
     if has_data and payload.required and payload.default_value is None:
         raise ApiError(
             "REQUIRED_NEEDS_DEFAULT",
-            "表中已有数据，新增必填字段需要提供默认值",
+            "表中已有数据，新增必填列需要提供默认值",
             409,
             {"field": payload.name},
         )
@@ -333,23 +333,23 @@ def add_field(table_id: int, payload: FieldIn, db: Session = Depends(get_db)):
 def update_field(field_id: int, payload: FieldPatch, db: Session = Depends(get_db)):
     field = db.get(DataField, field_id)
     if not field:
-        raise ApiError("NOT_FOUND", "字段不存在", 404)
+        raise ApiError("NOT_FOUND", "列不存在", 404)
     table = _get_table(db, field.table_id)
     fields = _fields(db, table.id)
 
     if payload.name is not None:
         name = payload.name.strip()
         if any(f.id != field.id and f.name == name for f in fields):
-            raise ApiError("FIELD_NAME_DUPLICATED", "同表内字段名称不能重复", 409, {"field": name})
+            raise ApiError("FIELD_NAME_DUPLICATED", "同一张表格里列名不能重复", 409, {"field": name})
         field.name = name
 
     if payload.type is not None and payload.type != field.type:
         if payload.type not in FIELD_TYPES:
-            raise ApiError("INVALID_FIELD_TYPE", "字段类型不合法", 422)
+            raise ApiError("INVALID_FIELD_TYPE", "列类型不合法", 422)
         if _count_non_empty(db, table.id, field, include_deleted=True) > 0:
             raise ApiError(
                 "TYPE_CHANGE_BLOCKED",
-                "该字段已有非空数据（含回收站数据），不能直接改类型；请新建字段并迁移数据",
+                "该列已有非空数据（含回收站数据），不能直接改类型；请新建列并迁移数据",
                 409,
                 {"field": field.name},
             )
@@ -367,7 +367,7 @@ def update_field(field_id: int, payload: FieldPatch, db: Session = Depends(get_d
         if empty_count:
             raise ApiError(
                 "REQUIRED_CONFLICT",
-                f"已有 {empty_count} 条数据的该字段为空，请先补齐再设为必填",
+                f"已有 {empty_count} 条数据的该列为空，请先补齐再设为必填",
                 409,
                 {"empty_count": empty_count},
             )
@@ -408,14 +408,14 @@ def update_field(field_id: int, payload: FieldPatch, db: Session = Depends(get_d
 def delete_field(field_id: int, confirm: bool = Query(default=False), db: Session = Depends(get_db)):
     field = db.get(DataField, field_id)
     if not field:
-        raise ApiError("NOT_FOUND", "字段不存在", 404)
+        raise ApiError("NOT_FOUND", "列不存在", 404)
     table = _get_table(db, field.table_id)
     active_count = _count_non_empty(db, table.id, field, include_deleted=False)
     trashed_count = _count_non_empty(db, table.id, field, include_deleted=True) - active_count
     if not confirm:
         raise ApiError(
             "DELETE_CONFIRM_REQUIRED",
-            f"该字段在 {active_count} 条活动数据和 {trashed_count} 条回收站数据中有值，确认后删除",
+            f"该列在 {active_count} 条活动数据和 {trashed_count} 条回收站数据中有值，确认后删除",
             409,
             {"active": active_count, "trashed": trashed_count},
         )
@@ -506,7 +506,7 @@ def create_record(table_id: int, payload: RecordIn, db: Session = Depends(get_db
     table = _get_table(db, table_id)
     fields = _fields(db, table_id)
     if not fields:
-        raise ApiError("NO_FIELDS", "请先添加至少一个字段，再添加数据", 409)
+        raise ApiError("NO_FIELDS", "请先加至少一列，再添加内容", 409)
     data = validate_record(db, fields, payload.data, table_id=table_id)
     record = DataRecord(table_id=table_id, data=data)
     db.add(record)

@@ -90,7 +90,7 @@
             <div class="task-row" :class="{ overdue: item.overdue }">
               <el-tooltip
                 :disabled="item.can_toggle"
-                content="有子任务时完成状态由子任务决定，请逐项勾选子任务"
+                content="有子任务时，完成情况看子任务，请一个个勾选"
                 placement="top"
               >
                 <span>
@@ -372,7 +372,7 @@ async function listCommand(command: string, list: any) {
     try {
       const { data } = await http.get(`/todo-lists/${list.id}/delete-preview`)
       await ElMessageBox.confirm(
-        `清单「${data.list_name}」包含 ${data.top_total} 个顶层待办、${data.subtask_total} 个子任务（含已完成）。删除后不能从回收站恢复。`,
+        `清单「${data.list_name}」里有 ${data.top_total} 个待办、${data.subtask_total} 个子任务（含已完成的）。删了就找不回来，回收站也恢复不了。`,
         '删除清单',
         { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
       )
@@ -506,7 +506,7 @@ async function saveEdit(item: any) {
 async function removeTodo(item: any) {
   try {
     const suffix = item.children?.length ? `及其 ${item.children.length} 个子任务` : ''
-    await ElMessageBox.confirm(`删除「${item.title}」${suffix}？删除后不能从回收站恢复。`, '删除待办', {
+    await ElMessageBox.confirm(`删除「${item.title}」${suffix}？删了就找不回来。`, '删除待办', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消',

@@ -225,7 +225,7 @@ def test_archive_hides_target_and_locks_records(auth, db):
 
     inst = db.get(CheckinInstance, item["id"])
     assert inst.locked is True
-    assert inst.lock_reason == "对象已归档"
+    assert inst.lock_reason == "已暂停"
 
     resp = auth.post(f"/api/v1/checkin-instances/{item['id']}/complete", json={})
     assert resp.status_code == 409

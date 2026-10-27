@@ -31,10 +31,10 @@
         <el-icon><Tickets /></el-icon><span>待办</span>
       </div>
 
-      <!-- 数据表 -->
+      <!-- 表格 -->
       <div class="wb-nav-item" @click="toggle('data')">
         <el-icon><Collection /></el-icon>
-        <span>数据表</span>
+        <span>表格</span>
         <div class="spacer" />
         <el-icon class="caret" :class="{ open: expanded.data }"><ArrowRight /></el-icon>
       </div>
@@ -43,7 +43,7 @@
           <el-input
             :model-value="tableSearch"
             size="small"
-            placeholder="搜索数据表"
+            placeholder="搜索表格"
             clearable
             @update:model-value="$emit('update:tableSearch', $event)"
           />
@@ -63,9 +63,9 @@
             <span class="ellipsis-1">{{ table.name }}</span>
           </div>
         </el-tooltip>
-        <div v-if="!filteredTables.length" class="table-empty">还没有数据表</div>
+        <div v-if="!filteredTables.length" class="table-empty">还没有表格</div>
         <div class="wb-nav-item new-table" @click="$emit('new-table')">
-          <el-icon><Plus /></el-icon><span>新建数据表</span>
+          <el-icon><Plus /></el-icon><span>新建表格</span>
         </div>
       </div>
 
@@ -140,7 +140,7 @@ const checkinItems = [
 
 const mainItems = [
   { label: '笔记', path: '/notes', icon: Document },
-  { label: '便签', path: '/memos', icon: Memo },
+  { label: '便利贴', path: '/memos', icon: Memo },
   { label: '翻译', path: '/translate', icon: SwitchButton },
   { label: '回收站', path: '/trash', icon: Delete },
 ]

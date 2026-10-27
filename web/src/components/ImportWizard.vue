@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="modelValue"
-    :title="tableId ? '导入数据到当前表' : '用 Excel 新建数据表'"
+    :title="tableId ? '导入到当前表格' : '从文件新建表格'"
     width="820px"
     :close-on-click-modal="false"
     @update:model-value="$emit('update:modelValue', $event)"
@@ -13,13 +13,13 @@
         drag
         :auto-upload="false"
         :show-file-list="false"
-        accept=".xlsx"
+        accept=".xlsx,.xls,.csv,.json"
         :on-change="onFileChange"
       >
         <div class="upload-hint">
           <el-icon class="upload-icon"><UploadFilled /></el-icon>
-          <div>把 .xlsx 文件拖到这里，或点击选择</div>
-          <div class="text-12 muted">单工作表、最多 10,000 条数据、50 个字段，首行为表头</div>
+          <div>把 Excel、CSV 或 JSON 文件拖到这里，或点一下选择</div>
+          <div class="text-12 muted">支持 .xlsx / .xls / .csv / .json；最多 1 万行、50 列，第一行当标题行</div>
         </div>
       </el-upload>
       <div v-if="errorText" class="text-13" style="color: var(--el-color-danger); margin-top: 8px">
@@ -27,33 +27,35 @@
       </div>
     </div>
 
-    <!-- 第二步：映射与校验 -->
+    <!-- 第二步：对应关系与检查 -->
     <div v-else>
       <div class="toolbar-actions" style="margin-bottom: 10px">
-        <span class="text-13 secondary">工作表：</span>
-        <el-select v-model="sheet" style="width: 160px" @change="reloadPreview">
-          <el-option v-for="name in sheets" :key="name" :label="name" :value="name" />
-        </el-select>
-        <span class="text-12 muted">共 {{ rowCount }} 条数据</span>
+        <template v-if="sheets.length > 1">
+          <span class="text-13 secondary">工作表：</span>
+          <el-select v-model="sheet" style="width: 160px" @change="reloadPreview">
+            <el-option v-for="name in sheets" :key="name" :label="name" :value="name" />
+          </el-select>
+        </template>
+        <span class="text-12 muted">共 {{ rowCount }} 行</span>
         <div class="spacer" />
         <el-button text size="small" @click="step = 'upload'">重新选择文件</el-button>
       </div>
 
       <el-form v-if="!tableId" label-position="top" style="margin-bottom: 10px">
-        <el-form-item label="新表名称" required>
+        <el-form-item label="新表格名称" required>
           <el-input v-model="tableName" maxlength="100" />
         </el-form-item>
       </el-form>
 
       <el-table :data="columnRows" size="small" max-height="320">
         <el-table-column prop="header" label="Excel 列" width="150" show-overflow-tooltip />
-        <el-table-column label="示例值" width="200" show-overflow-tooltip>
+        <el-table-column label="示例内容" width="200" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="text-12 muted">{{ row.sample || '—' }}</span>
           </template>
         </el-table-column>
         <template v-if="tableId">
-          <el-table-column label="映射到字段" width="200">
+          <el-table-column label="对应到哪一列" width="200">
             <template #default="{ row }">
               <el-select v-model="mapping[row.col]" size="small" placeholder="忽略此列" clearable style="width: 100%">
                 <el-option v-for="f in existingFields" :key="f.key" :label="`${f.name}（${typeText(f.type)}）`" :value="f.key" />
@@ -62,7 +64,7 @@
           </el-table-column>
         </template>
         <template v-else>
-          <el-table-column label="字段名" width="150">
+          <el-table-column label="列名" width="150">
             <template #default="{ row }">
               <el-input v-model="row.name" size="small" maxlength="50" />
             </template>
@@ -84,7 +86,7 @@
 
       <div v-if="errors.length" class="error-box">
         <div class="text-13" style="font-weight: 600; margin-bottom: 4px">
-          发现 {{ errors.length }} 处问题，本批次不会导入任何一行
+          发现 {{ errors.length }} 处问题，这次一行都不会导入
         </div>
         <div class="error-list">
           <div v-for="(err, index) in errors.slice(0, 50)" :key="index" class="text-12">
@@ -97,7 +99,7 @@
     <template #footer>
       <div class="toolbar-actions" style="justify-content: flex-end">
         <el-button @click="$emit('update:modelValue', false)">取消</el-button>
-        <el-button v-if="step === 'preview'" :loading="checking" @click="validate">校验</el-button>
+        <el-button v-if="step === 'preview'" :loading="checking" @click="validate">检查</el-button>
         <el-button
           v-if="step === 'preview'"
           type="primary"
@@ -246,7 +248,7 @@ async function validate() {
   try {
     const { data } = await http.post(`/imports/${job.value.id}/draft`, payload())
     errors.value = data.errors || []
-    if (!errors.value.length) ElMessage.success('校验通过，可以确认导入')
+    if (!errors.value.length) ElMessage.success('检查通过，可以导入了')
   } catch (error) {
     ElMessage.error(apiError(error).message)
   } finally {
@@ -260,13 +262,13 @@ async function confirmImport() {
     await http.post(`/imports/${job.value.id}/draft`, payload())
     const { data } = await http.post(`/imports/${job.value.id}/confirm`)
     if (data.status === 'success') {
-      ElMessage.success(`已导入 ${data.result.imported} 条数据`)
+      ElMessage.success(`已导入 ${data.result.imported} 行`)
       emit('done', data.result.table_id)
       emit('update:modelValue', false)
       window.dispatchEvent(new Event('wb:tables-changed'))
     } else {
       errors.value = data.errors || []
-      ElMessage.warning('还有需要修正的内容')
+      ElMessage.warning('还有需要改的地方')
     }
   } catch (error: any) {
     const body = error?.response?.data

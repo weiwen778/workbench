@@ -191,7 +191,7 @@ def test_memo_untitled_and_category_filters(auth):
     auth.post("/api/v1/memos", json={"content": "有分类", "category": "采购"})
     items = auth.get("/api/v1/memos").json()
     assert len(items) == 2
-    assert any(i["display_title"] == "无标题便签" for i in items)
+    assert any(i["display_title"] == "无标题便利贴" for i in items)
 
     assert len(auth.get("/api/v1/memos?category=采购").json()) == 1
     assert len(auth.get("/api/v1/memos?category=__uncategorized__").json()) == 1

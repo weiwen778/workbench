@@ -221,9 +221,59 @@ def test_import_rejects_bad_headers(auth):
     assert resp.json()["code"] == "EMPTY_HEADER"
 
 
-def test_import_rejects_non_xlsx(auth):
-    resp = auth.post("/api/v1/imports/preview", files={"file": ("data.csv", b"a,b", "text/csv")})
+def test_import_rejects_unknown_extension(auth):
+    resp = auth.post("/api/v1/imports/preview", files={"file": ("data.txt", b"a,b", "text/plain")})
     assert resp.status_code == 415
+
+
+def test_import_csv_utf8(auth):
+    raw = "商品名称,数量\n纪念币,120\n钥匙扣,300\n".encode("utf-8")
+    resp = auth.post("/api/v1/imports/preview", files={"file": ("ledger.csv", raw, "text/csv")})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["headers"] == ["商品名称", "数量"]
+    assert body["row_count"] == 2
+    assert body["table_name"] == "ledger"
+
+
+def test_import_csv_gbk_encoding(auth):
+    raw = "商品名称,数量\n纪念币,120\n".encode("gbk")
+    resp = auth.post("/api/v1/imports/preview", files={"file": ("gbk.csv", raw, "text/csv")})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["headers"] == ["商品名称", "数量"]
+    assert body["sample"][0][0] == "纪念币"
+
+
+def test_import_csv_tab_delimited(auth):
+    raw = "商品名称\t数量\n纪念币\t120\n".encode("utf-8")
+    resp = auth.post("/api/v1/imports/preview", files={"file": ("tab.csv", raw, "text/csv")})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["headers"] == ["商品名称", "数量"]
+
+
+def test_import_json_objects(auth):
+    import json as _json
+
+    raw = _json.dumps(
+        [{"名称": "A款", "数量": 1}, {"名称": "B款", "数量": 2}], ensure_ascii=False
+    ).encode("utf-8")
+    resp = auth.post("/api/v1/imports/preview", files={"file": ("items.json", raw, "application/json")})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["headers"] == ["名称", "数量"]
+    assert body["row_count"] == 2
+
+
+def test_import_json_ragged_keys(auth):
+    import json as _json
+
+    raw = _json.dumps([{"名称": "A"}, {"名称": "B", "备注": "补"}], ensure_ascii=False).encode("utf-8")
+    resp = auth.post("/api/v1/imports/preview", files={"file": ("ragged.json", raw, "application/json")})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["headers"] == ["名称", "备注"]
+    assert body["sample"][0] == ["A", ""]
 
 
 # ---------------------------------------------------------------- 导出

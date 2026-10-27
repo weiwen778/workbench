@@ -164,10 +164,10 @@
         type="warning"
         :closable="false"
         show-icon
-        title="服务端尚未配置翻译凭据主密钥（WB_ENCRYPTION_KEY）"
+        title="系统还没配置加密主密钥（WB_ENCRYPTION_KEY）"
         style="margin-bottom: 12px"
       >
-        在部署环境的 .env 中设置 WB_ENCRYPTION_KEY 并重启 API 容器后，才能保存和使用翻译凭据。
+        需要在服务器的 .env 里设置 WB_ENCRYPTION_KEY，重启后就能保存和使用翻译密钥。
       </el-alert>
 
       <div v-for="conn in connections" :key="conn.provider" class="conn-block">
@@ -207,7 +207,7 @@
               保存
             </el-button>
             <el-button size="small" :disabled="!conn.configured || !credentialKeyReady" @click="testProvider(conn)">连接测试</el-button>
-            <el-button size="small" :disabled="!conn.configured || !credentialKeyReady" @click="clearProvider(conn)">清除凭据</el-button>
+            <el-button size="small" :disabled="!conn.configured || !credentialKeyReady" @click="clearProvider(conn)">清除密钥</el-button>
           </div>
           <div class="text-12 muted" style="margin-top: 4px">
             {{ providerHint(conn) }}
@@ -289,7 +289,7 @@ function fieldsOf(name: string) {
 function providerHint(conn: any) {
   const limit = conn.limits
   const unit = limit.unit === 'byte' ? '字节' : '字符'
-  return `单次上限 ${limit.value} ${unit}；超时：连接 10 秒 / 整体 60 秒。连接测试是真实请求，可能消耗额度。`
+  return `一次最多 ${limit.value} ${unit}；超时：连接 10 秒 / 整体 60 秒。点「连接测试」是真的发一次请求，可能消耗额度。`
 }
 
 function langText(code: string) {
@@ -340,11 +340,11 @@ async function translate() {
     return
   }
   if (overLimit.value) {
-    ElMessage.warning('内容超出该服务上限，请缩短后再翻译（不会自动截断）')
+    ElMessage.warning('内容超过这个服务的上限，请缩短后再翻（不会自动截断）')
     return
   }
   if (sourceLang.value === targetLang.value) {
-    ElMessage.warning('源语言与目标语言不能相同')
+    ElMessage.warning('两边语言不能一样')
     return
   }
   translating.value = true
@@ -372,7 +372,7 @@ async function pasteSource() {
     sourceText.value = text
     ElMessage.success('已粘贴剪贴板内容')
   } catch {
-    ElMessage.warning('浏览器不允许读取剪贴板，请使用 Ctrl+V 或长按粘贴')
+    ElMessage.warning('浏览器不让读剪贴板，请用 Ctrl+V 或长按粘贴')
   }
 }
 
@@ -383,7 +383,7 @@ function clearSource() {
 async function copyResult() {
   if (!result.value) return
   const ok = await copyText(result.value.target_text)
-  ok ? ElMessage.success('已复制译文') : ElMessage.warning('浏览器不允许自动复制，请手动选择复制')
+  ok ? ElMessage.success('已复制译文') : ElMessage.warning('浏览器不让自动复制，请手动选中复制')
 }
 
 function clearResult() {
@@ -421,14 +421,14 @@ async function openDetail(item: any) {
 
 async function copyHistory(item: any) {
   const ok = await copyText(item.target_text)
-  ok ? ElMessage.success('已复制译文') : ElMessage.warning('浏览器不允许自动复制，请打开详情手动复制')
+  ok ? ElMessage.success('已复制译文') : ElMessage.warning('浏览器不让自动复制，请打开详情手动选中复制')
 }
 
 async function copyDetail(which: 'source' | 'target') {
   if (!detail.value) return
   const text = which === 'source' ? detail.value.source_text : detail.value.target_text
   const ok = await copyText(text)
-  ok ? ElMessage.success(which === 'source' ? '已复制原文' : '已复制译文') : ElMessage.warning('浏览器不允许自动复制，请手动选择')
+  ok ? ElMessage.success(which === 'source' ? '已复制原文' : '已复制译文') : ElMessage.warning('浏览器不让自动复制，请手动选中')
 }
 
 async function saveProvider(conn: any) {
@@ -438,7 +438,7 @@ async function saveProvider(conn: any) {
     if (value) config[field.key] = value
   }
   if (!Object.keys(config).length && !conn.configured) {
-    ElMessage.warning('请填写该服务需要的凭据')
+    ElMessage.warning('请填写该服务需要的密钥')
     return
   }
   savingProvider.value = conn.provider
@@ -479,7 +479,7 @@ async function testProvider(conn: any) {
 async function clearProvider(conn: any) {
   try {
     await http.delete(`/translation-connections/${conn.provider}`)
-    ElMessage.success('已清除凭据')
+    ElMessage.success('已清除密钥')
     await loadConnections()
   } catch (error) {
     ElMessage.error(apiError(error).message)

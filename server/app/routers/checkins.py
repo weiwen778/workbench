@@ -62,7 +62,7 @@ def _load_instances(
             CheckinInstance.period_type == period,
             CheckinInstance.period_start == start,
             # 归档前遗留的当前周期记录不在“今天要做”的清单里重复出现
-            CheckinInstance.lock_reason.is_(None) | (CheckinInstance.lock_reason != "对象已归档"),
+            CheckinInstance.lock_reason.is_(None) | (CheckinInstance.lock_reason != "已暂停"),
         )
     )
     if target_id:
@@ -180,7 +180,7 @@ def history(
 def complete(instance_id: int, payload: CompleteIn | None = None, db: Session = Depends(get_db)):
     inst = db.get(CheckinInstance, instance_id)
     if not inst:
-        raise ApiError("NOT_FOUND", "事项不存在", 404)
+        raise ApiError("NOT_FOUND", "任务不存在", 404)
     note = payload.note if payload else None
     complete_instance(db, inst, note)
     db.commit()
@@ -191,7 +191,7 @@ def complete(instance_id: int, payload: CompleteIn | None = None, db: Session = 
 def cancel(instance_id: int, db: Session = Depends(get_db)):
     inst = db.get(CheckinInstance, instance_id)
     if not inst:
-        raise ApiError("NOT_FOUND", "事项不存在", 404)
+        raise ApiError("NOT_FOUND", "任务不存在", 404)
     cancel_instance(db, inst)
     db.commit()
     return serialize_instance(inst)
@@ -201,7 +201,7 @@ def cancel(instance_id: int, db: Session = Depends(get_db)):
 def update_note(instance_id: int, payload: NoteIn, db: Session = Depends(get_db)):
     inst = db.get(CheckinInstance, instance_id)
     if not inst:
-        raise ApiError("NOT_FOUND", "事项不存在", 404)
+        raise ApiError("NOT_FOUND", "任务不存在", 404)
     refresh_locks(db, [inst])
     if inst.locked:
         raise ApiError("PERIOD_LOCKED", "本周期已结束，不能修改备注", 409)

@@ -107,9 +107,9 @@
         </div>
 
         <div v-if="conflict" class="conflict-bar">
-          这篇笔记已在其他设备修改，你的内容仍保留在这里。
-          <el-button text size="small" @click="reloadServer">载入服务器内容</el-button>
-          <el-button text size="small" @click="forceSave">用我的版本覆盖</el-button>
+          这篇笔记在别处被改过，你写的内容还留在这里。
+          <el-button text size="small" @click="reloadServer">换成最新的</el-button>
+          <el-button text size="small" @click="forceSave">按我写的保存</el-button>
         </div>
 
         <el-input v-model="title" class="title-input" maxlength="200" placeholder="未命名笔记" />
@@ -121,7 +121,7 @@
               v-model="content"
               type="textarea"
               resize="none"
-              placeholder="直接写 Markdown，例如 # 标题、- 列表、**加粗**"
+              placeholder="直接写内容，支持简单排版：# 大标题、- 列表、**加粗**"
               @paste="onPaste"
             />
           </div>
@@ -278,7 +278,7 @@ async function createFolder() {
 
 async function removeFolder(folder: any) {
   try {
-    await ElMessageBox.confirm(`删除文件夹「${folder.name}」？里面的笔记会转到未分类，不会被删除。`, '删除文件夹', {
+    await ElMessageBox.confirm(`删除文件夹「${folder.name}」？里面的笔记会移到「未分类」，笔记本身不会删。`, '删除文件夹', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消',
@@ -385,7 +385,7 @@ async function save(mode: 'auto' | 'manual') {
     saveState.value = 'error'
     if (error?.response?.status === 409) {
       conflict.value = true
-      ElMessage.warning('这篇笔记已在其他设备修改，内容未覆盖')
+      ElMessage.warning('这篇笔记在别处被改过，你的内容没有覆盖它')
     } else {
       ElMessage.error(apiError(error).message)
     }
@@ -411,7 +411,7 @@ async function reloadServer() {
   if (!current.value) return
   await openNote(current.value.id, true)
   conflict.value = false
-  ElMessage.success('已载入服务器内容')
+  ElMessage.success('已载入最新内容')
 }
 
 async function uploadImage(options: any) {
@@ -472,7 +472,7 @@ async function previewRevision(rev: any) {
 
 async function restoreRevision(rev: any) {
   try {
-    await ElMessageBox.confirm('恢复后会用这个版本替换当前标题和正文（当前内容会先保留为一个历史版本）。', '恢复历史版本', {
+    await ElMessageBox.confirm('恢复后会用这个旧版本盖掉现在的标题和正文（现在的内容会先存成一个历史版本）。', '恢复历史版本', {
       type: 'warning',
       confirmButtonText: '恢复',
       cancelButtonText: '取消',

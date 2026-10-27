@@ -1,7 +1,7 @@
 <template>
   <el-drawer
     :model-value="modelValue"
-    :title="record ? '编辑数据' : '添加数据'"
+    :title="record ? '编辑这一行' : '添加一行'"
     :size="drawerSize"
     :close-on-click-modal="false"
     :close-on-press-escape="uploading === null && !saving"
@@ -94,11 +94,11 @@
       </el-form-item>
 
       <el-alert v-if="conflict" type="warning" :closable="false" show-icon style="margin-bottom: 10px">
-        <template #title>这条数据已在其他位置被修改</template>
-        <div class="text-12">你的输入仍保留在这里。可以复制后刷新再改，或直接覆盖保存。</div>
+        <template #title>这一行已经在别处被改过</template>
+        <div class="text-12">你填的内容还留在这里。可以先复制、刷新后再改，也可以直接按你填的保存。</div>
         <div class="toolbar-actions" style="margin-top: 6px">
-          <el-button size="small" @click="reloadLatest">载入最新内容</el-button>
-          <el-button size="small" type="warning" @click="save(true)">覆盖保存</el-button>
+          <el-button size="small" @click="reloadLatest">换成最新的</el-button>
+          <el-button size="small" type="warning" @click="save(true)">按我填的保存</el-button>
         </div>
       </el-alert>
     </el-form>
@@ -223,7 +223,7 @@ async function save(force: boolean) {
     if (error?.response?.status === 409 && error.response.data?.code === 'VERSION_CONFLICT') {
       conflict.value = true
       version.value = error.response.data.details?.current_version ?? version.value
-      ElMessage.warning('数据已被其他设备修改，请确认后再保存')
+      ElMessage.warning('这一行已经在别处被改过，请确认后再保存')
     } else {
       ElMessage.error(apiError(error).message)
     }
