@@ -156,7 +156,7 @@
     <!-- 从 JSON 导入 -->
     <el-dialog v-model="importOpen" :title="`导入${kindLabel}`" width="560px" :append-to-body="true">
       <div class="text-13 secondary" style="margin-bottom: 10px">
-        一次可以导入{{ kindLabel }}、分类和打卡任务。已经有同名的不会重复创建，同一个对象下同名的任务会跳过。
+        一次可以导入{{ kindLabel }}、分类和打卡任务。已经有同名的不会重复创建，同一个{{ kindLabel }}下同名的任务会跳过。
       </div>
       <div class="toolbar-actions" style="margin-bottom: 10px">
         <el-button :icon="Download" @click="downloadTemplate">下载模板</el-button>
