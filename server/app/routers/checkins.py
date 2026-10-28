@@ -14,7 +14,7 @@ from ..models import CheckinGroup, CheckinInstance, WorkTarget
 from ..services.checkins import (
     cancel_instance,
     complete_instance,
-    ensure_target_period,
+    ensure_targets_period,
     refresh_locks,
     serialize_instance,
     statistics,
@@ -50,8 +50,7 @@ def _load_instances(
     ).all()
     if target_id:
         targets = [t for t in targets if t.id == target_id]
-    for target in targets:
-        ensure_target_period(db, target, period)
+    ensure_targets_period(db, list(targets), period)
     db.flush()
 
     stmt = (
@@ -219,12 +218,9 @@ def stats(
 ):
     if period not in PERIODS:
         raise ApiError("INVALID_PERIOD", "周期不合法", 422)
-    targets = db.scalars(
-        select(WorkTarget.id).where(WorkTarget.kind == kind, WorkTarget.status == "active")
-    ).all()
-    for tid in targets:
-        target = db.get(WorkTarget, tid)
-        if target:
-            ensure_target_period(db, target, period)
+    targets = list(db.scalars(
+        select(WorkTarget).where(WorkTarget.kind == kind, WorkTarget.status == "active")
+    ).all())
+    ensure_targets_period(db, targets, period)
     db.commit()
-    return statistics(db, period, list(targets))
+    return statistics(db, period, [target.id for target in targets])

@@ -35,9 +35,8 @@
       </div>
     </div>
 
-    <div class="page-body">
-      <div v-if="loading" class="empty-hint">加载中…</div>
-      <div v-else-if="!groups.length" class="empty-hint">
+    <div class="page-body" v-loading="loading">
+      <div v-if="!groups.length" class="empty-hint">
         <div>{{ emptyText }}</div>
         <el-button v-if="!targets.length" class="btn-tonal" @click="manageOpen = true">先添加{{ kindLabel }}</el-button>
       </div>
@@ -50,12 +49,13 @@
           <div
             v-for="item in group.items"
             :key="item.id"
+            v-memo="[item.version, busyIds.has(item.id), noteDraft[item.id], notePopover[item.id], periodUnit]"
             class="checkin-row"
             :class="{ done: item.completed }"
           >
             <el-checkbox
               :model-value="item.completed"
-              :disabled="item.locked || busyId === item.id"
+              :disabled="item.locked || busyIds.has(item.id)"
               size="large"
               @change="toggle(item)"
             />
@@ -97,6 +97,33 @@
         </div>
       </div>
     </div>
+
+    <el-dialog v-model="clearOpen" title="删除全部打卡内容" width="540px" :append-to-body="true"
+      :close-on-click-modal="false" :close-on-press-escape="!clearing" :show-close="!clearing" @closed="resetClearDialog">
+      <el-alert type="error" :closable="false" show-icon title="永久删除整个打卡模块的数据，无法从回收站恢复。" />
+      <p class="text-13">将删除全部店铺和社媒账号、分类、任务、完成记录、备注与历史，包括已暂停的内容。</p>
+      <p v-if="clearSummary" class="text-13">
+        当前共有 {{ clearSummary.shops }} 个店铺、{{ clearSummary.social_accounts }} 个社媒账号、
+        {{ clearSummary.groups }} 个分类、{{ clearSummary.rules }} 个任务、{{ clearSummary.instances }} 条打卡记录。
+      </p>
+      <p v-else-if="clearSummaryLoading" class="text-13 muted">正在读取数据数量…</p>
+      <el-form label-position="top" @submit.prevent="clearAllCheckins">
+        <el-form-item label="当前登录密码">
+          <el-input v-model="clearPassword" type="password" show-password autocomplete="current-password"
+            placeholder="输入当前登录账号的密码" :disabled="clearing" maxlength="200" />
+        </el-form-item>
+        <el-checkbox v-model="clearConfirmed" :disabled="clearing">
+          我确认永久删除全部店铺和社媒的打卡内容
+        </el-checkbox>
+        <p v-if="clearError" role="alert" class="text-13" style="color: var(--el-color-danger)">{{ clearError }}</p>
+      </el-form>
+      <template #footer>
+        <el-button :disabled="clearing" @click="clearOpen = false">取消</el-button>
+        <el-button type="danger" :loading="clearing"
+          :disabled="!clearSummary || clearSummaryLoading || !clearPassword || !clearConfirmed"
+          @click="clearAllCheckins">验证密码并删除全部</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 店铺 / 社媒账号管理 -->
     <el-drawer v-model="manageOpen" :title="`${kindLabel}与分类`" size="520px" :append-to-body="true">
@@ -151,6 +178,10 @@
           </template>
         </el-table-column>
       </el-table>
+      <details class="advanced-actions">
+        <summary>高级操作</summary>
+        <el-button text size="small" type="danger" @click="openClearDialog">删除全部打卡内容</el-button>
+      </details>
     </el-drawer>
 
     <!-- 从 JSON 导入 -->
@@ -259,9 +290,19 @@ const statistics = ref<{ completed: number; total: number; rate: number | null }
 })
 const periodRange = ref('')
 const loading = ref(false)
-const busyId = ref<number | null>(null)
+const busyIds = reactive(new Set<number>())
+let loadVersion = 0
 const noteDraft = reactive<Record<number, string>>({})
 const notePopover = reactive<Record<number, boolean>>({})
+
+const clearOpen = ref(false)
+const clearPassword = ref('')
+const clearConfirmed = ref(false)
+const clearError = ref('')
+const clearSummary = ref<any>(null)
+const clearSummaryLoading = ref(false)
+const clearing = ref(false)
+let clearPreviewVersion = 0
 
 const manageOpen = ref(false)
 const allTargets = ref<any[]>([])
@@ -306,11 +347,13 @@ function formatShort(value: string) {
 }
 
 async function load() {
+  const requestVersion = ++loadVersion
   loading.value = true
   try {
     const params: Record<string, any> = { kind: kind.value, period: period.value, status: status.value }
     if (targetId.value) params.target_id = targetId.value
     const { data } = await http.get('/checkin-instances', { params })
+    if (requestVersion !== loadVersion) return
     groups.value = data.groups
     targets.value = data.targets
     statistics.value = data.statistics
@@ -321,37 +364,119 @@ async function load() {
       }
     }
   } catch (error) {
-    ElMessage.error(apiError(error).message)
+    if (requestVersion === loadVersion) ElMessage.error(apiError(error).message)
   } finally {
-    loading.value = false
+    if (requestVersion === loadVersion) loading.value = false
+  }
+}
+
+function applyItemUpdate(item: any, updated: any) {
+  const group = groups.value.find((g: any) => g.items.some((row: any) => row.id === item.id))
+  if (!group) return
+  const current = group.items.find((row: any) => row.id === item.id)
+  const delta = Number(updated.completed) - Number(current.completed)
+  Object.assign(current, updated)
+  statistics.value.completed += delta
+  statistics.value.rate = statistics.value.total
+    ? Math.round(statistics.value.completed / statistics.value.total * 100) : null
+  if (updated.group_id !== group.group_id) {
+    void load()
+    return
+  }
+  group.completed += delta
+  if ((status.value === 'pending' && updated.completed) || (status.value === 'done' && !updated.completed)) {
+    group.items = group.items.filter((row: any) => row.id !== item.id)
+    group.total = group.items.length
+    group.completed = group.items.filter((row: any) => row.completed).length
+    if (!group.total) groups.value = groups.value.filter((g: any) => g !== group)
   }
 }
 
 async function toggle(item: any) {
-  busyId.value = item.id
+  if (busyIds.has(item.id)) return
+  busyIds.add(item.id)
+  const requestVersion = loadVersion
   try {
-    if (item.completed) {
-      await http.post(`/checkin-instances/${item.id}/cancel`)
-    } else {
-      const note = (noteDraft[item.id] || '').trim()
-      await http.post(`/checkin-instances/${item.id}/complete`, { note: note || null })
-    }
-    await load()
+    const { data } = item.completed
+      ? await http.post(`/checkin-instances/${item.id}/cancel`)
+      : await http.post(`/checkin-instances/${item.id}/complete`, { note: (noteDraft[item.id] || '').trim() || null })
+    if (requestVersion === loadVersion) applyItemUpdate(item, data)
   } catch (error) {
     ElMessage.error(apiError(error).message)
   } finally {
-    busyId.value = null
+    busyIds.delete(item.id)
   }
 }
 
 async function saveNote(item: any) {
+  const requestVersion = loadVersion
   try {
-    await http.patch(`/checkin-instances/${item.id}`, { note: (noteDraft[item.id] || '').trim() || null })
+    const { data } = await http.patch(`/checkin-instances/${item.id}`, { note: (noteDraft[item.id] || '').trim() || null })
     notePopover[item.id] = false
+    if (requestVersion === loadVersion) applyItemUpdate(item, data)
     ElMessage.success('备注已保存')
-    await load()
   } catch (error) {
     ElMessage.error(apiError(error).message)
+  }
+}
+
+function resetClearDialog() {
+  ++clearPreviewVersion
+  clearPassword.value = ''
+  clearConfirmed.value = false
+  clearError.value = ''
+  clearSummary.value = null
+  clearSummaryLoading.value = false
+}
+
+async function openClearDialog() {
+  resetClearDialog()
+  clearOpen.value = true
+  clearSummaryLoading.value = true
+  const version = clearPreviewVersion
+  try {
+    const { data } = await http.get('/checkin-data/summary')
+    if (version === clearPreviewVersion) clearSummary.value = data
+  } catch (error) {
+    if (version === clearPreviewVersion) clearError.value = apiError(error).message
+  } finally {
+    if (version === clearPreviewVersion) clearSummaryLoading.value = false
+  }
+}
+
+async function clearAllCheckins() {
+  if (clearing.value || !clearSummary.value || !clearPassword.value || !clearConfirmed.value) return
+  clearing.value = true
+  clearError.value = ''
+  try {
+    await http.post('/checkin-data/clear', {
+      password: clearPassword.value,
+      confirmation: '删除全部打卡内容',
+    })
+    ++loadVersion
+    groups.value = []
+    targets.value = []
+    allTargets.value = []
+    groupList.value = []
+    historyItems.value = []
+    historyTotal.value = 0
+    statistics.value = { completed: 0, total: 0, rate: null }
+    targetId.value = null
+    status.value = 'all'
+    for (const id of Object.keys(noteDraft)) delete noteDraft[Number(id)]
+    for (const id of Object.keys(notePopover)) delete notePopover[Number(id)]
+    manageOpen.value = false
+    historyOpen.value = false
+    importResult.value = null
+    clearOpen.value = false
+    clearPassword.value = ''
+    ElMessage.success('全部打卡内容已删除')
+    await load()
+  } catch (error) {
+    clearPassword.value = ''
+    clearError.value = apiError(error).message
+  } finally {
+    clearing.value = false
   }
 }
 
@@ -544,6 +669,20 @@ onMounted(load)
 </script>
 
 <style scoped>
+.advanced-actions {
+  margin-top: 24px;
+  padding-top: 12px;
+  border-top: 1px solid var(--wb-border);
+}
+.advanced-actions summary {
+  color: var(--wb-text-tertiary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.advanced-actions[open] summary {
+  margin-bottom: 8px;
+}
+
 .group-block {
   background: var(--wb-surface);
   border: 1px solid var(--wb-border);

@@ -2,7 +2,7 @@
   <div class="page">
     <!-- 顶部操作条 -->
     <div class="page-toolbar">
-      <el-select v-model="provider" style="width: 150px" @change="onProviderChange">
+      <el-select v-model="provider" style="width: 150px">
         <el-option
           v-for="conn in connections"
           :key="conn.provider"
@@ -33,6 +33,9 @@
         翻译
       </el-button>
 
+      <el-switch v-model="autoTranslate" active-text="自动翻译" aria-label="自动翻译" />
+      <span class="text-12 muted" role="status">{{ translationHint }}</span>
+
       <span class="text-12" :class="{ danger: overLimit }">
         {{ counterText }}
       </span>
@@ -57,7 +60,9 @@
             v-model="sourceText"
             type="textarea"
             resize="none"
-            placeholder="输入需要翻译的内容，Ctrl / Command + Enter 开始翻译"
+            :placeholder="autoTranslate ? '输入或粘贴内容，停止输入后自动翻译' : '输入需要翻译的内容，Ctrl / Command + Enter 开始翻译'"
+            @compositionstart="composing = true"
+            @compositionend="composing = false"
             @keydown.ctrl.enter.prevent="translate"
             @keydown.meta.enter.prevent="translate"
           />
@@ -219,7 +224,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   CopyDocument,
@@ -241,6 +246,9 @@ const targetLang = ref('en')
 const sourceText = ref('')
 const result = ref<any>(null)
 const translating = ref(false)
+const composing = ref(false)
+const autoTranslate = ref(readAutoPreference())
+const autoPending = ref(false)
 const settingsOpen = ref(false)
 const configDraft = reactive<Record<string, Record<string, string>>>({ baidu: {}, youdao: {}, deepseek: {} })
 const modelDraft = reactive<Record<string, string>>({})
@@ -257,6 +265,13 @@ const detailOpen = ref(false)
 const detail = ref<any>(null)
 
 let requestSeq = 0
+let translationTimer: number | null = null
+let translationController: AbortController | null = null
+let lastSuccessKey = ''
+
+function readAutoPreference() {
+  try { return localStorage.getItem('wb_auto_translate') !== 'false' } catch { return true }
+}
 let historyTimer: number | null = null
 
 const currentConn = computed(() => connections.value.find((c) => c.provider === provider.value))
@@ -268,6 +283,15 @@ const overLimit = computed(() => used.value > limitInfo.value.value)
 const counterText = computed(() => {
   const unit = limitInfo.value.unit === 'byte' ? '字节' : '字符'
   return `${used.value} / ${limitInfo.value.value} ${unit}`
+})
+
+const translationHint = computed(() => {
+  if (translating.value) return '正在翻译…'
+  if (!autoTranslate.value) return ''
+  if (!currentConn.value?.configured || !currentConn.value?.enabled || !credentialKeyReady.value) return '请先配置并启用翻译服务'
+  if (overLimit.value) return '内容超出上限，已暂停自动翻译'
+  if (sourceLang.value === targetLang.value) return '请选择不同的原文和译文语言'
+  return autoPending.value ? '等待输入结束…' : '停止输入 0.8 秒后翻译'
 })
 
 const providerFields: Record<string, { key: string; label: string }[]> = {
@@ -318,10 +342,6 @@ async function loadConnections() {
   }
 }
 
-function onProviderChange() {
-  result.value = null
-}
-
 function swapLanguages() {
   if (sourceLang.value === 'auto') {
     sourceLang.value = targetLang.value === 'en' ? 'zh' : 'en'
@@ -332,39 +352,93 @@ function swapLanguages() {
   }
 }
 
-async function translate() {
-  if (translating.value) return
+function clearTranslationTimer() {
+  if (translationTimer !== null) window.clearTimeout(translationTimer)
+  translationTimer = null
+  autoPending.value = false
+}
+
+function invalidateTranslation() {
+  clearTranslationTimer()
+  ++requestSeq
+  translationController?.abort()
+  translationController = null
+  translating.value = false
+}
+
+function translationKey() {
+  return JSON.stringify([provider.value, sourceLang.value, targetLang.value, sourceText.value.trim()])
+}
+
+function scheduleTranslation() {
+  clearTranslationTimer()
+  if (!autoTranslate.value || composing.value || !sourceText.value.trim() || overLimit.value
+      || sourceLang.value === targetLang.value || !currentConn.value?.configured
+      || !currentConn.value?.enabled || !credentialKeyReady.value) return
+  if (result.value && lastSuccessKey === translationKey()) return
+  autoPending.value = true
+  translationTimer = window.setTimeout(() => { void translate(true) }, 800)
+}
+
+async function translate(automatic: unknown = false) {
+  clearTranslationTimer()
+  if (translating.value || composing.value) return
   const text = sourceText.value.trim()
-  if (!text) {
-    ElMessage.warning('请输入需要翻译的内容')
-    return
-  }
-  if (overLimit.value) {
-    ElMessage.warning('内容超过这个服务的上限，请缩短后再翻（不会自动截断）')
-    return
-  }
-  if (sourceLang.value === targetLang.value) {
-    ElMessage.warning('两边语言不能一样')
+  const warning = !text ? '请输入需要翻译的内容'
+    : overLimit.value ? '内容超过这个服务的上限，请缩短后再翻（不会自动截断）'
+    : sourceLang.value === targetLang.value ? '两边语言不能一样'
+    : !currentConn.value?.configured || !currentConn.value?.enabled || !credentialKeyReady.value
+      ? '请先在服务设置中配置并启用翻译服务' : ''
+  if (warning) {
+    if (automatic !== true) ElMessage.warning(warning)
     return
   }
   translating.value = true
   const seq = ++requestSeq
+  const key = translationKey()
+  const controller = new AbortController()
+  translationController = controller
   try {
     const { data } = await http.post('/translations', {
       provider: provider.value,
       source_text: text,
       source_lang: sourceLang.value,
       target_lang: targetLang.value,
-    })
+    }, { signal: controller.signal })
     if (seq !== requestSeq) return
     result.value = data
+    lastSuccessKey = key
     await loadHistory(1)
   } catch (error) {
-    if (seq === requestSeq) ElMessage.error(apiError(error).message)
+    if (seq === requestSeq && !controller.signal.aborted) ElMessage.error(apiError(error).message)
   } finally {
-    if (seq === requestSeq) translating.value = false
+    if (seq === requestSeq) {
+      translating.value = false
+      translationController = null
+    }
   }
 }
+
+watch([sourceText, sourceLang, targetLang, provider], () => {
+  invalidateTranslation()
+  result.value = null
+  scheduleTranslation()
+}, { flush: 'sync' })
+
+watch([autoTranslate, composing, () => currentConn.value?.configured,
+  () => currentConn.value?.enabled, credentialKeyReady], () => {
+  invalidateTranslation()
+  scheduleTranslation()
+}, { flush: 'sync' })
+
+watch(autoTranslate, (value) => {
+  try { localStorage.setItem('wb_auto_translate', String(value)) } catch { /* Storage may be unavailable. */ }
+})
+
+onBeforeUnmount(() => {
+  invalidateTranslation()
+  if (historyTimer !== null) window.clearTimeout(historyTimer)
+})
 
 async function pasteSource() {
   try {
@@ -387,6 +461,7 @@ async function copyResult() {
 }
 
 function clearResult() {
+  invalidateTranslation()
   result.value = null
 }
 
