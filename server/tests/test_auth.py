@@ -48,6 +48,18 @@ def test_theme_preference_persisted(auth):
     assert auth.get("/api/v1/preferences").json()["theme"] == "dark"
 
 
+def test_theme_color_preference_persisted(auth):
+    resp = auth.put("/api/v1/preferences", json={"theme_color": "#2563EB"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["theme_color"] == "#2563eb"
+    assert auth.get("/api/v1/preferences").json()["theme_color"] == "#2563eb"
+    assert auth.get("/api/v1/auth/me").json()["user"]["theme_color"] == "#2563eb"
+
+    bad = auth.put("/api/v1/preferences", json={"theme_color": "red"})
+    assert bad.status_code == 422
+    assert bad.json()["code"] == "INVALID_THEME_COLOR"
+
+
 def test_change_password_revokes_other_sessions():
     from fastapi.testclient import TestClient
 

@@ -40,6 +40,7 @@ class MappingIn(BaseModel):
     mapping: dict | None = None
     table_name: str | None = None
     fields: list[dict] | None = None
+    new_fields: list[dict] | None = None
 
 
 class ExportIn(BaseModel):
@@ -191,6 +192,26 @@ def _cell_text(value) -> str:
     return str(value).strip()
 
 
+def _draft_field(col: int, header: str, data_rows: list[tuple[int, list]], key: str | None = None) -> dict:
+    """按列内容猜一个字段类型，并给出可选的单选选项。"""
+    values = [row[col] for _, row in data_rows[:200] if col < len(row)]
+    ftype = _infer_type(values)
+    options = []
+    if ftype == "short_text":
+        uniq = {_cell_text(v) for v in values if v not in (None, "")}
+        if 1 < len(uniq) <= 12 and all(len(u) <= 40 for u in uniq):
+            ftype = "select"
+            options = [{"id": f"opt_{i}", "name": name} for i, name in enumerate(sorted(uniq))]
+    return {
+        "key": key or f"new_{col}",
+        "name": (header or f"列{col + 1}")[:50],
+        "type": ftype,
+        "required": False,
+        "options": options,
+        "column": col,
+    }
+
+
 def _infer_type(values: list) -> str:
     texts = [_cell_text(v) for v in values if v not in (None, "")]
     if not texts:
@@ -264,43 +285,43 @@ async def preview_import(
     if not data_rows:
         raise ApiError("NO_DATA_ROWS", "文件里没有数据行", 422)
 
-    fields: list[DataField] = []
+    fields: list[dict] = []
+    new_fields: list[dict] = []
+    new_drafts: list[dict] = []
+    existing_fields: list[dict] = []
     mode = "existing"
     table = None
     if table_id:
         table = db.get(DataTable, table_id)
         if not table or table.deleted_at is not None:
             raise ApiError("TABLE_NOT_FOUND", "表格不存在", 404)
-        fields = list(
+        existing = list(
             db.scalars(
                 select(DataField).where(DataField.table_id == table_id).order_by(DataField.sort_order)
             ).all()
         )
+        existing_fields = [
+            {"key": f.key, "name": f.name, "type": f.type, "required": f.required, "options": f.options or []}
+            for f in existing
+        ]
+        # 每一列都先猜好类型；同名列直接对应，其余默认按新字段导入，用户可改成现有列
+        drafts = [_draft_field(col, header, data_rows) for col, header in enumerate(headers)]
+        by_name = {f.name: f for f in existing}
         mapping = {}
         for col, header in enumerate(headers):
-            match = next((f for f in fields if f.name == header), None)
-            mapping[str(col)] = match.key if match else None
+            match = by_name.get(header)
+            if match:
+                mapping[str(col)] = match.key
+            else:
+                mapping[str(col)] = drafts[col]["key"]
+                new_fields.append(drafts[col])
+        new_drafts = drafts
     else:
         mode = "new_table"
-        drafts = []
-        for col, header in enumerate(headers):
-            column_values = [row[col] for _, row in data_rows[:200]]
-            ftype = _infer_type(column_values)
-            options = []
-            if ftype == "short_text":
-                uniq = {_cell_text(v) for v in column_values if v not in (None, "")}
-                if 1 < len(uniq) <= 12 and all(len(u) <= 40 for u in uniq):
-                    ftype = "select"
-                    options = [{"id": f"opt_{i}", "name": name} for i, name in enumerate(sorted(uniq))]
-            drafts.append(
-                {
-                    "key": f"col_{col}",
-                    "name": header,
-                    "type": ftype,
-                    "required": False,
-                    "options": options,
-                }
-            )
+        fields = [
+            _draft_field(col, header, data_rows, key=f"col_{col}")
+            for col, header in enumerate(headers)
+        ]
         mapping = {str(col): f"col_{col}" for col in range(len(headers))}
 
     job = DataTransferJob(
@@ -314,7 +335,8 @@ async def preview_import(
             "rows": [[_cell_text(v) for v in row] for _, row in data_rows],
             "row_numbers": [n for n, _ in data_rows],
             "mapping": mapping,
-            "fields": drafts if mode == "new_table" else None,
+            "fields": fields if mode == "new_table" else None,
+            "new_fields": new_fields if mode == "existing" else None,
             "table_name": table.name if table else (Path(file.filename or "导入数据").stem[:100]),
             "file_name": file.filename,
         },
@@ -335,6 +357,8 @@ async def preview_import(
         "sample_row_numbers": [n for n, _ in data_rows[:10]],
         "mapping": job.payload["mapping"],
         "fields": job.payload["fields"],
+        "new_fields": new_drafts,
+        "existing_fields": existing_fields,
         "table_name": job.payload["table_name"],
     }
 
@@ -430,6 +454,8 @@ def update_draft(job_id: int, payload: MappingIn, db: Session = Depends(get_db))
         data["mapping"] = payload.mapping
     if payload.fields is not None:
         data["fields"] = payload.fields
+    if payload.new_fields is not None:
+        data["new_fields"] = payload.new_fields
     if payload.table_name:
         data["table_name"] = payload.table_name
     job.payload = data
@@ -447,6 +473,16 @@ def update_draft(job_id: int, payload: MappingIn, db: Session = Depends(get_db))
             }
             for f in db.scalars(select(DataField).where(DataField.table_id == job.table_id)).all()
         ]
+        new_def = list(data.get("new_fields") or [])
+        used_names = {f["name"] for f in fields}
+        for fd in new_def:
+            name = str(fd.get("name") or "").strip()[:50]
+            if not name:
+                raise ApiError("FIELD_NAME_REQUIRED", "新字段名不能为空", 422)
+            if name in used_names:
+                raise ApiError("FIELD_NAME_DUPLICATED", f"已有同名字段「{name}」，请换个名字", 409)
+            used_names.add(name)
+        fields += new_def
     job.errors = _validate_rows(job, fields)
     job.status = "ready" if not job.errors else "needs_fix"
     job.updated_at = utcnow()
@@ -474,10 +510,20 @@ def confirm_import(job_id: int, db: Session = Depends(get_db)):
         table = db.get(DataTable, job.table_id) if job.table_id else None
         if not table or table.deleted_at is not None:
             raise ApiError("TABLE_NOT_FOUND", "表格不存在", 404)
-        fields_def = [
+        existing_def = [
             {"key": f.key, "name": f.name, "type": f.type, "required": f.required, "options": f.options or []}
             for f in db.scalars(select(DataField).where(DataField.table_id == table.id)).all()
         ]
+        new_def = list(data.get("new_fields") or [])
+        used_names = {f["name"] for f in existing_def}
+        for fd in new_def:
+            name = str(fd.get("name") or "").strip()[:50]
+            if not name:
+                raise ApiError("FIELD_NAME_REQUIRED", "新字段名不能为空", 422)
+            if name in used_names:
+                raise ApiError("FIELD_NAME_DUPLICATED", f"已有同名字段「{name}」，请换个名字", 409)
+            used_names.add(name)
+        fields_def = existing_def + new_def
 
     errors = _validate_rows(job, fields_def)
     if errors:
@@ -528,9 +574,29 @@ def confirm_import(job_id: int, db: Session = Depends(get_db)):
             job.table_id = table.id
         else:
             table = db.get(DataTable, job.table_id)
+            new_def = list(data.get("new_fields") or [])
+            created: dict[str, str] = {}
+            last_order = db.scalar(
+                select(func.max(DataField.sort_order)).where(DataField.table_id == table.id)
+            )
+            start_order = int(last_order) + 1 if last_order is not None else 0
+            for index, fd in enumerate(new_def, start=start_order):
+                field = DataField(
+                    table_id=table.id,
+                    name=str(fd["name"]).strip()[:50],
+                    type=fd["type"],
+                    required=bool(fd.get("required")),
+                    options=fd.get("options") or None,
+                    sort_order=index,
+                )
+                db.add(field)
+                db.flush()
+                created[fd["key"]] = field.key
             for record in prepared:
-                db.add(DataRecord(table_id=table.id, data=record))
-            table.schema_version += 0
+                mapped = {created.get(key, key): value for key, value in record.items()}
+                db.add(DataRecord(table_id=table.id, data=mapped))
+            if new_def:
+                table.schema_version += 1
         db.flush()
         job.status = "success"
         job.errors = []

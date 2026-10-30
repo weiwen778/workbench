@@ -4,92 +4,101 @@
       <div class="title-15">设置</div>
     </div>
 
-    <div class="page-body scroll-area">
+    <div class="page-body">
       <el-card shadow="never" class="block">
         <div class="group-title">主题</div>
         <div class="row">
-          <span class="text-13 secondary">浅色／深色会保存到账号，桌面和平板读取同一偏好</span>
-          <div class="spacer" />
           <el-radio-group :model-value="session.theme" @change="changeTheme">
             <el-radio-button value="light">浅色</el-radio-button>
             <el-radio-button value="dark">深色</el-radio-button>
           </el-radio-group>
+          <span class="text-13 secondary" style="margin-left: 10px">主题色</span>
+          <el-color-picker
+            :model-value="session.themeColor"
+            :predefine="presetColors"
+            @change="changeColor"
+          />
+          <el-button text size="small" @click="changeColor(DEFAULT_THEME_COLOR)">恢复默认</el-button>
+          <div class="spacer" />
+          <span class="text-12 muted">主题和颜色会保存到账号，换设备也一致</span>
         </div>
       </el-card>
 
       <el-card shadow="never" class="block">
         <div class="group-title">账号</div>
-        <el-form label-position="top" style="max-width: 420px">
+        <el-form label-position="top" style="max-width: 760px">
           <el-form-item label="用户名">
-            <el-input :model-value="session.user?.username" disabled />
+            <el-input :model-value="session.user?.username" disabled style="max-width: 420px" />
           </el-form-item>
-          <el-form-item label="原密码">
-            <el-input v-model="passwordForm.old_password" type="password" show-password autocomplete="current-password" />
-          </el-form-item>
-          <el-form-item label="新密码（至少 8 位）">
-            <el-input v-model="passwordForm.new_password" type="password" show-password autocomplete="new-password" />
-          </el-form-item>
-          <el-form-item label="确认新密码">
-            <el-input v-model="passwordForm.confirm" type="password" show-password autocomplete="new-password" />
-          </el-form-item>
-          <el-button type="primary" :loading="savingPassword" @click="changePassword">修改密码</el-button>
+          <div class="pwd-grid">
+            <el-form-item label="原密码">
+              <el-input v-model="passwordForm.old_password" type="password" show-password autocomplete="current-password" />
+            </el-form-item>
+            <el-form-item label="新密码（至少 8 位）">
+              <el-input v-model="passwordForm.new_password" type="password" show-password autocomplete="new-password" />
+            </el-form-item>
+            <el-form-item label="确认新密码">
+              <el-input v-model="passwordForm.confirm" type="password" show-password autocomplete="new-password" />
+            </el-form-item>
+          </div>
+          <div class="row">
+            <el-button type="primary" :loading="savingPassword" @click="changePassword">修改密码</el-button>
+            <div class="spacer" />
+            <el-button plain @click="handleLogout">退出登录</el-button>
+          </div>
           <div class="text-12 muted" style="margin-top: 6px">改完后其他设备上的登录会失效，当前这台不受影响。</div>
         </el-form>
       </el-card>
 
-      <el-card shadow="never" class="block">
-        <div class="group-title">翻译服务</div>
-        <div class="row">
-          <span class="text-13 secondary">
-            百度、有道、DeepSeek 的密钥在翻译页「服务设置」里填，保存后只显示打码内容
-          </span>
-          <div class="spacer" />
-          <el-button class="btn-tonal" @click="$router.push('/translate')">前往翻译页</el-button>
-        </div>
-      </el-card>
-
-      <el-card shadow="never" class="block">
-        <div class="group-title">使用说明</div>
-        <div class="usage-grid">
-          <div v-for="item in usage" :key="item.k" class="usage-item">
-            <span class="muted">{{ item.k }}</span>
-            <span>{{ item.v }}</span>
+      <div class="bottom-grid">
+        <el-card shadow="never" class="block">
+          <div class="group-title">翻译服务</div>
+          <div class="row">
+            <span class="text-13 secondary">
+              百度、有道、DeepSeek 的密钥在翻译页「服务设置」里填，保存后只显示打码内容
+            </span>
+            <div class="spacer" />
+            <el-button class="btn-tonal" @click="$router.push('/translate')">前往翻译页</el-button>
           </div>
-        </div>
-      </el-card>
+        </el-card>
 
-      <el-card shadow="never" class="block">
-        <div class="group-title">系统状态</div>
-        <div class="usage-grid">
-          <div class="usage-item"><span class="muted">服务状态</span><span>{{ health.status || '未知' }}</span></div>
-          <div class="usage-item"><span class="muted">数据存储</span><span>{{ health.database || '未知' }}</span></div>
-          <div class="usage-item"><span class="muted">时区</span><span>Asia/Shanghai（北京时间）</span></div>
-        </div>
-      </el-card>
+        <el-card shadow="never" class="block">
+          <div class="group-title">系统状态</div>
+          <div class="usage-grid">
+            <div class="usage-item"><span class="muted">服务状态</span><span>{{ health.status || '未知' }}</span></div>
+            <div class="usage-item"><span class="muted">数据存储</span><span>{{ health.database || '未知' }}</span></div>
+            <div class="usage-item"><span class="muted">时区</span><span>Asia/Shanghai（北京时间）</span></div>
+          </div>
+        </el-card>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { apiError, http } from '@/api/client'
-import { applyTheme, session } from '@/stores/session'
+import { applyTheme, logout, session, setThemeColor } from '@/stores/session'
+import { DEFAULT_THEME_COLOR } from '@/theme-color'
 
+const router = useRouter()
 const passwordForm = reactive({ old_password: '', new_password: '', confirm: '' })
 const savingPassword = ref(false)
 const health = reactive<Record<string, any>>({})
 
-const usage = [
-  { k: '每天的工作', v: '登录后默认进入店铺打卡／今日，按分类处理，完成后手动打勾；日／周／月切换在顶部' },
-  { k: '多久做一次', v: '每天的任务当天有效；每周从周一 0 点开始；每月按自然月算。一轮结束后只能看，不能补打卡' },
-  { k: '待办', v: '待办下面挂了子任务时，完成与否看子任务；过了截止时间也能补完成，不会自动挪走' },
-  { k: '表格', v: '点一行就能打开表单修改；筛选和排序只在这次有效，重新进来会恢复默认' },
-  { k: '附件', v: '每个附件只能放一个文件，最大 20 MB；预览和下载都要先登录' },
-  { k: '笔记', v: '停手约 1.5 秒就自动保存；手动保存和每 5 分钟会留一个旧版本，最多留 100 个' },
-  { k: '回收站', v: '表格、表格里的行、笔记、便利贴保留 30 天；待办、店铺、社媒账号不进回收站' },
-  { k: '翻译', v: '三个翻译服务各自配置；译文不能直接改，历史在页面下方，只能看和复制' },
-]
+const presetColors = ['#39776f', '#2563eb', '#7c3aed', '#db2777', '#ea580c', '#16a34a', '#475569', '#0f766e']
+
+async function changeColor(value: string | null) {
+  if (!value) return
+  try {
+    await setThemeColor(value)
+    ElMessage.success('主题色已更新')
+  } catch (error) {
+    ElMessage.error(apiError(error).message)
+  }
+}
 
 async function changeTheme(value: any) {
   const theme = value === 'dark' ? 'dark' : 'light'
@@ -131,6 +140,11 @@ async function changePassword() {
   }
 }
 
+async function handleLogout() {
+  await logout()
+  router.replace('/login')
+}
+
 onMounted(async () => {
   try {
     const { data } = await http.get('/health')
@@ -143,13 +157,37 @@ onMounted(async () => {
 
 <style scoped>
 .block {
+  flex: 0 0 auto;
   margin-bottom: 10px;
+}
+.bottom-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.bottom-grid .block {
+  margin-bottom: 0;
+}
+@media (max-width: 900px) {
+  .bottom-grid {
+    grid-template-columns: 1fr;
+  }
 }
 .row {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+.pwd-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 12px;
+}
+@media (max-width: 900px) {
+  .pwd-grid {
+    grid-template-columns: 1fr;
+  }
 }
 .usage-grid {
   display: grid;

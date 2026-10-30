@@ -53,7 +53,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh } from '@/icons'
 import { apiError, http } from '@/api/client'
 
 const items = ref<any[]>([])

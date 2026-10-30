@@ -104,44 +104,14 @@ def ensure_rule_instances(
     db.flush()
 
 
-def ensure_targets_period(db: Session, targets: list[WorkTarget], period_type: str) -> None:
-    """Generate current/history instances in batches without per-rule SELECTs."""
-    active = {target.id: target for target in targets if target.status == "active"}
-    if not active:
-        return
-    rules = list(db.scalars(select(CheckinRule).where(
-        CheckinRule.target_id.in_(active), CheckinRule.active.is_(True)
-    )).all())
-    if not rules:
-        return
-    groups = {group.id: group for group in db.scalars(select(CheckinGroup).where(
-        CheckinGroup.id.in_({rule.group_id for rule in rules})
-    )).all()}
-    starts: dict[int, set[date]] = {rule.id: set() for rule in rules}
-    for rule_id, period_start in db.execute(select(
-        CheckinInstance.rule_id, CheckinInstance.period_start
-    ).where(CheckinInstance.rule_id.in_(starts), CheckinInstance.period_type == period_type)):
-        starts[rule_id].add(period_start)
-    today = today_local()
-    current_start, current_end = period_bounds(period_type, today)
-    for rule in rules:
-        collapse_pending(db, rule, today)
-        target = active[rule.target_id]
-        existing = starts[rule.id]
-        def allowed(start: date) -> bool:
-            return target.generate_from is None or start >= target.generate_from
-        if current_start not in existing and allowed(current_start):
-            _create_instance(db, rule, target, groups.get(rule.group_id), period_type, current_start, current_end)
-            existing.add(current_start)
-        anchor = min([*existing, utc_to_local(rule.created_at).date()])
-        for start, end in iter_periods(period_type, anchor, today):
-            if start not in existing and allowed(start) and end <= today:
-                _create_instance(db, rule, target, groups.get(rule.group_id), period_type, start, end)
-    db.flush()
-
-
 def ensure_target_period(db: Session, target: WorkTarget, period_type: str) -> None:
-    ensure_targets_period(db, [target], period_type)
+    rules = db.scalars(
+        select(CheckinRule).where(CheckinRule.target_id == target.id, CheckinRule.active.is_(True))
+    ).all()
+    for rule in rules:
+        collapse_pending(db, rule)
+        ensure_rule_instances(db, rule, target, period_type=period_type, backfill=True)
+    db.flush()
 
 
 def refresh_locks(db: Session, instances: list[CheckinInstance]) -> None:

@@ -187,7 +187,7 @@
     />
     <AttachmentPreview v-model="previewOpen" :file="previewFile" />
     <FieldManager v-model="fieldsOpen" :table-id="tableId" :fields="fields" @updated="reload" />
-    <ImportWizard v-model="importOpen" :table-id="tableId" :existing-fields="fields" @done="loadRecords" />
+    <ImportWizard v-model="importOpen" :table-id="tableId" :existing-fields="fields" @done="reload" />
 
     <!-- 导出 -->
     <el-dialog v-model="exportOpen" title="导出表格" width="420px">
@@ -212,7 +212,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Close, Download, InfoFilled, Plus, Refresh, Setting, Sort, Upload } from '@element-plus/icons-vue'
+import { Check, Close, Download, InfoFilled, Plus, Refresh, Setting, Sort, Upload } from '@/icons'
 import { apiError, http } from '@/api/client'
 import RecordDrawer from '@/components/RecordDrawer.vue'
 import AttachmentPreview from '@/components/AttachmentPreview.vue'

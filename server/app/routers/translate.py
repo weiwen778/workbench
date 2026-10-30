@@ -11,9 +11,10 @@ from ..config import settings
 from ..db import get_db
 from ..deps import get_current_user
 from ..errors import ApiError
-from ..models import TranslationConnection, TranslationHistory, utcnow
+from ..models import TranslationConnection, TranslationFavorite, TranslationHistory, utcnow
 from ..services import providers as prov
 from ..services.encryption import decrypt_config, encrypt_config, mask
+from ..services.languages import language_catalog, languages_for, supports
 from ..utils import iso_z
 
 router = APIRouter(tags=["translate"], dependencies=[Depends(get_current_user)])
@@ -43,6 +44,15 @@ class TranslateIn(BaseModel):
     source_text: str
     source_lang: str = "auto"
     target_lang: str = "en"
+
+
+class FavoriteIn(BaseModel):
+    source_text: str = Field(min_length=1, max_length=20_000)
+    target_text: str = Field(min_length=1, max_length=40_000)
+    source_lang: str = "auto"
+    target_lang: str = "en"
+    provider: str
+    model: str | None = Field(default=None, max_length=100)
 
 
 def _conn(db: Session, provider: str) -> TranslationConnection:
@@ -76,6 +86,7 @@ def connection_payload(conn: TranslationConnection) -> dict:
         "base_url": config.get("base_url") or "",
         "model": conn.model,
         "limits": prov.limits_for(conn.provider),
+        "languages": languages_for(conn.provider),
         "last_test_ok": conn.last_test_ok,
         "last_test_message": conn.last_test_message,
         "last_tested_at": iso_z(conn.last_tested_at),
@@ -95,6 +106,7 @@ def list_connections(db: Session = Depends(get_db)):
         if settings.encryption_key
         else "服务端尚未配置翻译凭据主密钥（WB_ENCRYPTION_KEY），暂时无法保存或使用翻译服务",
         "items": items,
+        "languages": language_catalog(),
     }
 
 
@@ -173,9 +185,11 @@ def test_connection(provider: str, db: Session = Depends(get_db)):
 def translate(payload: TranslateIn, db: Session = Depends(get_db)):
     if payload.provider not in PROVIDERS:
         raise ApiError("UNKNOWN_PROVIDER", "未知翻译服务", 422)
-    source_lang = payload.source_lang if payload.source_lang in {"auto", "zh", "en"} else "auto"
-    if payload.target_lang not in {"zh", "en"}:
-        raise ApiError("INVALID_TARGET_LANG", "目标语言只能是中文或英语", 422)
+    source_lang = payload.source_lang if payload.source_lang != "auto" else "auto"
+    if source_lang != "auto" and not supports(payload.provider, source_lang):
+        raise ApiError("UNSUPPORTED_LANGUAGE", f"{PROVIDERS[payload.provider]} 不支持这个源语言", 422)
+    if not supports(payload.provider, payload.target_lang):
+        raise ApiError("UNSUPPORTED_LANGUAGE", f"{PROVIDERS[payload.provider]} 不支持这个目标语言", 422)
     if source_lang == payload.target_lang:
         raise ApiError("SAME_LANGUAGE", "源语言与目标语言不能相同", 422)
 
@@ -212,6 +226,7 @@ def translate(payload: TranslateIn, db: Session = Depends(get_db)):
     db.commit()
     return {
         "id": history.id,
+        "source_text": text,
         "target_text": target_text,
         "provider": payload.provider,
         "provider_name": PROVIDERS[payload.provider],
@@ -278,3 +293,78 @@ def history_detail(history_id: int, db: Session = Depends(get_db)):
         "duration_ms": h.duration_ms,
         "created_at": iso_z(h.created_at),
     }
+
+
+@router.delete("/translation-history/{history_id}")
+def delete_history(history_id: int, db: Session = Depends(get_db)):
+    h = db.get(TranslationHistory, history_id)
+    if not h:
+        raise ApiError("NOT_FOUND", "历史记录不存在", 404)
+    db.delete(h)
+    db.commit()
+    return {"deleted": True}
+
+def _favorite_payload(fav: TranslationFavorite) -> dict:
+    return {
+        "id": fav.id,
+        "source_text": fav.source_text,
+        "target_text": fav.target_text,
+        "source_lang": fav.source_lang,
+        "target_lang": fav.target_lang,
+        "provider": fav.provider,
+        "provider_name": PROVIDERS.get(fav.provider, fav.provider),
+        "model": fav.model,
+        "created_at": iso_z(fav.created_at),
+    }
+
+
+@router.get("/translation-favorites")
+def list_favorites(db: Session = Depends(get_db)):
+    rows = db.scalars(
+        select(TranslationFavorite).order_by(
+            TranslationFavorite.created_at.desc(), TranslationFavorite.id.desc()
+        )
+    ).all()
+    return {"total": len(rows), "items": [_favorite_payload(row) for row in rows]}
+
+
+@router.post("/translation-favorites", status_code=201)
+def add_favorite(payload: FavoriteIn, db: Session = Depends(get_db)):
+    if payload.provider not in PROVIDERS:
+        raise ApiError("UNKNOWN_PROVIDER", "未知翻译服务", 422)
+    source = payload.source_text.strip()
+    target = payload.target_text.strip()
+    if not source or not target:
+        raise ApiError("EMPTY_FAVORITE", "没有可收藏的内容", 422)
+    existing = db.scalar(
+        select(TranslationFavorite).where(
+            TranslationFavorite.source_text == source,
+            TranslationFavorite.target_text == target,
+            TranslationFavorite.provider == payload.provider,
+        )
+    )
+    if existing:
+        return _favorite_payload(existing)
+    fav = TranslationFavorite(
+        source_text=source,
+        target_text=target,
+        source_lang=payload.source_lang,
+        target_lang=payload.target_lang,
+        provider=payload.provider,
+        model=payload.model,
+        created_at=utcnow(),
+    )
+    db.add(fav)
+    db.commit()
+    db.refresh(fav)
+    return _favorite_payload(fav)
+
+
+@router.delete("/translation-favorites/{favorite_id}")
+def delete_favorite(favorite_id: int, db: Session = Depends(get_db)):
+    fav = db.get(TranslationFavorite, favorite_id)
+    if not fav:
+        raise ApiError("NOT_FOUND", "收藏不存在", 404)
+    db.delete(fav)
+    db.commit()
+    return {"deleted": True}

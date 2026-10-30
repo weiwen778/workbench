@@ -39,9 +39,9 @@
           <div class="memo-foot">
             <span class="text-12">{{ formatDate(memo.updated_at) }}</span>
             <div class="actions-group">
-              <el-button text size="small" :icon="CopyDocument" @click="copyContent(memo)">复制</el-button>
-              <el-button text size="small" :icon="Edit" @click="openEdit(memo)">编辑</el-button>
-              <el-button text size="small" :icon="Delete" @click="remove(memo)">删除</el-button>
+              <el-button text circle size="small" :icon="CopyDocument" title="复制正文" @click="copyContent(memo)" />
+              <el-button text circle size="small" :icon="Edit" title="编辑" @click="openEdit(memo)" />
+              <el-button text circle size="small" :icon="Delete" title="删除" @click="remove(memo)" />
             </div>
           </div>
         </div>
@@ -111,7 +111,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { CopyDocument, Delete, Edit, Plus, Refresh, Search } from '@element-plus/icons-vue'
+import { CopyDocument, Delete, Edit, Plus, Refresh, Search } from '@/icons'
 import { apiError, copyText, http } from '@/api/client'
 
 const memos = ref<any[]>([])
@@ -141,7 +141,7 @@ const colors = [
 let searchTimer: number | null = null
 
 function formatDate(value: string) {
-  return value ? new Date(value).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''
+  return value ? new Date(value).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }) : ''
 }
 
 async function load() {

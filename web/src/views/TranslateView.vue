@@ -2,7 +2,7 @@
   <div class="page">
     <!-- 顶部操作条 -->
     <div class="page-toolbar">
-      <el-select v-model="provider" style="width: 150px">
+      <el-select v-model="provider" style="width: 150px" @change="onProviderChange">
         <el-option
           v-for="conn in connections"
           :key="conn.provider"
@@ -16,25 +16,20 @@
         </el-option>
       </el-select>
 
-      <el-select v-model="sourceLang" style="width: 120px">
+      <el-select v-model="sourceLang" style="width: 130px">
         <el-option label="自动检测" value="auto" />
-        <el-option label="中文" value="zh" />
-        <el-option label="英语" value="en" />
+        <el-option v-for="lang in supportedLangs" :key="lang.code" :label="lang.name" :value="lang.code" />
       </el-select>
 
       <el-button text :icon="Switch" circle title="交换语言" @click="swapLanguages" />
 
-      <el-select v-model="targetLang" style="width: 110px">
-        <el-option label="英语" value="en" />
-        <el-option label="中文" value="zh" />
+      <el-select v-model="targetLang" style="width: 130px">
+        <el-option v-for="lang in supportedLangs" :key="lang.code" :label="lang.name" :value="lang.code" />
       </el-select>
 
       <el-button type="primary" :icon="Promotion" :loading="translating" @click="translate">
         翻译
       </el-button>
-
-      <el-switch v-model="autoTranslate" active-text="自动翻译" aria-label="自动翻译" />
-      <span class="text-12 muted" role="status">{{ translationHint }}</span>
 
       <span class="text-12" :class="{ danger: overLimit }">
         {{ counterText }}
@@ -60,9 +55,7 @@
             v-model="sourceText"
             type="textarea"
             resize="none"
-            :placeholder="autoTranslate ? '输入或粘贴内容，停止输入后自动翻译' : '输入需要翻译的内容，Ctrl / Command + Enter 开始翻译'"
-            @compositionstart="composing = true"
-            @compositionend="composing = false"
+            placeholder="输入需要翻译的内容，Ctrl / Command + Enter 开始翻译"
             @keydown.ctrl.enter.prevent="translate"
             @keydown.meta.enter.prevent="translate"
           />
@@ -86,61 +79,88 @@
           <div v-else class="text-13 muted">译文只读，可复制到其他地方修改</div>
         </div>
         <div class="pane-foot">
+          <el-button text size="small" :icon="Favorite" :disabled="!result" @click="favoriteResult">收藏</el-button>
           <el-button text size="small" :icon="CopyDocument" :disabled="!result" @click="copyResult">复制译文</el-button>
           <el-button text size="small" :icon="Delete" :disabled="!result" @click="clearResult">清空译文</el-button>
         </div>
       </div>
     </div>
 
-    <!-- 历史 -->
-    <div class="history-block translate-history">
-      <div class="history-head">
-        <span class="group-title" style="padding: 0">翻译历史</span>
-        <el-input
-          v-model="historyQuery"
-          size="small"
-          placeholder="搜索原文或译文"
-          clearable
-          style="width: 200px"
-          :prefix-icon="Search"
-          @input="onHistorySearch"
-        />
-        <el-select v-model="historyProvider" size="small" style="width: 130px" clearable placeholder="全部服务" @change="loadHistory(1)">
-          <el-option v-for="conn in connections" :key="conn.provider" :label="conn.name" :value="conn.provider" />
-        </el-select>
-        <el-button text size="small" :icon="Refresh" @click="loadHistory(page)">刷新</el-button>
-        <div class="spacer" />
-        <span class="text-12 muted">共 {{ historyTotal }} 条</span>
-      </div>
-
-      <div class="history-list">
-        <div v-for="item in history" :key="item.id" class="history-row">
-          <div class="history-text">
-            <div class="ellipsis-1">{{ item.source_text }}</div>
-            <div class="ellipsis-1 muted">{{ item.target_text }}</div>
-            <div class="text-12 muted" style="margin-top: 2px">
-              {{ langText(item.source_lang) }} → {{ langText(item.target_lang) }} ·
-              {{ item.provider_name }}{{ item.model ? ' · ' + item.model : '' }} · {{ formatTime(item.created_at) }}
+    <div class="translate-bottom">
+      <!-- 收藏 -->
+      <div class="bottom-pane">
+        <div class="history-head">
+          <span class="group-title" style="padding: 0">收藏</span>
+          <div class="spacer" />
+          <span class="text-12 muted">共 {{ favorites.length }} 条</span>
+        </div>
+        <div class="history-list">
+          <div v-for="item in favorites" :key="item.id" class="history-row">
+            <div class="history-text">
+              <div class="ellipsis-1">{{ item.source_text }}</div>
+              <el-icon class="history-arrow"><Direction /></el-icon>
+              <div class="ellipsis-1 muted">{{ item.target_text }}</div>
+            </div>
+            <div class="actions-group">
+              <el-button text size="small" :icon="CopyDocument" title="复制译文" @click="copyFavorite(item)" />
+              <el-button text size="small" :icon="Delete" title="移除收藏" @click="removeFavorite(item)" />
             </div>
           </div>
-          <div class="actions-group">
-            <el-button text size="small" @click="openDetail(item)">详情</el-button>
-            <el-button text size="small" :icon="CopyDocument" @click="copyHistory(item)">复制</el-button>
+          <div v-if="!favorites.length" class="empty-hint" style="padding: 24px">
+            还没有收藏，翻译后可点「收藏」或从历史里收藏
           </div>
-        </div>
-        <div v-if="!history.length" class="empty-hint" style="padding: 24px">
-          {{ historyQuery ? '没有匹配的历史记录' : '还没有翻译记录' }}
         </div>
       </div>
 
-      <el-pagination
-        v-if="historyTotal > pageSize"
-        v-model:current-page="page"
-        :page-size="pageSize"
-        :total="historyTotal"
-        layout="prev, pager, next"
-        @current-change="loadHistory"
-      />
+      <!-- 历史 -->
+      <div class="bottom-pane">
+        <div class="history-head">
+          <span class="group-title" style="padding: 0">历史</span>
+          <el-input
+            v-model="historyQuery"
+            size="small"
+            placeholder="搜索原文或译文"
+            clearable
+            style="width: 150px"
+            :prefix-icon="Search"
+            @input="onHistorySearch"
+          />
+          <el-select v-model="historyProvider" size="small" style="width: 110px" clearable placeholder="全部服务" @change="loadHistory(1)">
+            <el-option v-for="conn in connections" :key="conn.provider" :label="conn.name" :value="conn.provider" />
+          </el-select>
+          <el-button text size="small" :icon="Refresh" title="刷新" @click="loadHistory(page)" />
+          <div class="spacer" />
+          <span class="text-12 muted">共 {{ historyTotal }} 条</span>
+        </div>
+
+        <div class="history-list">
+          <div v-for="item in history" :key="item.id" class="history-row">
+            <div class="history-text">
+              <div class="ellipsis-1">{{ item.source_text }}</div>
+              <el-icon class="history-arrow"><Direction /></el-icon>
+              <div class="ellipsis-1 muted">{{ item.target_text }}</div>
+            </div>
+            <div class="actions-group">
+              <el-button text size="small" @click="openDetail(item)">详情</el-button>
+              <el-button text size="small" :icon="Favorite" title="收藏" @click="favoriteHistory(item)" />
+              <el-button text size="small" :icon="CopyDocument" title="复制" @click="copyHistory(item)" />
+              <el-button text size="small" :icon="Delete" title="删除" @click="removeHistory(item)" />
+            </div>
+          </div>
+          <div v-if="!history.length" class="empty-hint" style="padding: 24px">
+            {{ historyQuery ? '没有匹配的历史记录' : '还没有翻译记录' }}
+          </div>
+        </div>
+
+        <el-pagination
+          v-if="historyTotal > pageSize"
+          v-model:current-page="page"
+          :page-size="pageSize"
+          :total="historyTotal"
+          layout="prev, pager, next"
+          @current-change="loadHistory"
+        />
+      </div>
     </div>
 
     <!-- 历史详情 -->
@@ -224,37 +244,38 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   CopyDocument,
+  Direction,
   Delete,
   DocumentCopy,
+  Favorite,
   Promotion,
   Refresh,
   Search,
   Setting,
   Switch,
-} from '@element-plus/icons-vue'
+} from '@/icons'
 import { apiError, copyText, http } from '@/api/client'
 
 const connections = ref<any[]>([])
 const credentialKeyReady = ref(true)
+const languages = ref<{ code: string; name: string }[]>([])
 const provider = ref('baidu')
 const sourceLang = ref('auto')
 const targetLang = ref('en')
 const sourceText = ref('')
 const result = ref<any>(null)
 const translating = ref(false)
-const composing = ref(false)
-const autoTranslate = ref(readAutoPreference())
-const autoPending = ref(false)
 const settingsOpen = ref(false)
 const configDraft = reactive<Record<string, Record<string, string>>>({ baidu: {}, youdao: {}, deepseek: {} })
 const modelDraft = reactive<Record<string, string>>({})
 const savingProvider = ref('')
 const savingConfig = ref(false)
 
+const favorites = ref<any[]>([])
 const history = ref<any[]>([])
 const historyTotal = ref(0)
 const historyQuery = ref('')
@@ -265,16 +286,17 @@ const detailOpen = ref(false)
 const detail = ref<any>(null)
 
 let requestSeq = 0
-let translationTimer: number | null = null
-let translationController: AbortController | null = null
-let lastSuccessKey = ''
-
-function readAutoPreference() {
-  try { return localStorage.getItem('wb_auto_translate') !== 'false' } catch { return true }
-}
 let historyTimer: number | null = null
 
 const currentConn = computed(() => connections.value.find((c) => c.provider === provider.value))
+const langNames = computed<Record<string, string>>(() =>
+  Object.fromEntries(languages.value.map((item) => [item.code, item.name])),
+)
+// 不同服务支持的语言不一样，选项跟着当前服务走
+const supportedLangs = computed<{ code: string; name: string }[]>(() => {
+  const conn = connections.value.find((c) => c.provider === provider.value)
+  return conn?.languages?.length ? conn.languages : languages.value
+})
 const limitInfo = computed(() => currentConn.value?.limits || { unit: 'char', value: 4000 })
 const used = computed(() =>
   limitInfo.value.unit === 'byte' ? new TextEncoder().encode(sourceText.value).length : sourceText.value.length,
@@ -283,15 +305,6 @@ const overLimit = computed(() => used.value > limitInfo.value.value)
 const counterText = computed(() => {
   const unit = limitInfo.value.unit === 'byte' ? '字节' : '字符'
   return `${used.value} / ${limitInfo.value.value} ${unit}`
-})
-
-const translationHint = computed(() => {
-  if (translating.value) return '正在翻译…'
-  if (!autoTranslate.value) return ''
-  if (!currentConn.value?.configured || !currentConn.value?.enabled || !credentialKeyReady.value) return '请先配置并启用翻译服务'
-  if (overLimit.value) return '内容超出上限，已暂停自动翻译'
-  if (sourceLang.value === targetLang.value) return '请选择不同的原文和译文语言'
-  return autoPending.value ? '等待输入结束…' : '停止输入 0.8 秒后翻译'
 })
 
 const providerFields: Record<string, { key: string; label: string }[]> = {
@@ -317,7 +330,8 @@ function providerHint(conn: any) {
 }
 
 function langText(code: string) {
-  return { auto: '自动检测', zh: '中文', en: '英语' }[code] || code
+  if (code === 'auto') return '自动检测'
+  return langNames.value[code] || code
 }
 
 function formatTime(value: string) {
@@ -329,6 +343,7 @@ async function loadConnections() {
     const { data } = await http.get('/translation-connections')
     connections.value = data.items
     credentialKeyReady.value = data.credential_key_ready
+    languages.value = data.languages || []
     for (const conn of data.items) {
       if (!configDraft[conn.provider]) configDraft[conn.provider] = {}
       modelDraft[conn.provider] = conn.model || ''
@@ -337,14 +352,33 @@ async function loadConnections() {
       const firstEnabled = connections.value.find((c: any) => c.enabled)
       if (firstEnabled) provider.value = firstEnabled.provider
     }
+    ensureLanguage()
   } catch (error) {
     ElMessage.error(apiError(error).message)
   }
 }
 
+// 换服务后把不在支持列表里的语言改掉，避免提交必然失败的组合
+function ensureLanguage() {
+  const codes = supportedLangs.value.map((item) => item.code)
+  if (!codes.length) return
+  if (sourceLang.value !== 'auto' && !codes.includes(sourceLang.value)) sourceLang.value = 'auto'
+  if (!codes.includes(targetLang.value)) {
+    targetLang.value = codes.find((code) => code !== sourceLang.value) || codes[0]
+  }
+}
+
+function onProviderChange() {
+  result.value = null
+  ensureLanguage()
+}
+
 function swapLanguages() {
   if (sourceLang.value === 'auto') {
-    sourceLang.value = targetLang.value === 'en' ? 'zh' : 'en'
+    const nextSource = targetLang.value
+    sourceLang.value = nextSource
+    targetLang.value =
+      supportedLangs.value.map((item) => item.code).find((code) => code !== nextSource) || nextSource
   } else {
     const tmp = sourceLang.value
     sourceLang.value = targetLang.value
@@ -352,93 +386,39 @@ function swapLanguages() {
   }
 }
 
-function clearTranslationTimer() {
-  if (translationTimer !== null) window.clearTimeout(translationTimer)
-  translationTimer = null
-  autoPending.value = false
-}
-
-function invalidateTranslation() {
-  clearTranslationTimer()
-  ++requestSeq
-  translationController?.abort()
-  translationController = null
-  translating.value = false
-}
-
-function translationKey() {
-  return JSON.stringify([provider.value, sourceLang.value, targetLang.value, sourceText.value.trim()])
-}
-
-function scheduleTranslation() {
-  clearTranslationTimer()
-  if (!autoTranslate.value || composing.value || !sourceText.value.trim() || overLimit.value
-      || sourceLang.value === targetLang.value || !currentConn.value?.configured
-      || !currentConn.value?.enabled || !credentialKeyReady.value) return
-  if (result.value && lastSuccessKey === translationKey()) return
-  autoPending.value = true
-  translationTimer = window.setTimeout(() => { void translate(true) }, 800)
-}
-
-async function translate(automatic: unknown = false) {
-  clearTranslationTimer()
-  if (translating.value || composing.value) return
+async function translate() {
+  if (translating.value) return
   const text = sourceText.value.trim()
-  const warning = !text ? '请输入需要翻译的内容'
-    : overLimit.value ? '内容超过这个服务的上限，请缩短后再翻（不会自动截断）'
-    : sourceLang.value === targetLang.value ? '两边语言不能一样'
-    : !currentConn.value?.configured || !currentConn.value?.enabled || !credentialKeyReady.value
-      ? '请先在服务设置中配置并启用翻译服务' : ''
-  if (warning) {
-    if (automatic !== true) ElMessage.warning(warning)
+  if (!text) {
+    ElMessage.warning('请输入需要翻译的内容')
+    return
+  }
+  if (overLimit.value) {
+    ElMessage.warning('内容超过这个服务的上限，请缩短后再翻（不会自动截断）')
+    return
+  }
+  if (sourceLang.value === targetLang.value) {
+    ElMessage.warning('两边语言不能一样')
     return
   }
   translating.value = true
   const seq = ++requestSeq
-  const key = translationKey()
-  const controller = new AbortController()
-  translationController = controller
   try {
     const { data } = await http.post('/translations', {
       provider: provider.value,
       source_text: text,
       source_lang: sourceLang.value,
       target_lang: targetLang.value,
-    }, { signal: controller.signal })
+    })
     if (seq !== requestSeq) return
     result.value = data
-    lastSuccessKey = key
     await loadHistory(1)
   } catch (error) {
-    if (seq === requestSeq && !controller.signal.aborted) ElMessage.error(apiError(error).message)
+    if (seq === requestSeq) ElMessage.error(apiError(error).message)
   } finally {
-    if (seq === requestSeq) {
-      translating.value = false
-      translationController = null
-    }
+    if (seq === requestSeq) translating.value = false
   }
 }
-
-watch([sourceText, sourceLang, targetLang, provider], () => {
-  invalidateTranslation()
-  result.value = null
-  scheduleTranslation()
-}, { flush: 'sync' })
-
-watch([autoTranslate, composing, () => currentConn.value?.configured,
-  () => currentConn.value?.enabled, credentialKeyReady], () => {
-  invalidateTranslation()
-  scheduleTranslation()
-}, { flush: 'sync' })
-
-watch(autoTranslate, (value) => {
-  try { localStorage.setItem('wb_auto_translate', String(value)) } catch { /* Storage may be unavailable. */ }
-})
-
-onBeforeUnmount(() => {
-  invalidateTranslation()
-  if (historyTimer !== null) window.clearTimeout(historyTimer)
-})
 
 async function pasteSource() {
   try {
@@ -461,7 +441,6 @@ async function copyResult() {
 }
 
 function clearResult() {
-  invalidateTranslation()
   result.value = null
 }
 
@@ -490,6 +469,79 @@ async function openDetail(item: any) {
     detail.value = data
     detailOpen.value = true
   } catch (error) {
+    ElMessage.error(apiError(error).message)
+  }
+}
+
+async function removeHistory(item: any) {
+  try {
+    await ElMessageBox.confirm('删除这条翻译记录？删除后不可恢复。', '删除记录', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    })
+    await http.delete(`/translation-history/${item.id}`)
+    ElMessage.success('已删除')
+    if (history.value.length === 1 && page.value > 1) await loadHistory(page.value - 1)
+    else await loadHistory(page.value)
+  } catch (error: any) {
+    if (error === 'cancel' || error === 'close') return
+    ElMessage.error(apiError(error).message)
+  }
+}
+
+async function loadFavorites() {
+  try {
+    const { data } = await http.get('/translation-favorites')
+    favorites.value = data.items
+  } catch (error) {
+    ElMessage.error(apiError(error).message)
+  }
+}
+
+async function saveFavorite(item: any) {
+  try {
+    await http.post('/translation-favorites', {
+      source_text: item.source_text || '',
+      target_text: item.target_text || '',
+      source_lang: item.source_lang || 'auto',
+      target_lang: item.target_lang || 'en',
+      provider: item.provider,
+      model: item.model || null,
+    })
+    ElMessage.success('已收藏')
+    await loadFavorites()
+  } catch (error) {
+    ElMessage.error(apiError(error).message)
+  }
+}
+
+function favoriteResult() {
+  if (!result.value) return
+  saveFavorite(result.value)
+}
+
+function favoriteHistory(item: any) {
+  saveFavorite(item)
+}
+
+async function copyFavorite(item: any) {
+  const ok = await copyText(item.target_text)
+  ok ? ElMessage.success('已复制译文') : ElMessage.warning('浏览器不让自动复制，请手动选中复制')
+}
+
+async function removeFavorite(item: any) {
+  try {
+    await ElMessageBox.confirm('从收藏里移除这条记录？', '移除收藏', {
+      type: 'warning',
+      confirmButtonText: '移除',
+      cancelButtonText: '取消',
+    })
+    await http.delete(`/translation-favorites/${item.id}`)
+    ElMessage.success('已移除')
+    await loadFavorites()
+  } catch (error: any) {
+    if (error === 'cancel' || error === 'close') return
     ElMessage.error(apiError(error).message)
   }
 }
@@ -563,6 +615,7 @@ async function clearProvider(conn: any) {
 
 onMounted(async () => {
   await loadConnections()
+  await loadFavorites()
   await loadHistory(1)
 })
 </script>
@@ -576,15 +629,25 @@ onMounted(async () => {
   white-space: pre-wrap;
   word-break: break-word;
 }
-.history-block {
+/* 下方是一个整体卡片，内部再分收藏／历史，避免和上面两个面板凑成 2×2 */
+.translate-bottom {
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
   background: var(--wb-surface);
   border: 1px solid var(--wb-border);
   border-radius: 12px;
+  overflow: hidden;
+}
+.bottom-pane {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   padding: 8px 12px;
+}
+.bottom-pane + .bottom-pane {
+  border-left: 1px solid var(--wb-border);
 }
 .history-head {
   display: flex;
@@ -640,6 +703,20 @@ onMounted(async () => {
   }
   .translate-pane {
     height: 240px;
+  }
+}
+@media (max-width: 820px) {
+  .translate-bottom {
+    grid-template-columns: 1fr;
+  }
+  .bottom-pane + .bottom-pane {
+    border-left: none;
+    border-top: 1px solid var(--wb-border);
+  }
+}
+@media (min-width: 821px) and (max-width: 1100px) {
+  .translate-bottom {
+    grid-template-columns: 260px minmax(0, 1fr);
   }
 }
 </style>

@@ -79,6 +79,48 @@ def test_connections_start_unconfigured(auth):
     assert all(i["configured"] is False for i in body["items"])
 
 
+def test_language_catalog_follows_provider(auth):
+    body = auth.get("/api/v1/translation-connections").json()
+    names = {item["code"]: item["name"] for item in body["languages"]}
+    assert names["ja"] == "日语"
+    assert names["zh"] == "中文（简体）"
+    for item in body["items"]:
+        codes = {lang["code"] for lang in item["languages"]}
+        assert {"zh", "en", "ja", "ko"} <= codes
+
+
+def test_language_code_mapping(auth, upstream):
+    configure(auth, upstream)
+    resp = auth.post(
+        "/api/v1/translations",
+        json={"provider": "baidu", "source_text": "こんにちは", "source_lang": "ja", "target_lang": "ko"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = FakeUpstream.calls[-1]["body"]
+    assert body["from"] == "jp"
+    assert body["to"] == "kor"
+
+    configure(auth, upstream, provider="youdao")
+    resp = auth.post(
+        "/api/v1/translations",
+        json={"provider": "youdao", "source_text": "こんにちは", "source_lang": "ja", "target_lang": "en"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = FakeUpstream.calls[-1]["body"]
+    assert body["from"] == "ja"
+    assert body["to"] == "en"
+
+
+def test_unsupported_language_rejected(auth, upstream):
+    configure(auth, upstream)
+    resp = auth.post(
+        "/api/v1/translations",
+        json={"provider": "baidu", "source_text": "hello", "source_lang": "auto", "target_lang": "hi"},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["code"] == "UNSUPPORTED_LANGUAGE"
+
+
 def test_save_masks_credentials(auth, upstream):
     resp = configure(auth, upstream, enable=False)
     assert resp.status_code == 200, resp.text
@@ -124,6 +166,48 @@ def test_translate_and_history(auth, upstream):
     assert auth.get("/api/v1/translation-history?q=baidu").json()["total"] == 1
     assert auth.get("/api/v1/translation-history?q=不存在").json()["total"] == 0
     assert auth.get("/api/v1/translation-history?provider=youdao").json()["total"] == 0
+
+
+def test_translation_favorites(auth, upstream):
+    configure(auth, upstream)
+    created = auth.post(
+        "/api/v1/translations",
+        json={"provider": "baidu", "source_text": "收藏测试", "source_lang": "zh", "target_lang": "en"},
+    ).json()
+    body = {
+        "source_text": created["source_text"],
+        "target_text": created["target_text"],
+        "source_lang": "zh",
+        "target_lang": "en",
+        "provider": "baidu",
+    }
+    fav = auth.post("/api/v1/translation-favorites", json=body)
+    assert fav.status_code == 201, fav.text
+    favorite_id = fav.json()["id"]
+
+    # 重复收藏同一条不会新增
+    again = auth.post("/api/v1/translation-favorites", json=body)
+    assert again.status_code == 201
+    assert again.json()["id"] == favorite_id
+    assert auth.get("/api/v1/translation-favorites").json()["total"] == 1
+
+    # 收藏是独立快照：删历史不影响收藏
+    auth.delete(f"/api/v1/translation-history/{created['id']}")
+    assert auth.get("/api/v1/translation-favorites").json()["total"] == 1
+
+    assert auth.delete(f"/api/v1/translation-favorites/{favorite_id}").status_code == 200
+    assert auth.get("/api/v1/translation-favorites").json()["total"] == 0
+
+
+def test_delete_history_record(auth, upstream):
+    configure(auth, upstream)
+    created = auth.post(
+        "/api/v1/translations",
+        json={"provider": "baidu", "source_text": "删除测试", "source_lang": "zh", "target_lang": "en"},
+    ).json()
+    assert auth.delete(f"/api/v1/translation-history/{created['id']}").status_code == 200
+    assert auth.get(f"/api/v1/translation-history/{created['id']}").status_code == 404
+    assert auth.delete(f"/api/v1/translation-history/{created['id']}").status_code == 404
 
 
 def test_deepseek_provider(auth, upstream):

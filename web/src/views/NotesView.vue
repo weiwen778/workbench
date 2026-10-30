@@ -164,7 +164,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
-import { Close, Clock, Files, Folder, FolderOpened, Picture, Plus, Search, View } from '@element-plus/icons-vue'
+import { Close, Clock, Files, Folder, FolderOpened, Picture, Plus, Search, View } from '@/icons'
 import { apiError, http } from '@/api/client'
 
 const folderData = reactive<{ folders: any[]; uncategorized: number }>({ folders: [], uncategorized: 0 })

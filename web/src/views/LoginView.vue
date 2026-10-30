@@ -2,18 +2,23 @@
   <div class="login-page">
     <div class="login-card">
       <div class="login-title">个人工作台</div>
-      <div class="login-sub muted">登录后，按店铺和社媒分别处理每天的打卡</div>
-      <el-form label-position="top" :model="form" @submit.prevent="submit">
-        <el-form-item label="用户名">
-          <el-input v-model="form.username" autocomplete="username" placeholder="请输入用户名" />
+      <el-form :model="form" @submit.prevent="submit">
+        <el-form-item>
+          <el-input
+            v-model="form.username"
+            autocomplete="username"
+            placeholder="请输入用户名"
+            aria-label="用户名"
+          />
         </el-form-item>
-        <el-form-item label="密码" :error="errorText">
+        <el-form-item :error="errorText">
           <el-input
             v-model="form.password"
             type="password"
             show-password
             autocomplete="current-password"
             placeholder="请输入密码"
+            aria-label="密码"
             @keyup.enter="submit"
           />
         </el-form-item>
@@ -21,7 +26,6 @@
           登录
         </el-button>
       </el-form>
-      <div class="login-foot muted text-12">登录状态保持 30 天，关了浏览器再打开也不用重新登</div>
     </div>
   </div>
 </template>
@@ -79,19 +83,11 @@ async function submit() {
 .login-title {
   font-size: 20px;
   font-weight: 600;
-  margin-bottom: 6px;
-}
-.login-sub {
-  font-size: 13px;
-  margin-bottom: 18px;
-  line-height: 1.6;
+  text-align: center;
+  margin-bottom: 22px;
 }
 .login-submit {
   width: 100%;
   margin-top: 4px;
-}
-.login-foot {
-  margin-top: 14px;
-  text-align: center;
 }
 </style>

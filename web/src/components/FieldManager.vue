@@ -89,7 +89,7 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Delete, Plus } from '@element-plus/icons-vue'
+import { Check, Delete, Plus } from '@/icons'
 import { apiError, http } from '@/api/client'
 
 const props = defineProps<{

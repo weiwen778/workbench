@@ -44,6 +44,7 @@ class User(Base, TimestampMixin):
     username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     theme: Mapped[str] = mapped_column(String(16), default="light", nullable=False)
+    theme_color: Mapped[str] = mapped_column(String(16), default="#39776f", nullable=False)
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
@@ -376,6 +377,21 @@ class TranslationHistory(Base):
 
 
 # ---------------------------------------------------------------- 回收站
+
+
+class TranslationFavorite(Base):
+    """收藏的译文快照，与历史记录互相独立：删历史不影响收藏。"""
+
+    __tablename__ = "translation_favorites"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_text: Mapped[str] = mapped_column(Text, nullable=False)
+    target_text: Mapped[str] = mapped_column(Text, nullable=False)
+    source_lang: Mapped[str] = mapped_column(String(16), default="auto")
+    target_lang: Mapped[str] = mapped_column(String(16), default="en")
+    provider: Mapped[str] = mapped_column(String(20), index=True)
+    model: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
 
 
 class TrashEntry(Base):

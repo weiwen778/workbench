@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="100%" height="100%">
+  <defs>
+    <!-- 背景/描边自适应样式：采用无填充、全线稿设计，避免反色造成的死板色块 -->
+    <style>
+      .bg-ring {
+        fill: none;
+        stroke: #1A1A1A;
+        stroke-width: 3;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .ink-bold {
+        fill: none;
+        stroke: #1A1A1A;
+        stroke-width: 2.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .ink-medium {
+        fill: none;
+        stroke: #1A1A1A;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .ink-fine {
+        fill: none;
+        stroke: #1A1A1A;
+        stroke-width: 1.2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      /* 头发和耳机采用局部精致的排线，代替大面积填充，增加手绘透气感 */
+      .hatch-pattern {
+        stroke: #1A1A1A;
+        stroke-width: 1.2;
+      }
+      .white-mask {
+        fill: #FFFFFF; /* 仅用于层级遮挡，不作大面积死色 */
+      }
+    </style>
+  </defs>
+  <!-- 深色标签栏下仍可见：白色底圆 -->
+  <circle cx="64" cy="64" r="63" fill="#FFFFFF" />
+
+
+  <!-- ================= 装饰背景 ================= -->
+  <!-- 双重手绘感圆环外框（多了一圈外围细线，更具icon精致感） -->
+  <path class="bg-ring" d="M 64,6 C 97,5 123,31 122,64 C 121,97 97,123 64,122 C 31,121 5,97 6,64 C 7,31 31,7 64,6 Z" />
+  <path class="ink-fine" d="M 64,9 C 94,8 119,33 118,64 C 117,95 95,119 64,118 C 33,117 9,95 10,64 C 11,33 33,10 64,9 Z" />
+
+  <!-- 灵感与工作氛围（手绘星芒、飞白、热气、便签） -->
+  <!-- 左侧：咖啡杯与热气 -->
+  <path class="ink-medium" d="M 23,80 C 23,85 27,87 31,87 L 33,87" />
+  <path class="ink-medium" d="M 31,81 C 34,81 35,84 31,85" /> <!-- 杯把 -->
+  <path class="ink-fine" d="M 25,76 C 25,73 27,72 26,70 M 29,76 C 29,74 31,73 30,71" /> <!-- 热气 -->
+  <!-- 右侧：钢笔与便签 -->
+  <path class="ink-medium" d="M 98,75 L 105,85" /> <!-- 笔 -->
+  <path class="ink-fine" d="M 96,87 H 105 V 94 H 96 Z" /> <!-- 便签 -->
+  <!-- 上方：创意星芒与短线 -->
+  <path class="ink-fine" d="M 33,26 L 33,31 M 30,29 L 36,29" /> 
+  <path class="ink-fine" d="M 95,28 L 95,33 M 92,30 L 98,30" />
+  <path class="ink-medium" d="M 64,13 L 64,18 M 49,16 L 52,20 M 79,16 L 76,20" /> <!-- 灵感发散线 -->
+
+  <!-- ================= 身体与衣领 ================= -->
+  <!-- 肩膀 -->
+  <path class="ink-bold" d="M 28,111 C 36,104 44,98 54,95" />
+  <path class="ink-bold" d="M 100,111 C 92,104 84,98 74,95" />
+  <!-- 脖子 -->
+  <path class="ink-medium" d="M 57,79 L 57,88 M 71,79 L 71,88" />
+  <!-- 衬衫衣领 (温和、松弛) -->
+  <path class="white-mask ink-medium" d="M 64,88 L 54,84 L 49,94 L 64,91 Z" />
+  <path class="white-mask ink-medium" d="M 64,88 L 74,84 L 79,94 L 64,91 Z" />
+
+  <!-- ================= 头部与五官 (彻底去凶) ================= -->
+  <!-- 脸部轮廓 (无填充、全通透，避免反色惨白) -->
+  <path class="white-mask ink-bold" d="M 43,46 C 41,63 45,80 64,80 C 83,80 87,63 85,46" />
+
+  <!-- 眼睛 (由惊恐瞪眼 改为：弯弯的、带笑意的温柔眯眼 ^_^) -->
+  <path class="ink-bold" d="M 48,55 C 51,52 55,52 58,55" /> 
+  <path class="ink-bold" d="M 70,55 C 73,52 77,52 80,55" />
+
+  <!-- 眉毛 (由下压凶狠 改为：极淡、自然的温和细弧，与眼距离拉开) -->
+  <path class="ink-fine" d="M 47,48 C 51,47 55,48 57,50" />
+  <path class="ink-fine" d="M 71,50 C 73,48 77,47 81,48" />
+
+  <!-- 眼镜 (由死板方框 改为：圆润、亲切的细圆黑框) -->
+  <circle cx="53" cy="57" r="7.5" class="ink-medium" />
+  <circle cx="75" cy="57" r="7.5" class="ink-medium" />
+  <path class="ink-medium" d="M 60.5,57 C 63,56 65,56 67.5,57" /> <!-- 眼镜中梁 -->
+
+  <!-- 鼻子 (柔和的L型手绘线条) -->
+  <path class="ink-medium" d="M 63,60 C 63,63 62,65 64,65 C 65,65 65,64 65,64" />
+
+  <!-- 嘴巴 (由紧绷直线 改为：明显上扬、轻松的暖心微笑 ☺) -->
+  <path class="ink-bold" d="M 55,69 C 59,73 69,73 73,69" />
+
+  <!-- 头发与发丝 (偏分刘海，使用手绘排线替代死色，透气自然) -->
+  <path class="white-mask ink-bold" d="M 41,45 C 44,36 53,30 64,30 C 75,30 84,36 87,45 C 80,39 71,37 62,40 C 53,42 46,46 41,45 Z" />
+  <!-- 发丝排线 -->
+  <path class="hatch-pattern" d="M 46,38 L 49,44 M 52,35 L 56,43 M 58,33 L 62,41 M 65,33 L 68,40 M 72,34 L 74,40 M 78,36 L 79,41" />
+
+  <!-- ================= 耳机 (工作的灵魂元素) ================= -->
+  <!-- 耳机横梁 -->
+  <path class="ink-bold" d="M 37.5,46 C 36,25 46,21 64,21 C 82,21 92,25 90.5,46" />
+  <!-- 左耳罩 (带少量斜线纹理) -->
+  <rect class="white-mask ink-medium" x="31.5" y="44" width="8" height="15" rx="3.5" transform="rotate(-6, 35.5, 51.5)" />
+  <path class="ink-fine" d="M 32,47 L 35,53 M 33,50 L 35.5,55" />
+  <!-- 右耳罩 -->
+  <rect class="white-mask ink-medium" x="88.5" y="44" width="8" height="15" rx="3.5" transform="rotate(6, 92.5, 51.5)" />
+  <path class="ink-fine" d="M 91.5,47 L 88.5,53 M 92,50 L 89.5,55" />
+
+  <!-- ================= 前景：笔记本电脑 ================= -->
+  <!-- 前景笔记本电脑 (挡在人像前，不使用纯白填充，保持手绘线稿的透气性) -->
+  <path class="white-mask ink-bold" d="M 39,112 L 46,95 C 47,94 48,93 50,93 L 78,93 C 80,93 81,94 82,95 L 89,112 Z" />
+  
+  <!-- 电脑背面手绘温和 Logo (小苹果/小图标) 与装饰线条 -->
+  <circle cx="64" cy="102" r="3" class="ink-medium" />
+  <path class="ink-medium" d="M 64,98.5 C 65,97 66,97 66,98" /> <!-- Logo叶子 -->
+  <path class="ink-fine" d="M 46,108 H 82" /> <!-- 键盘/托盘折线提示 -->
+</svg>

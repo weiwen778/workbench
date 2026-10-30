@@ -38,6 +38,7 @@ def user_payload(user: User) -> dict:
         "id": user.id,
         "username": user.username,
         "theme": user.theme,
+        "theme_color": user.theme_color,
         "password_changed_at": iso_z(user.password_changed_at),
     }
 

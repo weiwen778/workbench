@@ -80,7 +80,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Plus, Refresh, Upload } from '@element-plus/icons-vue'
+import { Delete, Plus, Refresh, Upload } from '@/icons'
 import { apiError, http } from '@/api/client'
 import ImportWizard from '@/components/ImportWizard.vue'
 

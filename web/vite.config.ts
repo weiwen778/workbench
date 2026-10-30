@@ -24,10 +24,12 @@ export default defineConfig({
     chunkSizeWarningLimit: 1200,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vue: ['vue', 'vue-router'],
-          'element-plus': ['element-plus', '@element-plus/icons-vue'],
-          markdown: ['marked', 'dompurify'],
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+          if (id.includes('@tabler/icons-vue')) return 'icons'
+          if (id.includes('element-plus')) return 'element-plus'
+          if (id.includes('marked') || id.includes('dompurify')) return 'markdown'
+          if (id.includes('vue')) return 'vue'
         },
       },
     },

@@ -118,7 +118,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Paperclip, Upload } from '@element-plus/icons-vue'
+import { Paperclip, Upload } from '@/icons'
 import { apiError, http } from '@/api/client'
 import AttachmentPreview from './AttachmentPreview.vue'
 

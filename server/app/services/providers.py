@@ -13,6 +13,7 @@ import httpx
 
 from ..config import settings
 from ..errors import ApiError
+from .languages import to_provider_code
 
 TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 
@@ -33,12 +34,7 @@ SYSTEM_PROMPT = (
 
 
 def _lang(code: str, provider: str) -> str:
-    mapping = {
-        "zh": {"baidu": "zh", "youdao": "zh-CHS", "deepseek": "Chinese"},
-        "en": {"baidu": "en", "youdao": "en", "deepseek": "English"},
-        "auto": {"baidu": "auto", "youdao": "auto", "deepseek": ""},
-    }
-    return mapping.get(code, mapping["auto"])[provider]
+    return to_provider_code(provider, code)
 
 
 def limits_for(provider: str) -> dict:

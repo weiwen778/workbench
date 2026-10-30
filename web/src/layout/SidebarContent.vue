@@ -28,7 +28,7 @@
 
       <!-- 待办 -->
       <div class="wb-nav-item" :class="{ active: route.path === '/todos' }" @click="go('/todos')">
-        <el-icon><Tickets /></el-icon><span>待办</span>
+        <el-icon><Todo /></el-icon><span>待办</span>
       </div>
 
       <!-- 表格 -->
@@ -80,13 +80,6 @@
       </div>
     </div>
 
-    <div class="footer">
-      <div class="wb-nav-item" style="flex: 1" :class="{ active: route.path === '/settings' }" @click="go('/settings')">
-        <el-icon><Setting /></el-icon><span>设置</span>
-      </div>
-      <el-button text circle :icon="themeIcon" title="切换主题" @click="toggleTheme" />
-      <el-button text circle :icon="SwitchButton" title="退出登录" @click="$emit('logout')" />
-    </div>
   </div>
 </template>
 
@@ -101,14 +94,10 @@ import {
   Document,
   Fold,
   Memo,
-  Moon,
   Plus,
-  Setting,
-  Sunny,
-  SwitchButton,
-  Tickets,
-} from '@element-plus/icons-vue'
-import { session, toggleTheme } from '@/stores/session'
+  Todo,
+  Translate,
+} from '@/icons'
 
 const props = defineProps<{
   tables: any[]
@@ -121,7 +110,6 @@ defineEmits<{
   (e: 'update:tableSearch', value: string): void
   (e: 'navigate'): void
   (e: 'new-table'): void
-  (e: 'logout'): void
   (e: 'collapse'): void
 }>()
 
@@ -141,11 +129,9 @@ const checkinItems = [
 const mainItems = [
   { label: '笔记', path: '/notes', icon: Document },
   { label: '便利贴', path: '/memos', icon: Memo },
-  { label: '翻译', path: '/translate', icon: SwitchButton },
+  { label: '翻译', path: '/translate', icon: Translate },
   { label: '回收站', path: '/trash', icon: Delete },
 ]
-
-const themeIcon = computed(() => (session.theme === 'dark' ? Moon : Sunny))
 
 const filteredTables = computed(() => {
   const keyword = (props.tableSearch || '').trim().toLowerCase()
@@ -167,13 +153,10 @@ function go(path: string) {
 .table-search {
   padding: 2px 6px 6px;
 }
-.table-item {
-  padding-left: 14px;
-}
 .table-empty {
   font-size: 12px;
   color: var(--wb-text-tertiary);
-  padding: 6px 14px;
+  padding: 6px 14px 6px 36px;
 }
 .new-table {
   color: var(--wb-primary);

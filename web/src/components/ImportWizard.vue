@@ -2,7 +2,7 @@
   <el-dialog
     :model-value="modelValue"
     :title="tableId ? '导入到当前表格' : '从文件新建表格'"
-    width="820px"
+    :width="tableId ? '960px' : '820px'"
     :close-on-click-modal="false"
     @update:model-value="$emit('update:modelValue', $event)"
     @closed="reset"
@@ -47,19 +47,49 @@
         </el-form-item>
       </el-form>
 
+      <div v-if="tableId" class="text-12 muted" style="margin-bottom: 6px">
+        同名列会直接对应；没匹配上的自动建成新字段，类型按内容猜好，可以在这里手动改。
+      </div>
+
       <el-table :data="columnRows" size="small" max-height="320">
         <el-table-column prop="header" label="Excel 列" width="150" show-overflow-tooltip />
-        <el-table-column label="示例内容" width="200" show-overflow-tooltip>
+        <el-table-column label="示例内容" width="180" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="text-12 muted">{{ row.sample || '—' }}</span>
           </template>
         </el-table-column>
         <template v-if="tableId">
-          <el-table-column label="对应到哪一列" width="200">
+          <el-table-column label="导入到" width="190">
             <template #default="{ row }">
-              <el-select v-model="mapping[row.col]" size="small" placeholder="忽略此列" clearable style="width: 100%">
-                <el-option v-for="f in existingFields" :key="f.key" :label="`${f.name}（${typeText(f.type)}）`" :value="f.key" />
+              <el-select v-model="choices[row.col]" size="small" placeholder="忽略此列" clearable style="width: 100%">
+                <el-option
+                  v-for="f in existingFieldsList"
+                  :key="f.key"
+                  :label="`${f.name}（${typeText(f.type)}）`"
+                  :value="f.key"
+                />
+                <el-option label="创建为新字段" value="__new__" />
               </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="新字段名" width="130">
+            <template #default="{ row }">
+              <el-input v-if="isNew(row.col)" v-model="draftOf(row.col).name" size="small" maxlength="50" />
+              <span v-else class="text-12 muted">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="类型" width="120">
+            <template #default="{ row }">
+              <el-select v-if="isNew(row.col)" v-model="draftOf(row.col).type" size="small" style="width: 100%">
+                <el-option v-for="t in fieldTypes" :key="t.value" :label="t.label" :value="t.value" />
+              </el-select>
+              <span v-else class="text-12 muted">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="必填" width="60" align="center">
+            <template #default="{ row }">
+              <el-checkbox v-if="isNew(row.col)" v-model="draftOf(row.col).required" />
+              <span v-else class="text-12 muted">—</span>
             </template>
           </el-table-column>
         </template>
@@ -114,7 +144,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { UploadFilled } from '@element-plus/icons-vue'
+import { UploadFilled } from '@/icons'
 import { apiError, http } from '@/api/client'
 
 const props = defineProps<{ modelValue: boolean; tableId?: number; existingFields?: any[] }>()
@@ -144,6 +174,10 @@ const sample = ref<string[][]>([])
 const rowCount = ref(0)
 const mapping = reactive<Record<string, string | null>>({})
 const fields = ref<any[]>([])
+// 导入到已有表格：每列选「对应现有字段 / 创建为新字段 / 忽略」
+const choices = reactive<Record<string, string | null>>({})
+const existingFieldsList = ref<any[]>([])
+const drafts = ref<any[]>([])
 const tableName = ref('')
 const errors = ref<any[]>([])
 const errorText = ref('')
@@ -180,6 +214,14 @@ function typeText(type: string) {
   return fieldTypes.find((t) => t.value === type)?.label || type
 }
 
+function isNew(col: string | number) {
+  return choices[String(col)] === '__new__'
+}
+
+function draftOf(col: string | number): any {
+  return drafts.value.find((item) => item.column === Number(col))
+}
+
 function reset() {
   step.value = 'upload'
   file.value = null
@@ -190,7 +232,10 @@ function reset() {
   headers.value = []
   sample.value = []
   rowCount.value = 0
+  existingFieldsList.value = []
+  drafts.value = []
   Object.keys(mapping).forEach((key) => delete mapping[key])
+  Object.keys(choices).forEach((key) => delete choices[key])
 }
 
 async function onFileChange(uploadFile: any) {
@@ -215,8 +260,15 @@ async function uploadPreview() {
     rowCount.value = data.row_count
     tableName.value = data.table_name
     fields.value = data.fields || []
+    existingFieldsList.value = data.existing_fields?.length ? data.existing_fields : props.existingFields || []
+    drafts.value = data.new_fields || []
     Object.keys(mapping).forEach((key) => delete mapping[key])
     Object.assign(mapping, data.mapping)
+    Object.keys(choices).forEach((key) => delete choices[key])
+    headers.value.forEach((_, index) => {
+      const value = data.mapping?.[String(index)]
+      choices[String(index)] = value && String(value).startsWith('new_') ? '__new__' : value || null
+    })
     step.value = 'preview'
   } catch (error) {
     errorText.value = apiError(error).message
@@ -228,18 +280,36 @@ async function reloadPreview() {
 }
 
 function payload() {
-  const body: Record<string, any> = { mapping: { ...mapping } }
-  if (!props.tableId) {
-    body.table_name = tableName.value
-    body.fields = fields.value.map((f, index) => ({
+  if (props.tableId) {
+    const map: Record<string, string | null> = {}
+    const newFields: any[] = []
+    columnRows.value.forEach((row) => {
+      const choice = choices[row.col]
+      if (choice === '__new__') {
+        const draft = draftOf(row.col)
+        if (draft) {
+          map[row.col] = draft.key
+          newFields.push({ ...draft, name: (draft.name || row.header).trim() || row.header })
+        } else {
+          map[row.col] = null
+        }
+      } else {
+        map[row.col] = choice || null
+      }
+    })
+    return { mapping: map, new_fields: newFields }
+  }
+  return {
+    mapping: { ...mapping },
+    table_name: tableName.value,
+    fields: fields.value.map((f, index) => ({
       key: f.key || `col_${index}`,
       name: f.name,
       type: f.type,
       required: !!f.required,
       options: f.options || [],
-    }))
+    })),
   }
-  return body
 }
 
 async function validate() {

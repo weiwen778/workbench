@@ -12,7 +12,7 @@
     "preview": "vite preview --port 4173"
   },
   "dependencies": {
-    "@element-plus/icons-vue": "^2.3.1",
+    "@tabler/icons-vue": "^3.50.0",
     "axios": "^1.7.9",
     "dompurify": "^3.2.3",
     "element-plus": "^2.14.0",

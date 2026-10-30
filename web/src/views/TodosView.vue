@@ -262,7 +262,7 @@ import {
   MoreFilled,
   Plus,
   Refresh,
-} from '@element-plus/icons-vue'
+} from '@/icons'
 import { apiError, http } from '@/api/client'
 
 const lists = ref<any[]>([])

@@ -27,6 +27,10 @@
 
   --wb-sidebar-bg: #ffffff;
   --wb-code-bg: #f2f5f8;
+
+  /* 长文阅读字体：西文衬线优先，其次苹果、Windows、开源思源宋体 */
+  --wb-font-serif: Georgia, "Times New Roman", "Songti SC", "SimSun", "宋体",
+    "Noto Serif SC", "Source Han Serif SC", serif;
 }
 
 /* =========================================================================
@@ -68,8 +72,11 @@
   --el-component-size: 34px;
   --el-component-size-small: 28px;
   --el-component-size-large: 38px;
-  --el-font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue",
-    "Microsoft YaHei", sans-serif;
+  /* 西文优先，其次苹果、Windows、Android/Linux 中文字体 */
+  --el-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    "微软雅黑", "Noto Sans SC", "Source Han Sans SC", "WenQuanYi Micro Hei",
+    sans-serif;
   --el-font-size-base: 14px;
   --el-box-shadow-light: 0 1px 2px rgba(16, 24, 40, 0.04);
 
@@ -102,6 +109,7 @@ body {
   font-family: var(--el-font-family);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 a {
@@ -312,8 +320,9 @@ html.dark .memo-chip {
   background: rgba(0, 0, 0, 0.25);
 }
 
-/* Markdown 预览 */
+/* Markdown 预览（文章正文） */
 .markdown-body {
+  font-family: var(--wb-font-serif);
   font-size: 14px;
   line-height: 1.7;
   color: var(--wb-text);
@@ -345,6 +354,10 @@ html.dark .memo-chip {
   padding: 1px 5px;
   border-radius: 4px;
   font-size: 12.5px;
+}
+.markdown-body pre,
+.markdown-body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 .markdown-body pre {
   background: var(--wb-code-bg);
@@ -417,8 +430,11 @@ html.dark .memo-chip {
 .translate-pane .el-textarea {
   height: 100%;
 }
-.translate-history {
-  min-height: 240px;
+/* 原文输入框不再套一层圆角边框，和面板融为一体 */
+.translate-pane .el-textarea__inner {
+  box-shadow: none;
+  border-radius: 0;
+  background: transparent;
 }
 .history-row {
   display: flex;
@@ -433,8 +449,19 @@ html.dark .memo-chip {
 .history-text {
   flex: 1;
   min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
   font-size: 13px;
   line-height: 1.6;
+}
+.history-text > div {
+  min-width: 0;
+}
+.history-arrow {
+  font-size: 14px;
+  color: var(--wb-text-tertiary);
 }
 .ellipsis-1 {
   overflow: hidden;
@@ -521,6 +548,9 @@ html.dark .checkin-row.done .checkin-main {
   font-size: 13.5px;
   user-select: none;
 }
+.wb-nav-item + .wb-nav-item {
+  margin-top: 2px;
+}
 .wb-nav-item:hover {
   background: var(--el-color-primary-light-9);
 }
@@ -533,11 +563,16 @@ html.dark .checkin-row.done .checkin-main {
   font-size: 18px;
 }
 .wb-nav-sub {
-  padding-left: 12px;
+  padding-left: 0;
 }
+/* 子项文字与父项文字左对齐：8px(导航内边距) + 36px = 44px */
 .wb-nav-sub .wb-nav-item {
   height: 34px;
-  padding-left: 14px;
+  padding-left: 36px;
+}
+/* 表格、打卡子项之间留出空隙，悬停/选中时不会连成一块 */
+.wb-nav-sub .wb-nav-item + .wb-nav-item {
+  margin-top: 4px;
 }
 .wb-nav-group-label {
   display: flex;
@@ -546,13 +581,6 @@ html.dark .checkin-row.done .checkin-main {
   padding: 6px 10px 2px;
   font-size: 12px;
   color: var(--wb-text-tertiary);
-}
-.wb-sidebar .footer {
-  border-top: 1px solid var(--wb-border);
-  padding: 8px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 .wb-iconbar {
   width: 64px;
@@ -594,10 +622,21 @@ html.dark .checkin-row.done .checkin-main {
   height: 48px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   padding: 0 12px;
   border-bottom: 1px solid var(--wb-border);
   background: var(--wb-surface);
+}
+/* Element Plus 默认给相邻按钮加 12px 外边距，顶栏里会显得过散 */
+.wb-topbar .el-button + .el-button {
+  margin-left: 0;
+}
+.wb-topbar .el-button .el-icon {
+  font-size: 20px;
+}
+.wb-topbar .topbar-action.current {
+  color: var(--wb-primary);
+  background: var(--el-color-primary-light-9);
 }
 .wb-content {
   flex: 1;

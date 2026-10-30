@@ -133,7 +133,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Plus, Refresh } from '@element-plus/icons-vue'
+import { ArrowLeft, Plus, Refresh } from '@/icons'
 import { apiError, http } from '@/api/client'
 
 const route = useRoute()

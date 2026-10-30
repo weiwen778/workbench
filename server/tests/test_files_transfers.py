@@ -209,6 +209,63 @@ def test_import_new_table_from_excel(auth):
     assert len(detail["fields"]) == 3
 
 
+def test_import_into_empty_table_creates_fields(auth):
+    table = auth.post("/api/v1/tables", json={"name": "空表", "fields": []}).json()
+    raw = make_xlsx(
+        [["A-1", 12.5, "2026-10-01"], ["A-2", 20, "2026-10-02"]],
+        ["SKU", "价格", "日期"],
+    )
+    job = auth.post(
+        "/api/v1/imports/preview",
+        files={"file": ("blank.xlsx", raw, "...")},
+        data={"table_id": str(table["id"])},
+    ).json()
+    assert job["mode"] == "existing"
+    assert job["existing_fields"] == []
+    types = {f["name"]: f["type"] for f in job["new_fields"]}
+    assert types["价格"] == "number"
+    assert types["日期"] == "date"
+
+    # 手动把「日期」改成短文本，导入后按新类型保存
+    drafts = [dict(f) for f in job["new_fields"]]
+    for draft_field in drafts:
+        if draft_field["name"] == "日期":
+            draft_field["type"] = "short_text"
+    mapping = {str(index): f["key"] for index, f in enumerate(drafts)}
+
+    draft = auth.post(
+        f"/api/v1/imports/{job['id']}/draft",
+        json={"mapping": mapping, "new_fields": drafts},
+    )
+    assert draft.status_code == 200, draft.text
+    assert draft.json()["status"] == "ready"
+
+    confirm = auth.post(f"/api/v1/imports/{job['id']}/confirm")
+    assert confirm.status_code == 200, confirm.text
+    detail = auth.get(f"/api/v1/tables/{table['id']}").json()
+    assert [f["name"] for f in detail["fields"]] == ["SKU", "价格", "日期"]
+    assert detail["fields"][2]["type"] == "short_text"
+    assert detail["record_count"] == 2
+
+
+def test_import_new_field_name_conflict(auth):
+    table = make_table(auth)
+    raw = make_xlsx([["x"]], ["备注"])
+    job = auth.post(
+        "/api/v1/imports/preview",
+        files={"file": ("note.xlsx", raw, "...")},
+        data={"table_id": str(table["id"])},
+    ).json()
+    drafts = [dict(f) for f in job["new_fields"]]
+    drafts[0]["name"] = "价格"
+    resp = auth.post(
+        f"/api/v1/imports/{job['id']}/draft",
+        json={"mapping": {"0": drafts[0]["key"]}, "new_fields": drafts},
+    )
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "FIELD_NAME_DUPLICATED"
+
+
 def test_import_rejects_bad_headers(auth):
     raw = make_xlsx([["x", "y"]], ["SKU", "SKU"])
     resp = auth.post("/api/v1/imports/preview", files={"file": ("dup.xlsx", raw, "...")})

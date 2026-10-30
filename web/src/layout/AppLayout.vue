@@ -16,7 +16,6 @@
         @update:table-search="tableSearch = $event"
         @navigate="drawerOpen = false"
         @new-table="openNewTable"
-        @logout="handleLogout"
       />
     </el-drawer>
 
@@ -74,10 +73,6 @@
         >
           <el-icon><component :is="item.icon" /></el-icon>
         </div>
-        <div class="spacer" />
-        <div class="icon-btn" title="切换主题" @click="toggleTheme">
-          <el-icon><component :is="themeIcon" /></el-icon>
-        </div>
       </div>
 
       <SidebarContent
@@ -89,7 +84,6 @@
         @update:table-search="tableSearch = $event"
         @navigate="() => {}"
         @new-table="openNewTable"
-        @logout="handleLogout"
         @collapse="setCollapsed(true)"
       />
     </template>
@@ -99,10 +93,20 @@
         <el-button v-if="isNarrow" text :icon="Menu" @click="drawerOpen = true" />
         <div class="title-15">{{ pageTitle }}</div>
         <div class="spacer" />
-        <el-tooltip v-if="!isNarrow" content="切换浅色／深色主题" placement="bottom">
-          <el-button text :icon="themeIcon" circle @click="toggleTheme" />
+        <el-tooltip content="设置" placement="bottom">
+          <el-button
+            text
+            circle
+            :icon="Setting"
+            class="topbar-action"
+            :class="{ current: route.path === '/settings' }"
+            @click="go('/settings')"
+          />
         </el-tooltip>
-        <span class="text-12 muted">{{ session.user?.username }}</span>
+        <el-tooltip content="切换浅色／深色主题" placement="bottom">
+          <el-button text circle :icon="themeIcon" class="topbar-action" @click="toggleTheme" />
+        </el-tooltip>
+        <span v-if="collapsed || isNarrow" class="text-12 muted">{{ session.user?.username }}</span>
       </div>
       <div class="wb-content" :class="{ scroll: scrollable }">
         <router-view :key="route.fullPath" />
@@ -135,25 +139,22 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   Calendar,
-  Check,
   Collection,
-  DataLine,
+  Delete,
   Document,
   Expand,
-  Files,
   Menu,
   Memo,
   Moon,
   Plus,
   Setting,
   Sunny,
-  SwitchButton,
-  Tickets,
-  Delete,
-} from '@element-plus/icons-vue'
+  Todo,
+  Translate,
+} from '@/icons'
 import SidebarContent from './SidebarContent.vue'
 import { http, apiError } from '@/api/client'
-import { logout, session, toggleTheme } from '@/stores/session'
+import { session, toggleTheme } from '@/stores/session'
 
 const route = useRoute()
 const router = useRouter()
@@ -186,12 +187,11 @@ const collapsedGroups = [
 ]
 
 const simpleItems = [
-  { label: '待办', path: '/todos', icon: Check },
+  { label: '待办', path: '/todos', icon: Todo },
   { label: '笔记', path: '/notes', icon: Document },
   { label: '便利贴', path: '/memos', icon: Memo },
-  { label: '翻译', path: '/translate', icon: SwitchButton },
+  { label: '翻译', path: '/translate', icon: Translate },
   { label: '回收站', path: '/trash', icon: Delete },
-  { label: '设置', path: '/settings', icon: Setting },
 ]
 
 const pageTitle = computed(() => {
@@ -258,11 +258,6 @@ async function createTable() {
   } finally {
     creatingTable.value = false
   }
-}
-
-async function handleLogout() {
-  await logout()
-  router.replace('/login')
 }
 
 function onTablesChanged() {
