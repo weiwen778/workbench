@@ -101,6 +101,7 @@ def create_app() -> FastAPI:
         auth,
         checkin_import,
         checkins,
+        dashboards,
         files,
         health,
         memos,
@@ -119,6 +120,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix=api)
     app.include_router(agent.router, prefix=api)
     app.include_router(agent_tokens.router, prefix=api)
+    app.include_router(dashboards.router, prefix=api)
     app.include_router(preferences.router, prefix=api)
     app.include_router(targets.router, prefix=api)
     app.include_router(checkins.router, prefix=api)

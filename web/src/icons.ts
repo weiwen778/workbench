@@ -2,6 +2,7 @@
 // 页面只从这里按语义名引入，替换图标库时只改本文件。
 // 语义名沿用页面里的叫法，避免每个页面都去记 Tabler 的原始名称。
 export {
+  IconChartBar as DashboardIcon,
   IconPlus as Plus,
   IconTrash as Delete,
   IconCheck as Check,

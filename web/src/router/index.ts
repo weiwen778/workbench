@@ -23,6 +23,7 @@ const routes = [
     meta: { title: '资料' },
   },
   { path: '/todos', name: 'todos', component: () => import('@/views/TodosView.vue'), meta: { title: '待办' } },
+  { path: '/dashboard', name: 'dashboard', component: () => import('@/views/DashboardView.vue'), meta: { title: '经营驾驶舱' } },
   { path: '/data', name: 'data', component: () => import('@/views/TablesView.vue'), meta: { title: '表格' } },
   {
     path: '/data/:tableId',

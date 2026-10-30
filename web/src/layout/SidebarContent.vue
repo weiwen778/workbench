@@ -7,6 +7,9 @@
     </div>
 
     <div class="wb-nav">
+      <div class="wb-nav-item" :class="{ active: route.path === '/dashboard' }" @click="go('/dashboard')">
+        <el-icon><DashboardIcon /></el-icon><span>经营驾驶舱</span>
+      </div>
       <!-- 打卡 -->
       <div class="wb-nav-item" @click="toggle('checkin')">
         <el-icon><Calendar /></el-icon>
@@ -89,6 +92,7 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowRight,
   Calendar,
+  DashboardIcon,
   Collection,
   Delete,
   Document,

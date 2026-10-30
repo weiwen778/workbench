@@ -8,6 +8,7 @@
       <span class="text-12 muted">共 {{ total }} 行</span>
       <div class="spacer" />
       <div class="toolbar-actions">
+        <el-button text :icon="DashboardIcon" @click="router.push({ path: '/dashboard', query: { table: tableId } })">可视化</el-button>
         <el-button text :icon="Refresh" @click="reload">刷新</el-button>
         <el-popover placement="bottom-end" :width="360" trigger="click">
           <template #reference>
@@ -210,9 +211,9 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Close, Download, InfoFilled, Plus, Refresh, Setting, Sort, Upload } from '@/icons'
+import { Check, Close, DashboardIcon, Download, InfoFilled, Plus, Refresh, Setting, Sort, Upload } from '@/icons'
 import { apiError, http } from '@/api/client'
 import RecordDrawer from '@/components/RecordDrawer.vue'
 import AttachmentPreview from '@/components/AttachmentPreview.vue'
@@ -220,6 +221,7 @@ import FieldManager from '@/components/FieldManager.vue'
 import ImportWizard from '@/components/ImportWizard.vue'
 
 const route = useRoute()
+const router = useRouter()
 const previewOpen = ref(false)
 const previewFile = ref<any | null>(null)
 async function openAttachment(id: number) {

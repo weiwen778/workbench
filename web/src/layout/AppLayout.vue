@@ -140,6 +140,7 @@ import { ElMessage } from 'element-plus'
 import {
   Calendar,
   Collection,
+  DashboardIcon,
   Delete,
   Document,
   Expand,
@@ -187,6 +188,7 @@ const collapsedGroups = [
 ]
 
 const simpleItems = [
+  { label: '经营驾驶舱', path: '/dashboard', icon: DashboardIcon },
   { label: '待办', path: '/todos', icon: Todo },
   { label: '笔记', path: '/notes', icon: Document },
   { label: '便利贴', path: '/memos', icon: Memo },
@@ -204,7 +206,7 @@ const pageTitle = computed(() => {
 })
 
 const themeIcon = computed(() => (session.theme === 'dark' ? Moon : Sunny))
-const scrollable = computed(() => ['settings', 'trash', 'tables', 'notes', 'memos'].includes(String(route.name)))
+const scrollable = computed(() => ['dashboard', 'settings', 'trash', 'tables', 'notes', 'memos'].includes(String(route.name)))
 
 function isGroupActive(group: { key: string }) {
   if (group.key === 'checkin') return route.path.startsWith('/checkins')
