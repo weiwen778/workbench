@@ -5,7 +5,7 @@ from typing import Literal
 import uuid
 
 from pydantic import BaseModel, Field, field_validator, model_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from ..errors import ApiError
 from ..models import DataField, DataRecord, DataTable
@@ -50,13 +50,19 @@ class DateRange(BaseModel):
         return self
 
 
-def validate_source(db, widget: Widget):
+def validate_source(db, widget: Widget, source_cache=None):
     if widget.kind == 'pie' and widget.aggregation not in {'count', 'sum'}:
         raise ApiError('DASHBOARD_AGGREGATION_INVALID', '饼图请选择记录数或求和，避免用平均值计算占比', 422)
-    table = db.get(DataTable, widget.table_id)
-    if table is None or table.deleted_at is not None:
-        raise ApiError('DASHBOARD_SOURCE_MISSING', '来源表格已删除或不存在，请重新选择表格', 422)
-    fields = {f.key: f for f in db.scalars(select(DataField).where(DataField.table_id == table.id))}
+    cached = source_cache.get(widget.table_id) if source_cache is not None else None
+    if cached is None:
+        table = db.get(DataTable, widget.table_id)
+        if table is None or table.deleted_at is not None:
+            raise ApiError('DASHBOARD_SOURCE_MISSING', '来源表格已删除或不存在，请重新选择表格', 422)
+        fields = {f.key: f for f in db.scalars(select(DataField).where(DataField.table_id == table.id))}
+        if source_cache is not None:
+            source_cache[table.id] = (table, fields)
+    else:
+        table, fields = cached
     if widget.aggregation != 'count':
         field = fields.get(widget.value_field)
         if field is None or field.type != 'number':
@@ -136,9 +142,10 @@ class Accumulator:
 def aggregate(db, widgets: list[Widget], dates: DateRange):
     results = {}
     sources = {}
+    source_cache = {}
     for widget in widgets:
         try:
-            table, fields = validate_source(db, widget)
+            table, fields = validate_source(db, widget, source_cache)
             sources.setdefault(table.id, []).append((widget, table, fields))
         except ApiError as exc:
             results[widget.id] = {'id': widget.id, 'status': 'error', 'message': exc.message}
@@ -149,10 +156,28 @@ def aggregate(db, widgets: list[Widget], dates: DateRange):
             groups = {w.id: {} for w, _, _ in configs}
             failed = {}
             scanned = 0
-            rows = db.scalars(select(DataRecord.data).where(
-                DataRecord.table_id == table_id, DataRecord.deleted_at.is_(None)
-            ).execution_options(yield_per=1000))
-            for data in rows:
+            keys = sorted({key for w, _, _ in configs for key in (
+                w.value_field if w.aggregation != 'count' else None,
+                w.group_field if w.kind != 'metric' else None,
+                w.date_field if dates.start_date or dates.end_date else None,
+            ) if key})
+            source_filter = (DataRecord.table_id == table_id, DataRecord.deleted_at.is_(None))
+            if keys:
+                # JSON columns are decoded once per row. Extracting each key
+                # separately made PostgreSQL repeatedly parse textual JSON and
+                # was slower on the representative multi-card dashboard.
+                rows = db.scalars(select(DataRecord.data).where(*source_filter).execution_options(yield_per=1000))
+                values = rows
+            else:
+                # A set of plain record-count cards needs no JSON transfer.
+                count = db.scalar(select(func.count()).select_from(DataRecord).where(*source_filter)) or 0
+                if count > MAX_ROWS:
+                    failed = {w.id: '来源表格超过 100,000 条记录，请拆分数据后再统计' for w, _, _ in configs}
+                else:
+                    for total in totals.values():
+                        total.rows = total.n = count
+                rows, values = None, []
+            for data in values:
                 scanned += 1
                 if scanned > MAX_ROWS:
                     failed = {w.id: '来源表格超过 100,000 条记录，请拆分数据后再统计' for w, _, _ in configs}
@@ -174,7 +199,8 @@ def aggregate(db, widgets: list[Widget], dates: DateRange):
                                 continue
                             groups[w.id][label] = Accumulator()
                         groups[w.id][label].add(value)
-            rows.close()
+            if rows is not None:
+                rows.close()
             for w, table, fields in configs:
                 if w.id in failed:
                     results[w.id] = {'id': w.id, 'status': 'error', 'message': failed[w.id]}

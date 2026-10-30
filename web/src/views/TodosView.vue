@@ -1,43 +1,14 @@
 <template>
   <div class="todos-layout">
-    <!-- 清单栏 -->
-    <div class="list-pane">
-      <div class="pane-head">
-        <span class="group-title" style="padding: 0">清单</span>
-        <div class="spacer" />
-        <el-button text :icon="Plus" size="small" title="新建清单" @click="createList" />
-      </div>
-      <div class="list-scroll">
-        <div
-          v-for="list in lists"
-          :key="list.id"
-          class="list-item"
-          :class="{ active: list.id === currentListId }"
-          @click="selectList(list.id)"
-        >
-          <span class="ellipsis-1">{{ list.name }}</span>
-          <span class="text-12 muted">{{ list.pending }}</span>
-          <el-dropdown trigger="click" @command="(cmd: string) => listCommand(cmd, list)">
-            <el-button text size="small" :icon="MoreFilled" @click.stop />
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="rename">重命名</el-dropdown-item>
-                <el-dropdown-item command="delete">删除清单</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </div>
-        <div v-if="!lists.length" class="empty-hint" style="padding: 20px 8px">
-          还没有清单<br />点右上角 + 新建
-        </div>
-      </div>
-    </div>
-
     <!-- 任务区 -->
     <div class="task-pane">
       <div class="page-toolbar">
         <div class="title-15">{{ currentList?.name || '待办' }}</div>
-        <el-radio-group v-model="sortMode" size="small" @change="changeSortMode">
+        <el-dropdown v-if="currentList" trigger="click" @command="(command: string) => listCommand(command, currentList)">
+          <el-button text :icon="MoreFilled" aria-label="清单操作" />
+          <template #dropdown><el-dropdown-menu><el-dropdown-item command="rename">重命名清单</el-dropdown-item><el-dropdown-item command="delete">删除清单</el-dropdown-item></el-dropdown-menu></template>
+        </el-dropdown>
+        <el-radio-group :disabled="!currentList" v-model="sortMode" size="small" @change="changeSortMode">
           <el-radio-button value="auto">按截止时间</el-radio-button>
           <el-radio-button value="manual">手动排序</el-radio-button>
         </el-radio-group>
@@ -51,6 +22,7 @@
       <div class="quick-add">
         <el-input
           v-model="newTitle"
+          :disabled="!currentList"
           placeholder="添加待办，回车保存；只填标题也可以"
           maxlength="200"
           @keyup.enter="addTodo"
@@ -84,7 +56,7 @@
       </div>
 
       <div class="scroll-area" v-loading="loading">
-        <div v-if="!currentList" class="empty-hint">请选择或新建一个清单</div>
+        <div v-if="!currentList" class="empty-hint"><div>{{ missingList ? '清单不存在或已删除，请从左侧选择其他清单' : '从左侧选择清单，或新建一个清单开始记录' }}</div><el-button style="margin-top: 12px" @click="createList">新建清单</el-button></div>
         <template v-else>
           <div v-for="(item, index) in pending" :key="item.id" class="task-block">
             <div class="task-row" :class="{ overdue: item.overdue }">
@@ -251,6 +223,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowDown,
@@ -266,7 +239,9 @@ import {
 import { apiError, http } from '@/api/client'
 
 const lists = ref<any[]>([])
-const currentListId = ref<number | null>(null)
+const route = useRoute(), router = useRouter()
+const currentListId = ref<number | null>(Number(route.params.listId) || null)
+const missingList = ref(false)
 const currentList = computed(() => lists.value.find((l) => l.id === currentListId.value) || null)
 const pending = ref<any[]>([])
 const completed = ref<any[]>([])
@@ -300,16 +275,13 @@ function dueText(item: any) {
 async function loadLists() {
   const { data } = await http.get('/todo-lists')
   lists.value = data
-  if (!currentListId.value && data.length) {
-    currentListId.value = data[0].id
-    sortMode.value = data[0].sort_mode
-  }
+  const selected = data.find((list: any) => list.id === Number(route.params.listId))
+  currentListId.value = selected?.id || null
+  missingList.value = !!route.params.listId && !selected
+  if (selected) sortMode.value = selected.sort_mode
 }
 
 async function load() {
-  if (!currentListId.value) {
-    await loadLists()
-  }
   if (!currentListId.value) return
   loading.value = true
   try {
@@ -318,19 +290,13 @@ async function load() {
     completed.value = data.completed
     counts.value = data.counts
     lists.value = data.lists
+    window.dispatchEvent(new Event('wb:todos-changed'))
     sortMode.value = data.list.sort_mode
   } catch (error) {
     ElMessage.error(apiError(error).message)
   } finally {
     loading.value = false
   }
-}
-
-function selectList(id: number) {
-  currentListId.value = id
-  const list = lists.value.find((l) => l.id === id)
-  sortMode.value = list?.sort_mode || 'auto'
-  load()
 }
 
 async function createList() {
@@ -343,9 +309,8 @@ async function createList() {
       inputValue: '工作',
     })
     const { data } = await http.post('/todo-lists', { name: value.trim() })
-    await loadLists()
-    currentListId.value = data.id
-    await load()
+    window.dispatchEvent(new Event('wb:todos-changed'))
+    router.push(`/todos/${data.id}`)
   } catch (error: any) {
     if (error === 'cancel' || error === 'close') return
     ElMessage.error(apiError(error).message)
@@ -377,9 +342,9 @@ async function listCommand(command: string, list: any) {
         { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
       )
       await http.delete(`/todo-lists/${list.id}`)
-      if (currentListId.value === list.id) currentListId.value = null
       await loadLists()
-      await load()
+      window.dispatchEvent(new Event('wb:todos-changed'))
+      router.replace(lists.value.length ? `/todos/${lists.value[0].id}` : '/todos')
       ElMessage.success('已删除')
     } catch (error: any) {
       if (error === 'cancel' || error === 'close') return
@@ -522,6 +487,7 @@ async function removeTodo(item: any) {
 onMounted(async () => {
   try {
     await loadLists()
+    if (!route.params.listId && lists.value.length) { await router.replace(`/todos/${lists.value[0].id}`); return }
     await load()
   } catch (error) {
     ElMessage.error(apiError(error).message)
@@ -534,44 +500,6 @@ onMounted(async () => {
   display: flex;
   height: 100%;
   min-height: 0;
-}
-.list-pane {
-  width: 210px;
-  flex: 0 0 210px;
-  border-right: 1px solid var(--wb-border);
-  background: var(--wb-surface);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.pane-head {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 10px 12px 6px;
-}
-.list-scroll {
-  flex: 1;
-  overflow: auto;
-  padding: 0 6px 8px;
-}
-.list-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13.5px;
-}
-.list-item:hover {
-  background: var(--el-color-primary-light-9);
-}
-.list-item.active {
-  background: var(--el-color-primary-light-9);
-  color: var(--wb-primary);
-  font-weight: 600;
 }
 .task-pane {
   flex: 1;
@@ -685,10 +613,11 @@ onMounted(async () => {
 .task-row.completed {
   opacity: 0.8;
 }
-@media (max-width: 900px) {
-  .list-pane {
-    width: 168px;
-    flex-basis: 168px;
-  }
+@media (max-width: 700px) {
+  .task-pane { padding: 10px; }
+  .task-row { flex-wrap: wrap; }
+  .task-main { min-width: 0; flex-basis: calc(100% - 40px); }
+  .task-actions { margin-left: auto; }
+  .note-text { max-width: 100%; }
 }
 </style>

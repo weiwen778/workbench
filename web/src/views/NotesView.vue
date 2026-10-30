@@ -1,57 +1,24 @@
 <template>
-  <div class="notes-layout">
-    <!-- 分类 -->
-    <div class="folder-pane">
-      <div class="pane-head">
-        <span class="group-title" style="padding: 0">文件夹</span>
-        <div class="spacer" />
-        <el-button text :icon="Plus" size="small" title="新建文件夹" @click="createFolder" />
-      </div>
-      <div class="folder-scroll">
-        <div class="folder-item" :class="{ active: !filter.folderId && !filter.uncategorized }" @click="selectFolder(null, false)">
-          <el-icon><Files /></el-icon><span>全部笔记</span>
-        </div>
-        <div class="folder-item" :class="{ active: filter.uncategorized }" @click="selectFolder(null, true)">
-          <el-icon><FolderOpened /></el-icon><span>未分类</span>
-          <span class="text-12 muted">{{ folderData.uncategorized }}</span>
-        </div>
-        <div
-          v-for="folder in folderData.folders"
-          :key="folder.id"
-          class="folder-item"
-          :class="{ active: filter.folderId === folder.id }"
-          @click="selectFolder(folder.id, false)"
-        >
-          <el-icon><Folder /></el-icon>
-          <span class="ellipsis-1">{{ folder.name }}</span>
-          <span class="text-12 muted">{{ folder.note_count }}</span>
-          <el-button text size="small" :icon="Close" title="删除文件夹" @click.stop="removeFolder(folder)" />
-        </div>
-
-        <div class="group-title" style="margin-top: 10px">标签</div>
-        <div class="tag-list">
-          <el-tag
-            v-for="tag in tags"
-            :key="tag.id"
-            :effect="filter.tagId === tag.id ? 'dark' : 'plain'"
-            size="small"
-            class="tag-chip"
-            @click="selectTag(tag.id)"
-            @close="removeTag(tag)"
-            closable
-          >
-            {{ tag.name }} {{ tag.note_count }}
-          </el-tag>
-          <div v-if="!tags.length" class="text-12 muted" style="padding: 4px">还没有标签</div>
-        </div>
-      </div>
-    </div>
-
+  <div class="notes-layout" :class="{ 'has-current': !!current }">
     <!-- 列表 -->
     <div class="note-list-pane">
       <div class="list-toolbar">
+        <div class="note-category-heading"><strong class="ellipsis-1" :title="currentFolderLabel">{{ currentFolderLabel }}</strong>
+          <el-dropdown v-if="selectedFolder" trigger="click" @command="folderCommand">
+            <el-button text size="small" :icon="MoreFilled" aria-label="文件夹操作" />
+            <template #dropdown><el-dropdown-menu><el-dropdown-item command="rename">重命名文件夹</el-dropdown-item><el-dropdown-item command="delete">删除文件夹</el-dropdown-item></el-dropdown-menu></template>
+          </el-dropdown>
+        </div>
+        <el-alert v-if="missingFolder" title="文件夹不存在或已删除" type="error" :closable="false" />
+        <el-popover placement="bottom-start" :width="290" trigger="click">
+          <template #reference><el-button text size="small" class="tag-filter-button">{{ selectedTag ? `标签：${selectedTag.name}` : '标签筛选' }}</el-button></template>
+          <div class="tag-list">
+            <el-tag v-for="tag in tags" :key="tag.id" :effect="filter.tagId === tag.id ? 'dark' : 'plain'" size="small" class="tag-chip" @click="selectTag(tag.id)" @close="removeTag(tag)" closable>{{ tag.name }} {{ tag.note_count }}</el-tag>
+            <div v-if="!tags.length" class="text-12 muted">还没有标签，可在编辑笔记时添加</div>
+          </div>
+        </el-popover>
         <el-input v-model="keyword" size="small" placeholder="搜索标题或正文" clearable :prefix-icon="Search" @input="onSearch" />
-        <el-button class="btn-tonal" size="small" :icon="Plus" style="width: 100%; margin-top: 6px" @click="createNote">
+        <el-button class="btn-tonal" size="small" :icon="Plus" :disabled="missingFolder" style="width: 100%; margin-top: 6px" @click="createNote">
           新建笔记
         </el-button>
       </div>
@@ -78,9 +45,10 @@
 
     <!-- 编辑器 -->
     <div class="editor-pane">
+      <el-button v-if="current" text class="editor-back" @click="backToList">返回笔记列表</el-button>
       <template v-if="current">
         <div class="editor-toolbar">
-          <el-select v-model="folderId" size="small" placeholder="未分类" clearable style="width: 130px" @change="markDirty">
+          <el-select v-model="folderId" aria-label="笔记所属文件夹" size="small" placeholder="未分类" clearable @clear="folderId = null; markDirty()" style="width: 130px" @change="markDirty">
             <el-option v-for="folder in folderData.folders" :key="folder.id" :label="folder.name" :value="folder.id" />
           </el-select>
           <el-select
@@ -161,12 +129,16 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
-import { Close, Clock, Files, Folder, FolderOpened, Picture, Plus, Search, View } from '@/icons'
+import { Clock, MoreFilled, Picture, Plus, Search, View } from '@/icons'
 import { apiError, http } from '@/api/client'
 
+const route = useRoute(), router = useRouter()
+const routeFolder = String(route.params.folderKey || '')
+const missingFolder = ref(false)
 const folderData = reactive<{ folders: any[]; uncategorized: number }>({ folders: [], uncategorized: 0 })
 const tags = ref<any[]>([])
 const notes = ref<any[]>([])
@@ -177,8 +149,8 @@ const folderId = ref<number | null>(null)
 const tagNames = ref<string[]>([])
 const keyword = ref('')
 const filter = reactive<{ folderId: number | null; uncategorized: boolean; tagId: number | null }>({
-  folderId: null,
-  uncategorized: false,
+  folderId: /^\d+$/.test(routeFolder) ? Number(routeFolder) : null,
+  uncategorized: routeFolder === 'uncategorized',
   tagId: null,
 })
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -197,6 +169,10 @@ const loading = ref(false)
 let saveTimer: number | null = null
 let searchTimer: number | null = null
 let suppressWatch = false
+let saveInFlight: Promise<boolean> | null = null
+const selectedFolder = computed(() => folderData.folders.find(folder => folder.id === filter.folderId))
+const selectedTag = computed(() => tags.value.find(tag => tag.id === filter.tagId))
+const currentFolderLabel = computed(() => selectedFolder.value?.name || (filter.uncategorized ? '未分类' : missingFolder.value ? '文件夹不存在' : '全部笔记'))
 
 const saveLabel = computed(() => {
   if (saveState.value === 'saving') return '保存中…'
@@ -227,12 +203,13 @@ async function loadFolders() {
   folderData.uncategorized = data.uncategorized
   const { data: tagList } = await http.get('/note-tags')
   tags.value = tagList
+  window.dispatchEvent(new Event('wb:notes-changed'))
 }
 
 async function loadNotes() {
   loading.value = true
   try {
-    const params: Record<string, any> = {}
+    const params: Record<string, any> = { summary: true }
     if (filter.folderId) params.folder_id = filter.folderId
     if (filter.uncategorized) params.uncategorized = true
     if (filter.tagId) params.tag_id = filter.tagId
@@ -251,44 +228,38 @@ function onSearch() {
   searchTimer = window.setTimeout(loadNotes, 300)
 }
 
-function selectFolder(id: number | null, uncategorized: boolean) {
-  filter.folderId = id
-  filter.uncategorized = uncategorized
-  loadNotes()
-}
-
 function selectTag(id: number) {
   filter.tagId = filter.tagId === id ? null : id
   loadNotes()
 }
 
-async function createFolder() {
-  try {
-    const { value } = await ElMessageBox.prompt('文件夹名称', '新建文件夹', {
-      inputPattern: /\S+/,
-      inputErrorMessage: '请输入名称',
-    })
-    await http.post('/note-folders', { name: value.trim() })
-    await loadFolders()
-  } catch (error: any) {
-    if (error === 'cancel' || error === 'close') return
-    ElMessage.error(apiError(error).message)
-  }
-}
-
 async function removeFolder(folder: any) {
   try {
+    if (!await guardNavigation()) return
     await ElMessageBox.confirm(`删除文件夹「${folder.name}」？里面的笔记会移到「未分类」，笔记本身不会删。`, '删除文件夹', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消',
     })
     await http.delete(`/note-folders/${folder.id}`)
-    await Promise.all([loadFolders(), loadNotes()])
+    current.value = null
+    await loadFolders()
+    router.replace('/notes/uncategorized')
   } catch (error: any) {
     if (error === 'cancel' || error === 'close') return
     ElMessage.error(apiError(error).message)
   }
+}
+
+async function folderCommand(command: string) {
+  const folder = selectedFolder.value
+  if (!folder) return
+  if (command === 'delete') { await removeFolder(folder); return }
+  try {
+    const { value } = await ElMessageBox.prompt('文件夹名称', '重命名文件夹', { inputValue: folder.name, inputValidator: v => !!v?.trim() && v.trim().length <= 100 || '请输入 1–100 个字', confirmButtonText: '保存', cancelButtonText: '取消' })
+    await http.patch(`/note-folders/${folder.id}`, { name: value.trim() })
+    await loadFolders()
+  } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(apiError(error).message) }
 }
 
 async function removeTag(tag: any) {
@@ -302,6 +273,7 @@ async function removeTag(tag: any) {
 }
 
 async function createNote() {
+  if (!await guardNavigation()) return
   try {
     const { data } = await http.post('/notes', {
       title: '',
@@ -309,7 +281,7 @@ async function createNote() {
       folder_id: filter.folderId,
       tags: [],
     })
-    await loadNotes()
+    await Promise.all([loadNotes(), loadFolders()])
     await openNote(data.id, true)
     // 新建后直接聚焦标题
     setTimeout(() => {
@@ -322,14 +294,14 @@ async function createNote() {
 }
 
 async function openNote(id: number, skipGuard = false) {
-  if (!skipGuard && hasUnsaved()) {
-    await save('manual')
+  if (!skipGuard && (hasUnsaved() || saveInFlight)) {
+    if (!await save('manual')) return
   }
   try {
     const { data } = await http.get(`/notes/${id}`)
     suppressWatch = true
     current.value = data
-    title.value = data.raw_title || data.title
+    title.value = data.raw_title ?? data.title
     content.value = data.content
     folderId.value = data.folder_id
     tagNames.value = [...data.tags]
@@ -363,15 +335,24 @@ function scheduleSave() {
   saveTimer = window.setTimeout(() => save('auto'), 1500)
 }
 
-async function save(mode: 'auto' | 'manual') {
-  if (!current.value) return
+async function save(mode: 'auto' | 'manual'): Promise<boolean> {
+  if (saveTimer) { window.clearTimeout(saveTimer); saveTimer = null }
+  while (saveInFlight) { if (!await saveInFlight) return false }
+  if (!current.value || !hasUnsaved()) return true
+  const request = performSave(mode)
+  saveInFlight = request
+  try { return await request } finally { if (saveInFlight === request) saveInFlight = null }
+}
+
+async function performSave(mode: 'auto' | 'manual'): Promise<boolean> {
+  if (!current.value) return true
   saving.value = true
   saveState.value = 'saving'
   try {
     const { data } = await http.put(`/notes/${current.value.id}`, {
       title: title.value,
       content: content.value,
-      folder_id: folderId.value,
+      folder_id: folderId.value ?? null,
       tags: tagNames.value,
       version: version.value,
       mode,
@@ -381,6 +362,7 @@ async function save(mode: 'auto' | 'manual') {
     saveState.value = 'saved'
     conflict.value = false
     await Promise.all([loadNotes(), loadFolders()])
+    return true
   } catch (error: any) {
     saveState.value = 'error'
     if (error?.response?.status === 409) {
@@ -389,6 +371,7 @@ async function save(mode: 'auto' | 'manual') {
     } else {
       ElMessage.error(apiError(error).message)
     }
+    return false
   } finally {
     saving.value = false
   }
@@ -400,8 +383,7 @@ async function forceSave() {
     const { data: latest } = await http.get(`/notes/${current.value.id}`)
     version.value = latest.version
     conflict.value = false
-    await save('manual')
-    ElMessage.success('已用当前内容覆盖')
+    if (await save('manual')) ElMessage.success('已用当前内容覆盖')
   } catch (error) {
     ElMessage.error(apiError(error).message)
   }
@@ -481,7 +463,7 @@ async function restoreRevision(rev: any) {
     revisionPreviewOpen.value = false
     revisionsOpen.value = false
     suppressWatch = true
-    title.value = data.raw_title || data.title
+    title.value = data.raw_title ?? data.title
     content.value = data.content
     version.value = data.version
     current.value = data
@@ -497,6 +479,14 @@ async function restoreRevision(rev: any) {
 
 watch([title, content], markDirty)
 
+async function guardNavigation() {
+  if (hasUnsaved() || saveInFlight) return await save('manual')
+  return true
+}
+onBeforeRouteLeave(guardNavigation)
+onBeforeRouteUpdate(guardNavigation)
+async function backToList() { if (await guardNavigation()) current.value = null }
+
 function beforeUnload(event: BeforeUnloadEvent) {
   if (hasUnsaved()) {
     event.preventDefault()
@@ -506,8 +496,10 @@ function beforeUnload(event: BeforeUnloadEvent) {
 
 onMounted(async () => {
   if (window.innerWidth < 1024) mode.value = 'edit'
-  await Promise.all([loadFolders(), loadNotes()])
-  if (notes.value.length) await openNote(notes.value[0].id, true)
+  await loadFolders()
+  missingFolder.value = !!routeFolder && routeFolder !== 'uncategorized' && !folderData.folders.some(folder => String(folder.id) === routeFolder)
+  if (!missingFolder.value) await loadNotes()
+  if (notes.value.length && window.innerWidth > 700) await openNote(notes.value[0].id, true)
   window.addEventListener('beforeunload', beforeUnload)
 })
 
@@ -523,40 +515,6 @@ onUnmounted(() => {
   display: flex;
   height: 100%;
   min-height: 0;
-}
-.folder-pane {
-  width: 190px;
-  flex: 0 0 190px;
-  border-right: 1px solid var(--wb-border);
-  background: var(--wb-surface);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.pane-head {
-  display: flex;
-  align-items: center;
-  padding: 10px 10px 4px;
-}
-.folder-scroll {
-  flex: 1;
-  overflow: auto;
-  padding: 0 6px 10px;
-}
-.folder-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 34px;
-  padding: 0 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-}
-.folder-item:hover,
-.folder-item.active {
-  background: var(--el-color-primary-light-9);
-  color: var(--wb-primary);
 }
 .tag-list {
   display: flex;
@@ -576,6 +534,9 @@ onUnmounted(() => {
   flex-direction: column;
   min-height: 0;
 }
+.note-category-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 5px; font-size: 13px; }
+.note-category-heading strong { min-width: 0; }
+.editor-back { display: none; }
 .list-toolbar {
   padding: 8px 10px;
   border-bottom: 1px solid var(--wb-border);
@@ -703,10 +664,6 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--wb-border);
 }
 @media (max-width: 1100px) {
-  .folder-pane {
-    width: 160px;
-    flex-basis: 160px;
-  }
   .note-list-pane {
     width: 220px;
     flex-basis: 220px;
@@ -714,5 +671,16 @@ onUnmounted(() => {
   .editor-body {
     grid-template-columns: 1fr;
   }
+}
+</style>
+
+<style scoped>
+@media (max-width: 700px) {
+  .note-list-pane { width: 100%; flex: 1; }
+  .notes-layout.has-current .note-list-pane { display: none; }
+  .notes-layout:not(.has-current) .editor-pane { display: none; }
+  .editor-back { display: inline-flex; align-self: flex-start; margin: 6px; }
+  .editor-toolbar { padding: 8px; }
+  .editor-body { grid-template-columns: 1fr; }
 }
 </style>

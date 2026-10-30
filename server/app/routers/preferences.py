@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -19,10 +19,22 @@ HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
 class PreferencesIn(BaseModel):
     theme: str | None = None
     theme_color: str | None = None
+    checkin_shop_label: str | None = Field(default=None, min_length=1, max_length=40)
+    checkin_social_label: str | None = Field(default=None, min_length=1, max_length=40)
+
+    @field_validator("checkin_shop_label", "checkin_social_label", mode="before")
+    @classmethod
+    def trim_label(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
 
 
 def _payload(user: User) -> dict:
-    return {"theme": user.theme, "theme_color": user.theme_color}
+    return {
+        "theme": user.theme, "theme_color": user.theme_color,
+        "checkin_shop_label": user.checkin_shop_label,
+        "checkin_social_label": user.checkin_social_label,
+    }
 
 
 @router.get("/preferences")
@@ -44,5 +56,9 @@ def update_preferences(
         if not HEX_COLOR.match(payload.theme_color):
             raise ApiError("INVALID_THEME_COLOR", "主题色需要 #RRGGBB 格式", 422)
         user.theme_color = payload.theme_color.lower()
+    if payload.checkin_shop_label is not None:
+        user.checkin_shop_label = payload.checkin_shop_label
+    if payload.checkin_social_label is not None:
+        user.checkin_social_label = payload.checkin_social_label
     db.commit()
     return _payload(user)

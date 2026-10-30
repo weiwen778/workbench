@@ -4,7 +4,13 @@
       <div class="title-15">设置</div>
     </div>
 
-    <div class="page-body">
+    <el-tabs :model-value="activeTab" class="settings-tabs" @tab-change="changeTab">
+      <el-tab-pane label="通用设置" name="general" />
+      <el-tab-pane label="回收站" name="trash" />
+    </el-tabs>
+
+    <TrashView v-if="activeTab === 'trash'" class="settings-trash" />
+    <div v-else class="page-body">
       <el-card shadow="never" class="block">
         <div class="group-title">主题</div>
         <div class="row">
@@ -78,20 +84,24 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { apiError, http } from '@/api/client'
 import { applyTheme, logout, session, setThemeColor } from '@/stores/session'
 import { DEFAULT_THEME_COLOR } from '@/theme-color'
 import AgentAccess from '@/components/AgentAccess.vue'
+import TrashView from '@/views/TrashView.vue'
 
 const router = useRouter()
+const route = useRoute()
+const activeTab = computed(() => route.name === 'settings-trash' ? 'trash' : 'general')
+function changeTab(name: string | number) { router.push(name === 'trash' ? '/settings/trash' : '/settings') }
 const passwordForm = reactive({ old_password: '', new_password: '', confirm: '' })
 const savingPassword = ref(false)
 const health = reactive<Record<string, any>>({})
 
-const presetColors = ['#39776f', '#2563eb', '#7c3aed', '#db2777', '#ea580c', '#16a34a', '#475569', '#0f766e']
+const presetColors = ['#2383e2', '#37352f', '#787774', '#448361', '#337ea9', '#9065b0', '#c14c8a', '#cb912f']
 
 async function changeColor(value: string | null) {
   if (!value) return
@@ -159,6 +169,10 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.settings-tabs { flex-shrink: 0; }
+.settings-tabs :deep(.el-tabs__header) { margin-bottom: 0; }
+.settings-trash { padding: 0; height: auto; min-height: 320px; flex: 1; }
+
 .block {
   flex: 0 0 auto;
   margin-bottom: 10px;

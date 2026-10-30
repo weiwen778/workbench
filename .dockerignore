@@ -12,3 +12,8 @@ docs/screenshots
 *.log
 .env
 **/.env
+
+# Private local state must never enter a build context.
+.run
+backups
+outputs

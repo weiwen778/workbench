@@ -1,6 +1,7 @@
 <template>
   <div class="login-page">
     <div class="login-card">
+      <img class="login-mark" src="/favicon.svg?v=20261031-notion" alt="个人工作台图标" />
       <div class="login-title">个人工作台</div>
       <el-form :model="form" @submit.prevent="submit">
         <el-form-item>
@@ -76,10 +77,11 @@ async function submit() {
   max-width: 100%;
   background: var(--wb-surface);
   border: 1px solid var(--wb-border);
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 26px 24px 20px;
   box-shadow: 0 8px 24px rgba(16, 24, 40, 0.06);
 }
+.login-mark { width: 52px; height: 52px; display: block; margin: 0 auto 16px; }
 .login-title {
   font-size: 20px;
   font-weight: 600;

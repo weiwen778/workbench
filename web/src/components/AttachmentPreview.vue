@@ -20,10 +20,9 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef } from 'vue'
-import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy, type RenderTask } from 'pdfjs-dist'
+import type { PDFDocumentProxy, PDFDocumentLoadingTask, RenderTask } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { http } from '@/api/client'
-GlobalWorkerOptions.workerSrc = workerUrl
 const props = defineProps<{ modelValue: boolean; file: any | null }>()
 defineEmits<{ (e: 'update:modelValue', value: boolean): void }>()
 const pdf = shallowRef<PDFDocumentProxy | null>(null)
@@ -31,7 +30,7 @@ const page = ref(1), pages = ref(0), scale = ref(1), loading = ref(false), error
 const canvas = ref<HTMLCanvasElement | null>(null), viewport = ref<HTMLElement | null>(null)
 const isPdf = computed(() => props.file?.is_pdf || props.file?.name?.toLowerCase().endsWith('.pdf'))
 const url = computed(() => `/api/v1/files/${props.file?.id}/content`)
-let sequence = 0, renderTask: RenderTask | null = null, documentTask: ReturnType<typeof getDocument> | null = null
+let sequence = 0, renderTask: RenderTask | null = null, documentTask: PDFDocumentLoadingTask | null = null
 function dispose() {
   sequence++
   renderTask?.cancel(); renderTask = null
@@ -46,6 +45,9 @@ async function load() {
   try {
     const response = await http.get(`/files/${props.file.id}/content`, { responseType: 'arraybuffer' })
     if (current !== sequence) return
+    const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist')
+    if (current !== sequence) return
+    GlobalWorkerOptions.workerSrc = workerUrl
     const task = getDocument({ data: new Uint8Array(response.data), cMapUrl: '/pdfjs/6.4.299/cmaps/', cMapPacked: true, standardFontDataUrl: '/pdfjs/6.4.299/standard_fonts/', wasmUrl: '/pdfjs/6.4.299/wasm/' })
     documentTask = task
     const document = await task.promise

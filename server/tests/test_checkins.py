@@ -298,3 +298,17 @@ def test_history_endpoint_excludes_other_periods(auth):
     resp = auth.get("/api/v1/checkin-instances/history?kind=shop&period=daily")
     assert resp.status_code == 200
     assert resp.json()["total"] == 1
+
+
+def test_daily_weekly_monthly_rules_do_not_generate_each_others_instances(auth, db):
+    from app.models import CheckinInstance, CheckinRule
+    target = make_target(auth)
+    group = make_group(auth)
+    expected = {"daily": "日常巡检", "weekly": "周度复盘", "monthly": "月度利润核对"}
+    for period, title in expected.items():
+        make_rule(auth, target["id"], group["id"], title=title, period=period)
+    for period, title in expected.items():
+        items = all_items(list_today(auth, period=period))
+        assert {item["title"] for item in items} == {title}
+    for instance in db.query(CheckinInstance).all():
+        assert instance.period_type == db.get(CheckinRule, instance.rule_id).period

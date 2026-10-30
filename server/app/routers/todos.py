@@ -4,7 +4,7 @@ from datetime import date, datetime, time
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -98,28 +98,15 @@ def serialize(todo: Todo, children: list[Todo] | None = None) -> dict:
 
 def _lists_payload(db: Session) -> list[dict]:
     lists = db.scalars(select(TodoList).order_by(TodoList.sort_order, TodoList.id)).all()
-    result = []
-    for lst in lists:
-        todos = db.scalars(select(Todo).where(Todo.list_id == lst.id)).all()
-        by_parent: dict[int | None, list[Todo]] = {}
-        for t in todos:
-            by_parent.setdefault(t.parent_id, []).append(t)
-        top = by_parent.get(None, [])
-        pending = sum(1 for t in todos if t.completed_at is None)
-        done = sum(1 for t in todos if t.completed_at is not None)
-        result.append(
-            {
-                "id": lst.id,
-                "name": lst.name,
-                "sort_mode": lst.sort_mode,
-                "sort_order": lst.sort_order,
-                "top_total": len(top),
-                "pending": pending,
-                "done": done,
-                "total_nodes": len(todos),
-            }
-        )
-    return result
+    counts = {row.list_id: row for row in db.execute(select(
+        Todo.list_id,
+        func.count(Todo.id).label('total_nodes'),
+        func.sum(case((Todo.parent_id.is_(None), 1), else_=0)).label('top_total'),
+        func.sum(case((Todo.completed_at.is_(None), 1), else_=0)).label('pending'),
+        func.sum(case((Todo.completed_at.is_not(None), 1), else_=0)).label('done'),
+    ).group_by(Todo.list_id))}
+    return [{'id': lst.id, 'name': lst.name, 'sort_mode': lst.sort_mode, 'sort_order': lst.sort_order,
+             **{key: int(getattr(counts.get(lst.id), key, 0) or 0) for key in ('top_total', 'pending', 'done', 'total_nodes')}} for lst in lists]
 
 
 @router.get("/todo-lists")

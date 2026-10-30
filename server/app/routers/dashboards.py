@@ -20,7 +20,7 @@ class BoardIn(BaseModel):
     @classmethod
     def clean(cls, value):
         if not value.strip():
-            raise ValueError('请填写驾驶舱名称')
+            raise ValueError('请填写看板名称')
         return value.strip()
 
 
@@ -48,7 +48,7 @@ def get_board(db, user, board_id, lock=False):
     stmt = select(Dashboard).where(Dashboard.id == board_id, Dashboard.user_id == user.id)
     board = db.scalar(stmt.with_for_update() if lock else stmt)
     if board is None:
-        raise ApiError('NOT_FOUND', '驾驶舱不存在', 404)
+        raise ApiError('NOT_FOUND', '看板不存在', 404)
     return board
 
 
@@ -61,7 +61,7 @@ def list_boards(user: User = Depends(get_current_user), db: Session = Depends(ge
 @router.post('/dashboards', status_code=201)
 def create_board(payload: BoardIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if db.scalar(select(func.count()).select_from(Dashboard).where(Dashboard.user_id == user.id)) >= 30:
-        raise ApiError('DASHBOARD_LIMIT', '最多创建 30 个驾驶舱', 409)
+        raise ApiError('DASHBOARD_LIMIT', '最多创建 30 个看板', 409)
     board = Dashboard(user_id=user.id, name=payload.name, widgets=[], version=1)
     db.add(board)
     db.commit()
@@ -91,7 +91,7 @@ def board_data(board_id: int, start_date: str | None = Query(default=None), end_
 def update_board(board_id: int, payload: BoardUpdate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     board = get_board(db, user, board_id, lock=True)
     if board.version != payload.version:
-        raise ApiError('VERSION_CONFLICT', '驾驶舱配置已在其他位置修改，请刷新后再试', 409)
+        raise ApiError('VERSION_CONFLICT', '看板配置已在其他位置修改，请刷新后再试', 409)
     old_widgets = {w['id']: w for w in board.widgets}
     for widget in payload.widgets:
         # Keep unchanged, broken-source cards editable/removable without blocking all other changes.
@@ -108,7 +108,7 @@ def update_board(board_id: int, payload: BoardUpdate, user: User = Depends(get_c
 def delete_board(board_id: int, version: int = Query(..., ge=1), user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     board = get_board(db, user, board_id, lock=True)
     if board.version != version:
-        raise ApiError('VERSION_CONFLICT', '驾驶舱配置已修改，请刷新后再试', 409)
+        raise ApiError('VERSION_CONFLICT', '看板配置已修改，请刷新后再试', 409)
     db.delete(board)
     db.commit()
     return {'ok': True}

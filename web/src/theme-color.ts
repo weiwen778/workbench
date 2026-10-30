@@ -1,5 +1,5 @@
 // 主题色计算：把用户选的主色展开成 Element Plus 需要的一套色阶。
-export const DEFAULT_THEME_COLOR = '#39776f'
+export const DEFAULT_THEME_COLOR = '#2383e2'
 
 type Rgb = [number, number, number]
 
@@ -25,11 +25,11 @@ function alpha(rgb: Rgb, value: number): string {
 export function applyThemeColor(color: string, theme: 'light' | 'dark' = 'light'): string {
   const rgb = parse(color)
   const value = rgb && color.startsWith('#') ? color.toLowerCase() : DEFAULT_THEME_COLOR
-  const base = parse(value) as Rgb
+  const base = parse(theme === 'dark' && value === DEFAULT_THEME_COLOR ? '#529cca' : value) as Rgb
   const root = document.documentElement.style
 
-  root.setProperty('--wb-primary', value)
-  root.setProperty('--el-color-primary', value)
+  root.setProperty('--wb-primary', toHex(base))
+  root.setProperty('--el-color-primary', toHex(base))
 
   if (theme === 'dark') {
     root.setProperty('--el-color-primary-light-3', alpha(base, 0.55))

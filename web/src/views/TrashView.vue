@@ -84,6 +84,7 @@ async function restore(row: any) {
     ElMessage.success(data.message || '已恢复')
     await load()
     window.dispatchEvent(new Event('wb:tables-changed'))
+    if (row.kind === 'memo') window.dispatchEvent(new Event('wb:memos-changed'))
   } catch (error: any) {
     const body = error?.response?.data
     if (body?.code === 'NAME_CONFLICT') {

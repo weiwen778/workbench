@@ -86,9 +86,9 @@
       </div>
     </div>
 
-    <div class="translate-bottom">
+    <div ref="bottomRef" class="translate-bottom" :class="{ 'is-resizing': resizing }" :style="{ '--translate-favorites-width': `${favoritesWidth}px` }">
       <!-- 收藏 -->
-      <div class="bottom-pane">
+      <div id="translate-favorites" class="bottom-pane">
         <div class="history-head">
           <span class="group-title" style="padding: 0">收藏</span>
           <div class="spacer" />
@@ -112,8 +112,29 @@
         </div>
       </div>
 
+      <div
+        class="bottom-divider"
+        role="separator"
+        tabindex="0"
+        aria-label="调整收藏和历史的宽度"
+        aria-orientation="vertical"
+        aria-controls="translate-favorites translate-history"
+        :aria-valuemin="MIN_FAVORITES_WIDTH"
+        :aria-valuemax="Math.round(maxFavoritesWidth)"
+        :aria-valuenow="Math.round(favoritesWidth)"
+        :aria-valuetext="`收藏宽度 ${Math.round(favoritesWidth)} 像素`"
+        title="左右拖动调整宽度，双击恢复默认"
+        @pointerdown="startResize"
+        @pointermove="resizePanels"
+        @pointerup="finishResize"
+        @pointercancel="finishResize"
+        @lostpointercapture="finishResize"
+        @keydown="resizeWithKeyboard"
+        @dblclick="resetWidth"
+      ></div>
+
       <!-- 历史 -->
-      <div class="bottom-pane">
+      <div id="translate-history" class="bottom-pane">
         <div class="history-head">
           <span class="group-title" style="padding: 0">历史</span>
           <el-input
@@ -244,7 +265,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   CopyDocument,
@@ -284,6 +305,69 @@ const page = ref(1)
 const pageSize = ref(20)
 const detailOpen = ref(false)
 const detail = ref<any>(null)
+
+// 收藏／历史分栏：仅在左右布局时启用，窄屏继续上下排列。
+const MIN_FAVORITES_WIDTH = 240
+const MIN_HISTORY_WIDTH = 360
+const DIVIDER_WIDTH = 9
+const DEFAULT_FAVORITES_WIDTH = 320
+const WIDTH_STORAGE_KEY = 'wb_translate_favorites_width'
+const bottomRef = ref<HTMLElement | null>(null)
+const bottomWidth = ref(0)
+const resizing = ref(false)
+function readWidth() {
+  try {
+    const stored = Number(localStorage.getItem(WIDTH_STORAGE_KEY))
+    return Number.isFinite(stored) && stored >= MIN_FAVORITES_WIDTH ? stored : DEFAULT_FAVORITES_WIDTH
+  } catch { return DEFAULT_FAVORITES_WIDTH }
+}
+const preferredWidth = ref(readWidth())
+const maxFavoritesWidth = computed(() => Math.max(MIN_FAVORITES_WIDTH, bottomWidth.value - DIVIDER_WIDTH - MIN_HISTORY_WIDTH))
+const favoritesWidth = computed(() => Math.min(maxFavoritesWidth.value, Math.max(MIN_FAVORITES_WIDTH, preferredWidth.value)))
+let sizeObserver: ResizeObserver | null = null
+let activePointer: number | null = null
+let dragStartX = 0
+let dragStartWidth = 0
+
+function rememberWidth() {
+  try { localStorage.setItem(WIDTH_STORAGE_KEY, String(preferredWidth.value)) } catch { /* Storage may be unavailable. */ }
+}
+function setWidth(width: number) {
+  preferredWidth.value = Math.min(maxFavoritesWidth.value, Math.max(MIN_FAVORITES_WIDTH, width))
+}
+function startResize(event: PointerEvent) {
+  if (!event.isPrimary || event.button !== 0 || window.innerWidth <= 820) return
+  event.preventDefault()
+  dragStartX = event.clientX
+  dragStartWidth = favoritesWidth.value
+  activePointer = event.pointerId
+  resizing.value = true
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+}
+function resizePanels(event: PointerEvent) {
+  if (activePointer !== event.pointerId) return
+  setWidth(dragStartWidth + event.clientX - dragStartX)
+}
+function finishResize(event: PointerEvent) {
+  if (activePointer !== event.pointerId) return
+  activePointer = null
+  resizing.value = false
+  const handle = event.currentTarget as HTMLElement
+  if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId)
+  rememberWidth()
+}
+function resetWidth() {
+  setWidth(DEFAULT_FAVORITES_WIDTH)
+  rememberWidth()
+}
+function resizeWithKeyboard(event: KeyboardEvent) {
+  const step = event.shiftKey ? 40 : 16
+  const width = { ArrowLeft: favoritesWidth.value - step, ArrowRight: favoritesWidth.value + step, Home: MIN_FAVORITES_WIDTH, End: maxFavoritesWidth.value }[event.key]
+  if (width === undefined) return
+  event.preventDefault()
+  setWidth(width)
+  rememberWidth()
+}
 
 let requestSeq = 0
 let historyTimer: number | null = null
@@ -614,9 +698,20 @@ async function clearProvider(conn: any) {
 }
 
 onMounted(async () => {
+  if (bottomRef.value) {
+    bottomWidth.value = bottomRef.value.clientWidth
+    sizeObserver = new ResizeObserver(() => {
+      if (bottomRef.value) bottomWidth.value = bottomRef.value.clientWidth
+    })
+    sizeObserver.observe(bottomRef.value)
+  }
   await loadConnections()
   await loadFavorites()
   await loadHistory(1)
+})
+onUnmounted(() => {
+  sizeObserver?.disconnect()
+  if (historyTimer) window.clearTimeout(historyTimer)
 })
 </script>
 
@@ -634,21 +729,44 @@ onMounted(async () => {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  grid-template-columns: var(--translate-favorites-width, 320px) 9px minmax(0, 1fr);
   background: var(--wb-surface);
   border: 1px solid var(--wb-border);
   border-radius: 12px;
   overflow: hidden;
 }
 .bottom-pane {
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
   padding: 8px 12px;
 }
-.bottom-pane + .bottom-pane {
-  border-left: 1px solid var(--wb-border);
+.bottom-divider {
+  position: relative;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  outline: none;
 }
+.bottom-divider::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: var(--wb-border);
+}
+.bottom-divider:hover::before,
+.bottom-divider:focus-visible::before,
+.is-resizing .bottom-divider::before {
+  left: 3px;
+  width: 3px;
+  background: var(--wb-primary);
+}
+.bottom-divider:focus-visible { background: var(--el-color-primary-light-9); }
+.is-resizing, .is-resizing :deep(*) { cursor: col-resize; user-select: none; }
 .history-head {
   display: flex;
   align-items: center;
@@ -709,14 +827,10 @@ onMounted(async () => {
   .translate-bottom {
     grid-template-columns: 1fr;
   }
-  .bottom-pane + .bottom-pane {
+  .bottom-divider { display: none; }
+  #translate-history {
     border-left: none;
     border-top: 1px solid var(--wb-border);
-  }
-}
-@media (min-width: 821px) and (max-width: 1100px) {
-  .translate-bottom {
-    grid-template-columns: 260px minmax(0, 1fr);
   }
 }
 </style>

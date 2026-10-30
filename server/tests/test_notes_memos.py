@@ -220,3 +220,15 @@ def test_memo_version_conflict(auth):
     assert first.status_code == 200
     second = auth.patch(f"/api/v1/memos/{memo['id']}", json={"content": "改二", "version": memo["version"]})
     assert second.status_code == 409
+
+
+def test_note_can_be_moved_to_uncategorized_without_deleting_content(auth):
+    folder = auth.post('/api/v1/note-folders', json={'name': '待整理'}).json()
+    note = new_note(auth, folder_id=folder['id'])
+    moved = auth.put(f"/api/v1/notes/{note['id']}", json={'folder_id': None, 'version': note['version']})
+    assert moved.status_code == 200
+    assert moved.json()['folder_id'] is None
+    assert moved.json()['content'] == note['content']
+    folders = auth.get('/api/v1/note-folders').json()
+    assert folders['uncategorized'] == 1
+    assert folders['folders'][0]['note_count'] == 0

@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Index,
     String,
     Text,
     Time,
@@ -45,6 +46,8 @@ class User(Base, TimestampMixin):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     theme: Mapped[str] = mapped_column(String(16), default="light", nullable=False)
     theme_color: Mapped[str] = mapped_column(String(16), default="#39776f", nullable=False)
+    checkin_shop_label: Mapped[str] = mapped_column(String(40), default="店铺打卡", nullable=False)
+    checkin_social_label: Mapped[str] = mapped_column(String(40), default="社媒打卡", nullable=False)
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
@@ -261,6 +264,7 @@ class DataField(Base):
 
 class DataRecord(Base):
     __tablename__ = "data_records"
+    __table_args__ = (Index("ix_records_table_live_id", "table_id", "deleted_at", "id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     table_id: Mapped[int] = mapped_column(ForeignKey("data_tables.id", ondelete="CASCADE"), index=True)
@@ -335,6 +339,7 @@ class NoteTag(Base):
 
 class Note(Base, TimestampMixin):
     __tablename__ = "notes"
+    __table_args__ = (Index("ix_notes_folder_live_updated", "folder_id", "deleted_at", "updated_at"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     folder_id: Mapped[int | None] = mapped_column(ForeignKey("note_folders.id", ondelete="SET NULL"))

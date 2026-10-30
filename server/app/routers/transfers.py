@@ -5,6 +5,7 @@ import io
 import json
 import re
 import uuid
+import zipfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -72,22 +73,37 @@ def job_payload(job: DataTransferJob) -> dict:
 
 
 def _read_sheets(raw: bytes) -> tuple[dict[str, list[list]], str]:
-    wb = load_workbook(io.BytesIO(raw), data_only=True)
-    sheets: dict[str, list[list]] = {}
-    for ws in wb.worksheets:
-        rows = []
-        for row in ws.iter_rows():
-            values = []
-            for cell in row:
-                value = cell.value
-                if (isinstance(value, (int, float)) and not isinstance(value, bool)
-                        and float(value).is_integer() and re.fullmatch(r"0+", cell.number_format or "")):
-                    value = format(int(value), f"0{len(cell.number_format)}d")
-                values.append(value)
-            rows.append(values)
-        sheets[ws.title] = rows
-    wb.close()
-    return sheets, wb.sheetnames[0] if wb.sheetnames else ""
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        entries = archive.infolist()
+        if len(entries) > 5000 or sum(entry.file_size for entry in entries) > 64 * 1024 * 1024:
+            raise ApiError('WORKBOOK_TOO_LARGE', 'Excel 解压后内容过大，请拆分文件后导入', 413)
+    wb = load_workbook(io.BytesIO(raw), data_only=True, read_only=True, keep_links=False)
+    sheets, total_cells = {}, 0
+    try:
+        if len(wb.worksheets) > 20:
+            raise ApiError('WORKBOOK_TOO_LARGE', '每个文件最多支持 20 个工作表，请拆分后导入', 413)
+        for ws in wb.worksheets:
+            if (ws.max_row or 0) > MAX_ROWS + 1:
+                raise ApiError('TOO_MANY_ROWS', f'每个工作表最多 {MAX_ROWS} 条数据，请移除多余行（含格式化空行）', 422)
+            if (ws.max_column or 0) > MAX_COLS:
+                raise ApiError('TOO_MANY_COLUMNS', f'最多支持 {MAX_COLS} 列', 422)
+            rows = []
+            for row in ws.iter_rows():
+                total_cells += len(row)
+                if total_cells > MAX_ROWS * MAX_COLS:
+                    raise ApiError('WORKBOOK_TOO_LARGE', '工作簿单元格总量过大，请按工作表拆分后导入', 413)
+                values = []
+                for cell in row:
+                    value = cell.value
+                    if (isinstance(value, (int, float)) and not isinstance(value, bool)
+                            and float(value).is_integer() and re.fullmatch(r"0+", cell.number_format or "")):
+                        value = format(int(value), f"0{len(cell.number_format)}d")
+                    values.append(value)
+                rows.append(values)
+            sheets[ws.title] = rows
+        return sheets, wb.sheetnames[0] if wb.sheetnames else ''
+    finally:
+        wb.close()
 
 
 def _decode_text(raw: bytes) -> str:
@@ -109,7 +125,14 @@ def _read_csv(raw: bytes) -> list[list]:
         delimiter = csv.Sniffer().sniff(text[:8192], delimiters=",;\t|").delimiter
     except csv.Error:
         pass
-    return [list(row) for row in csv.reader(io.StringIO(text), delimiter=delimiter)]
+    rows = []
+    for row in csv.reader(io.StringIO(text), delimiter=delimiter):
+        if len(rows) >= MAX_ROWS + 1:
+            raise ApiError('TOO_MANY_ROWS', f'单批最多 {MAX_ROWS} 条数据', 422)
+        if len(row) > MAX_COLS:
+            raise ApiError('TOO_MANY_COLUMNS', f'最多支持 {MAX_COLS} 列', 422)
+        rows.append(list(row))
+    return rows
 
 
 def _read_json(raw: bytes) -> list[list]:
@@ -125,7 +148,11 @@ def _read_json(raw: bytes) -> list[list]:
         raise ValueError("JSON 顶层必须是数组")
     if not data:
         return []
+    if len(data) > MAX_ROWS + 1:
+        raise ApiError('TOO_MANY_ROWS', f'单批最多 {MAX_ROWS} 条数据', 422)
     if all(isinstance(item, list) for item in data):
+        if any(len(item) > MAX_COLS for item in data):
+            raise ApiError('TOO_MANY_COLUMNS', f'最多支持 {MAX_COLS} 列', 422)
         return [list(item) for item in data]
     if not all(isinstance(item, dict) for item in data):
         raise ValueError("JSON 数组里必须是对象或数组")
@@ -134,6 +161,10 @@ def _read_json(raw: bytes) -> list[list]:
         for key in item:
             if key not in headers:
                 headers.append(key)
+                if len(headers) > MAX_COLS:
+                    raise ApiError('TOO_MANY_COLUMNS', f'最多支持 {MAX_COLS} 列', 422)
+    if len(data) > MAX_ROWS:
+        raise ApiError('TOO_MANY_ROWS', f'单批最多 {MAX_ROWS} 条数据', 422)
     rows = [headers]
     for item in data:
         rows.append([item.get(key) for key in headers])
@@ -143,8 +174,11 @@ def _read_json(raw: bytes) -> list[list]:
 def _read_xls(raw: bytes) -> list[list]:
     import xlrd
 
-    book = xlrd.open_workbook(file_contents=raw)
+    book = xlrd.open_workbook(file_contents=raw, on_demand=True)
     sheet = book.sheet_by_index(0)
+    if sheet.nrows > MAX_ROWS + 1 or sheet.ncols > MAX_COLS:
+        book.release_resources()
+        raise ApiError('WORKBOOK_TOO_LARGE', f'Excel 最多 {MAX_ROWS} 行数据、{MAX_COLS} 列，请拆分后导入', 413)
     rows = []
     for r in range(sheet.nrows):
         row = []
@@ -162,6 +196,7 @@ def _read_xls(raw: bytes) -> list[list]:
             else:
                 row.append(cell.value)
         rows.append(row)
+    book.release_resources()
     return rows
 
 
@@ -240,13 +275,13 @@ def _infer_type(values: list) -> str:
 
 
 @router.post("/imports/preview")
-async def preview_import(
+def preview_import(
     file: UploadFile = File(...),
     table_id: int | None = Form(default=None),
     sheet: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
-    raw = await file.read()
+    raw = file.file.read(settings.max_upload_bytes + 1)
     if len(raw) > settings.max_upload_bytes:
         raise ApiError("FILE_TOO_LARGE", "文件不能超过 20 MB", 413)
     ext = Path(file.filename or "").suffix.lower()
@@ -255,6 +290,8 @@ async def preview_import(
 
     try:
         sheets, first_sheet = _read_any(file.filename or "", raw)
+    except ApiError:
+        raise
     except Exception:
         raise ApiError("INVALID_WORKBOOK", "这个文件打不开，请确认是有效的 Excel、CSV 或 JSON 文件", 422)
 

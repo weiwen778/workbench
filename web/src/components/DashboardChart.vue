@@ -76,7 +76,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => observer?.disconnect())
 const points = computed(() => (props.result.points || []).filter(p => p.value !== null && Number.isFinite(Number(p.value))).map(p => ({ ...p, number: Number(p.value) })))
-const colors = ['#39776f', '#5a8ec9', '#d6a04e', '#8a70b3', '#d17786', '#55a79f', '#9baf6c', '#8492a6']
+const colors = ['#337ea9', '#448361', '#d9730d', '#9065b0', '#c14c8a', '#cb912f', '#9f6b53', '#787774']
 const circumference = 2 * Math.PI * 76
 const pieTotal = computed(() => points.value.reduce((total, p) => total + p.number, 0))
 const piePoints = computed(() => {
@@ -104,9 +104,9 @@ const shortLabel = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) ? value.
 </script>
 
 <style scoped>
-.dashboard-chart { width: 100%; min-width: 0; }
+.dashboard-chart { width: 100%; min-width: 0; container-type: inline-size; }
 .metric-value { display: flex; align-items: baseline; gap: 8px; padding-top: 14px; overflow-wrap: anywhere; }
-.metric-value strong { font-size: clamp(28px, 3vw, 40px); line-height: 1.3; font-weight: 600; font-variant-numeric: tabular-nums; }
+.metric-value strong { font-size: clamp(24px, 11cqw, 40px); white-space: nowrap; line-height: 1.3; font-weight: 600; font-variant-numeric: tabular-nums; }
 .metric-value span, .metric-caption { color: var(--wb-text-secondary); font-size: 12px; }
 .metric-caption { margin-top: 10px; }
 .chart-empty { min-height: 130px; display: grid; place-items: center; color: var(--wb-text-tertiary); padding: 20px; text-align: center; font-size: 13px; }

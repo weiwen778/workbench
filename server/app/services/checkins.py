@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from ..errors import ApiError
@@ -31,16 +33,15 @@ def collapse_pending(db: Session, rule: CheckinRule, today: date | None = None) 
         rule.version += 1
 
 
-def _create_instance(
-    db: Session,
+def _instance_values(
     rule: CheckinRule,
     target: WorkTarget,
     group: CheckinGroup | None,
     period_type: str,
     start: date,
     end: date,
-) -> CheckinInstance:
-    inst = CheckinInstance(
+) -> dict:
+    return dict(
         rule_id=rule.id,
         target_id=target.id,
         target_name=target.name,
@@ -54,8 +55,29 @@ def _create_instance(
         locked=end <= today_local(),
         lock_reason="周期已结束" if end <= today_local() else None,
     )
-    db.add(inst)
-    return inst
+
+
+def _history_complete(starts: set[date], period: str, anchor: date, today: date, generate_from: date | None) -> bool:
+    first, end = period_bounds(period, anchor)
+    current, _ = period_bounds(period, today)
+    if generate_from and first < generate_from:
+        first, end = period_bounds(period, generate_from)
+        if first < generate_from:
+            first = end
+    if first > current:
+        return True
+    if period == 'daily':
+        expected = (current - first).days + 1
+        valid = lambda value: True
+    elif period == 'weekly':
+        expected = (current - first).days // 7 + 1
+        valid = lambda value: value.weekday() == first.weekday()
+    else:
+        expected = (current.year - first.year) * 12 + current.month - first.month + 1
+        valid = lambda value: value.day == 1
+    # Count only aligned starts inside the required range, so future/stray
+    # records cannot hide an actual gap. No process-global freshness cache.
+    return sum(1 for value in starts if first <= value <= current and valid(value)) == expected
 
 
 def ensure_rule_instances(
@@ -65,6 +87,8 @@ def ensure_rule_instances(
     *,
     period_type: str | None = None,
     backfill: bool = True,
+    existing_starts: set[date] | None = None,
+    group_cache: dict[int, CheckinGroup] | None = None,
 ) -> None:
     """幂等：同一事项同一周期只产生一个实例。
 
@@ -75,15 +99,11 @@ def ensure_rule_instances(
         return
     today = today_local()
     period = period_type or effective_period(rule, today)
-    group = db.get(CheckinGroup, rule.group_id)
-
-    existing_starts = set(
-        db.scalars(
-            select(CheckinInstance.period_start).where(
-                CheckinInstance.rule_id == rule.id, CheckinInstance.period_type == period
-            )
-        ).all()
-    )
+    group = group_cache.get(rule.group_id) if group_cache is not None else db.get(CheckinGroup, rule.group_id)
+    if existing_starts is None:
+        existing_starts = set(db.scalars(select(CheckinInstance.period_start).where(
+            CheckinInstance.rule_id == rule.id, CheckinInstance.period_type == period)).all())
+    pending = []
 
     def allowed(start: date) -> bool:
         return target.generate_from is None or start >= target.generate_from
@@ -91,16 +111,25 @@ def ensure_rule_instances(
     # 当前周期：读取即补齐
     start, end = period_bounds(period, today)
     if start not in existing_starts and allowed(start):
-        _create_instance(db, rule, target, group, period, start, end)
+        pending.append(_instance_values(rule, target, group, period, start, end))
         existing_starts.add(start)
 
     # 停机遗漏的已结束周期：以未完成、只读形式补齐
     if backfill:
         created_local = utc_to_local(rule.created_at).date()
         anchor = min([*existing_starts, created_local])
-        for p_start, p_end in iter_periods(period, anchor, today):
-            if p_start not in existing_starts and allowed(p_start) and p_end <= today:
-                _create_instance(db, rule, target, group, period, p_start, p_end)
+        if not _history_complete(existing_starts, period, anchor, today, target.generate_from):
+            for p_start, p_end in iter_periods(period, anchor, today):
+                if p_start not in existing_starts and allowed(p_start) and p_end <= today:
+                    pending.append(_instance_values(rule, target, group, period, p_start, p_end))
+    if pending:
+        dialect = db.get_bind().dialect.name
+        factory = pg_insert if dialect == 'postgresql' else sqlite_insert
+        # Concurrent first-page reads can discover the same missing periods.
+        # The unique constraint is the final authority; never fail a read or
+        # overwrite an existing completion/snapshot when another request won.
+        statement = factory(CheckinInstance).on_conflict_do_nothing(index_elements=['rule_id', 'period_start'])
+        db.execute(statement, pending)
     db.flush()
 
 
@@ -110,7 +139,19 @@ def ensure_target_period(db: Session, target: WorkTarget, period_type: str) -> N
     ).all()
     for rule in rules:
         collapse_pending(db, rule)
-        ensure_rule_instances(db, rule, target, period_type=period_type, backfill=True)
+    rules = [rule for rule in rules if effective_period(rule) == period_type]
+    if not rules:
+        db.flush()
+        return
+    starts = {rule.id: set() for rule in rules}
+    for rule_id, start in db.execute(select(CheckinInstance.rule_id, CheckinInstance.period_start).where(
+            CheckinInstance.rule_id.in_(starts), CheckinInstance.period_type == period_type)):
+        starts[rule_id].add(start)
+    groups = {group.id: group for group in db.scalars(select(CheckinGroup).where(
+        CheckinGroup.id.in_({rule.group_id for rule in rules})))}
+    for rule in rules:
+        ensure_rule_instances(db, rule, target, period_type=period_type, backfill=True,
+                              existing_starts=starts[rule.id], group_cache=groups)
     db.flush()
 
 

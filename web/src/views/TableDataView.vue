@@ -8,7 +8,7 @@
       <span class="text-12 muted">共 {{ total }} 行</span>
       <div class="spacer" />
       <div class="toolbar-actions">
-        <el-button text :icon="DashboardIcon" @click="router.push({ path: '/dashboard', query: { table: tableId } })">可视化</el-button>
+        <el-button text :icon="DashboardIcon" @click="router.push({ path: '/visualizations', query: { table: tableId } })">可视化</el-button>
         <el-button text :icon="Refresh" @click="reload">刷新</el-button>
         <el-popover placement="bottom-end" :width="360" trigger="click">
           <template #reference>

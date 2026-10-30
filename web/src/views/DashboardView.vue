@@ -1,15 +1,13 @@
 <template>
   <div class="page">
     <div class="page-toolbar dashboard-toolbar">
-      <div class="title-15">经营驾驶舱</div>
-      <el-select v-if="boards.length" v-model="activeId" aria-label="选择驾驶舱" class="board-select" @change="switchBoard">
-        <el-option v-for="item in boards" :key="item.id" :label="item.name" :value="item.id" />
-      </el-select>
+      <el-button v-if="current" text @click="router.push('/visualizations')">全部看板</el-button>
+      <div class="title-15">{{ current?.name || '数据可视化' }}</div>
       <div class="spacer" />
       <div class="toolbar-actions">
-        <el-button :icon="Refresh" :loading="refreshing" :disabled="!current" @click="fetchData">刷新数据</el-button>
+        <el-button v-if="current" :icon="Refresh" :loading="refreshing" @click="fetchData">刷新数据</el-button>
         <el-button v-if="current" @click="renameBoard">重命名</el-button>
-        <el-button @click="createBoard">新建驾驶舱</el-button>
+        <el-button @click="createBoard">新建看板</el-button>
         <el-button v-if="current" type="primary" :icon="Plus" :disabled="saving || current.widgets.length >= 24" @click="openEditor()">添加图表</el-button>
       </div>
     </div>
@@ -17,7 +15,23 @@
       <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="loadError">
         <el-button text @click="load">重新加载</el-button>
       </el-alert>
-      <template v-if="current">
+      <template v-if="!route.params.dashboardId">
+        <div class="visualization-intro">
+          <div class="empty-title">每家店铺，都有自己的数据看板</div>
+          <p class="text-13 secondary">从左侧子项进入各店铺。每个看板独立保存图表、数据来源和布局。</p>
+          <el-alert v-if="linkedTableId" type="info" :closable="false" title="请选择一个看板来添加当前表格的图表，也可以新建看板。" />
+        </div>
+        <div v-if="boards.length" class="board-index-grid">
+          <button v-for="board in boards" :key="board.id" class="board-index-card" @click="openBoard(board.id)">
+            <el-icon :size="22"><DashboardIcon /></el-icon>
+            <strong>{{ board.name }}</strong>
+            <span class="text-12 secondary">{{ board.widgets.length }} 张图表</span>
+            <span class="text-12 muted">更新于 {{ new Date(board.updated_at).toLocaleDateString('zh-CN') }}</span>
+          </button>
+        </div>
+        <div v-else-if="!loading" class="dashboard-empty"><el-icon :size="42"><DashboardIcon /></el-icon><div class="empty-title">创建第一个店铺看板</div><p>例如：天猫旗舰店、抖音店铺、京东店铺。</p><el-button type="primary" :icon="Plus" @click="createBoard">创建看板</el-button></div>
+      </template>
+      <template v-else-if="current">
         <div class="dashboard-filter">
           <div class="filter-controls">
             <span class="text-13 secondary">统计时间</span>
@@ -68,14 +82,9 @@
             </div>
           </section>
         </div>
-        <div class="board-bottom text-12 muted"><span>图表配置保存到账号，可在不同设备继续使用；移除图表不会修改原表数据。</span><el-button text type="danger" size="small" @click="removeBoard">删除此驾驶舱</el-button></div>
+        <div class="board-bottom text-12 muted"><span>图表配置保存到账号，可在不同设备继续使用；移除图表不会修改原表数据。</span><el-button text type="danger" size="small" @click="removeBoard">删除此看板</el-button></div>
       </template>
-      <div v-else-if="!loading && !loadError" class="dashboard-empty first-board">
-        <el-icon :size="48"><DashboardIcon /></el-icon>
-        <div class="empty-title">创建你的经营驾驶舱</div>
-        <p>直接关联现有表格，搭建销售、推广、商品或店铺数据看板。</p>
-        <el-button type="primary" :icon="Plus" @click="createBoard">创建驾驶舱</el-button>
-      </div>
+      <div v-else-if="!loading" class="dashboard-empty"><div class="empty-title">看板不存在或已删除</div><el-button @click="router.push('/visualizations')">返回全部看板</el-button></div>
     </div>
 
     <el-dialog v-model="editorOpen" :title="editingId ? '编辑图表' : '添加图表'" width="min(800px, 95vw)" :close-on-click-modal="false" @closed="editorClosed">
@@ -152,7 +161,7 @@ const route = useRoute()
 let linkedTableId = Number(route.query.table) || 0
 const boards = ref<DashboardBoard[]>([])
 const tables = ref<TableInfo[]>([])
-const activeId = ref<number | null>(null)
+const activeId = computed(() => Number(route.params.dashboardId) || null)
 const current = computed(() => boards.value.find(b => b.id === activeId.value))
 const metricCount = computed(() => current.value?.widgets.filter(w => w.kind === 'metric').length || 0)
 const metricSpan = computed(() => 12 / Math.min(4, Math.max(1, metricCount.value)))
@@ -193,13 +202,13 @@ function changePeriod() {
   fetchData()
 }
 function changeCustomDates() { if (!customDates.value) period.value = 'all'; fetchData() }
-function switchBoard() { results.value = {}; lastRefresh.value = ''; loadError.value = ''; fetchData() }
+function openBoard(id: number) { router.push({ path: `/visualizations/${id}`, query: linkedTableId ? { table: linkedTableId } : {} }) }
+function notifyBoardsChanged() { window.dispatchEvent(new Event('wb:dashboards-changed')) }
 async function load() {
   loading.value = true
   try {
     const [b, t] = await Promise.all([http.get('/dashboards'), http.get('/tables')])
     boards.value = b.data; tables.value = t.data
-    if (!boards.value.some(b => b.id === activeId.value)) activeId.value = boards.value[0]?.id ?? null
     results.value = {}; lastRefresh.value = ''; loadError.value = ''
     await fetchData()
     if (current.value && linkedTableId) await openEditor()
@@ -214,7 +223,7 @@ async function fetchData() {
   try {
     const { data } = await http.get(`/dashboards/${board.id}/data`, { params: dateParams() })
     if (sequence !== requestId || board.id !== current.value?.id) return
-    if (data.version !== current.value.version) { loadError.value = '驾驶舱配置已在其他位置修改，请重新加载；当前仍显示上次数据。'; return }
+    if (data.version !== current.value.version) { loadError.value = '看板配置已在其他位置修改，请重新加载；当前仍显示上次数据。'; return }
     results.value = Object.fromEntries(data.widgets.map((r: DashboardResult) => [r.id, r]))
     lastRefresh.value = data.generated_at; loadError.value = ''
   } catch (error) {
@@ -223,10 +232,9 @@ async function fetchData() {
 }
 async function createBoard() {
   try {
-    const { value } = await ElMessageBox.prompt('可以按店铺、业务或用途分别建立驾驶舱。', '新建驾驶舱', { inputPlaceholder: '例如：经营总览', inputValue: '经营总览', inputValidator: v => !!v?.trim() && v.trim().length <= 80 || '请输入 1–80 个字', confirmButtonText: '创建', cancelButtonText: '取消' })
+    const { value } = await ElMessageBox.prompt('可以按店铺、业务或用途分别建立看板。', '新建看板', { inputPlaceholder: '例如：天猫旗舰店、抖音店铺', inputValidator: v => !!v?.trim() && v.trim().length <= 80 || '请输入 1–80 个字', confirmButtonText: '创建', cancelButtonText: '取消' })
     const { data } = await http.post('/dashboards', { name: value.trim() })
-    boards.value.push(data); activeId.value = data.id; results.value = {}; await fetchData()
-    if (linkedTableId) await openEditor()
+    notifyBoardsChanged(); openBoard(data.id)
   } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(apiError(error).message) }
 }
 async function saveBoard(widgets: DashboardWidget[], name = current.value?.name) {
@@ -236,6 +244,7 @@ async function saveBoard(widgets: DashboardWidget[], name = current.value?.name)
   try {
     const { data } = await http.put(`/dashboards/${board.id}`, { name, widgets, version: board.version })
     boards.value = boards.value.map(b => b.id === data.id ? data : b)
+    notifyBoardsChanged()
     await fetchData()
     return true
   } catch (error) { ElMessage.error(apiError(error).message); return false }
@@ -244,7 +253,7 @@ async function saveBoard(widgets: DashboardWidget[], name = current.value?.name)
 async function renameBoard() {
   if (!current.value) return
   try {
-    const { value } = await ElMessageBox.prompt('驾驶舱名称', '重命名', { inputValue: current.value.name, inputValidator: v => !!v?.trim() && v.trim().length <= 80 || '请输入 1–80 个字', confirmButtonText: '保存', cancelButtonText: '取消' })
+    const { value } = await ElMessageBox.prompt('看板名称', '重命名', { inputValue: current.value.name, inputValidator: v => !!v?.trim() && v.trim().length <= 80 || '请输入 1–80 个字', confirmButtonText: '保存', cancelButtonText: '取消' })
     await saveBoard(current.value.widgets, value.trim())
   } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(apiError(error).message) }
 }
@@ -252,10 +261,9 @@ async function removeBoard() {
   const board = current.value
   if (!board) return
   try {
-    await ElMessageBox.confirm(`删除“${board.name}”及其图表配置？来源表格和数据会保留。`, '删除驾驶舱', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
+    await ElMessageBox.confirm(`删除“${board.name}”及其图表配置？来源表格和数据会保留。`, '删除看板', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
     await http.delete(`/dashboards/${board.id}`, { params: { version: board.version } })
-    ++requestId; boards.value = boards.value.filter(b => b.id !== board.id); activeId.value = boards.value[0]?.id ?? null
-    results.value = {}; lastRefresh.value = ''; await fetchData()
+    ++requestId; notifyBoardsChanged(); router.push('/visualizations')
   } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(apiError(error).message) }
 }
 async function openEditor(widget?: DashboardWidget) {
@@ -266,7 +274,7 @@ async function openEditor(widget?: DashboardWidget) {
   if (form.table_id) await loadFields(form.table_id)
   else if (linkedTableId) { form.table_id = linkedTableId; linkedTableId = 0; await chooseTable(form.table_id) }
 }
-function editorClosed() { if (route.query.table) router.replace('/dashboard') }
+function editorClosed() { if (route.query.table) router.replace(`/visualizations/${activeId.value}`) }
 async function loadFields(id: number) {
   const sequence = ++fieldRequestId
   fieldsLoading.value = true; fieldError.value = ''
@@ -338,14 +346,22 @@ onBeforeUnmount(() => { ++requestId; ++previewRequestId; ++fieldRequestId; clear
 
 <style scoped>
 .dashboard-toolbar { flex-wrap: wrap; }
-.board-select { width: 190px; }
+
+.visualization-intro p { margin: 10px 0 18px; line-height: 1.8; }
+.board-index-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+.board-index-card { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 22px; border: 1px solid var(--wb-border); border-radius: 6px; background: var(--wb-surface); color: var(--wb-text); font: inherit; cursor: pointer; text-align: left; }
+.board-index-card:hover { background: var(--wb-surface-subtle); }
+.board-index-card:focus-visible { outline: 2px solid var(--wb-primary); outline-offset: 2px; }
+.board-index-card strong { font-size: 15px; overflow-wrap: anywhere; }
+.board-index-card .el-icon { color: var(--wb-text-secondary); }
+
 .dashboard-body { gap: 16px; }
 .dashboard-filter, .filter-controls, .board-bottom { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .dashboard-filter, .board-bottom { justify-content: space-between; }
 .date-range { max-width: 300px; }
 .dashboard-note { line-height: 1.7; }
 .dashboard-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; align-items: start; }
-.widget-card { grid-column: span 6; min-width: 0; border: 1px solid var(--wb-border); border-radius: 12px; background: var(--wb-surface); padding: 18px 20px; }
+.widget-card { grid-column: span 6; min-width: 0; border: 1px solid var(--wb-border); border-radius: 6px; background: var(--wb-surface); padding: 18px 20px; }
 .metric-card { grid-column: span var(--metric-span, 3); }
 .wide-card { grid-column: span 12; }
 .widget-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -356,7 +372,7 @@ onBeforeUnmount(() => { ++requestId; ++previewRequestId; ++fieldRequestId; clear
 .widget-placeholder { padding: 30px 0; color: var(--wb-text-tertiary); font-size: 13px; }
 .widget-foot { display: flex; flex-wrap: wrap; gap: 5px 12px; margin-top: 10px; line-height: 1.6; }
 .date-warning { color: var(--el-color-warning); }
-.dashboard-empty { display: flex; align-items: center; flex-direction: column; justify-content: center; gap: 14px; padding: 64px 20px; border: 1px dashed var(--wb-border); border-radius: 12px; text-align: center; color: var(--wb-text-secondary); background: var(--wb-surface); }
+.dashboard-empty { display: flex; align-items: center; flex-direction: column; justify-content: center; gap: 14px; padding: 64px 20px; border: 1px dashed var(--wb-border); border-radius: 6px; text-align: center; color: var(--wb-text-secondary); background: var(--wb-surface); }
 .dashboard-empty .el-icon { color: var(--wb-primary); }
 .dashboard-empty p { font-size: 13px; margin: 0; line-height: 1.8; }
 .empty-title { font-size: 18px; color: var(--wb-text); }

@@ -95,6 +95,9 @@ def create_app() -> FastAPI:
             )
         return response
 
+    from .request_limits import RequestConcurrencyLimit
+    app.add_middleware(RequestConcurrencyLimit, limit=settings.request_concurrency, timeout=settings.request_queue_timeout)
+
     from .routers import (
         agent,
         agent_tokens,

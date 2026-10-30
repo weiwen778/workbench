@@ -9,11 +9,7 @@
         :prefix-icon="Search"
         @input="onSearch"
       />
-      <el-select v-model="category" style="width: 150px" @change="load">
-        <el-option label="全部分类" value="" />
-        <el-option label="未分类" value="__uncategorized__" />
-        <el-option v-for="name in categories" :key="name" :label="name" :value="name" />
-      </el-select>
+      <strong class="category-heading" :title="currentCategoryLabel">{{ currentCategoryLabel }}</strong>
       <span class="text-12 muted">{{ memos.length }} 张便利贴</span>
       <div class="spacer" />
       <div class="toolbar-actions">
@@ -24,7 +20,7 @@
 
     <div class="page-body scroll-area">
       <div v-if="!memos.length && !loading" class="empty-hint">
-        <div>还没有便利贴</div>
+        <div>{{ keyword ? '没有匹配的便利贴' : '还没有便利贴' }}</div>
         <div class="text-12">记录供应商信息、临时号码这类短内容，可以直接复制正文</div>
         <el-button class="btn-tonal" @click="openCreate">写一张便利贴</el-button>
       </div>
@@ -109,15 +105,20 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { CopyDocument, Delete, Edit, Plus, Refresh, Search } from '@/icons'
 import { apiError, copyText, http } from '@/api/client'
+import { memoFilter, memoTitle } from '@/memo-navigation'
 
 const memos = ref<any[]>([])
 const categories = ref<string[]>([])
 const keyword = ref('')
-const category = ref('')
+const route = useRoute()
+const selection = computed(() => memoFilter(route.query))
+const category = computed(() => selection.value.uncategorized ? '__uncategorized__' : selection.value.category)
+const currentCategoryLabel = computed(() => memoTitle(route.query))
 const loading = ref(false)
 const dialogOpen = ref(false)
 const editing = ref<any>(null)
@@ -172,7 +173,7 @@ function openCreate() {
   editing.value = null
   form.title = ''
   form.content = ''
-  form.category = ''
+  form.category = selection.value.category
   form.color = 'default'
   dialogOpen.value = true
 }
@@ -212,6 +213,7 @@ async function save() {
     dialogOpen.value = false
     ElMessage.success('已保存')
     await load()
+    window.dispatchEvent(new Event('wb:memos-changed'))
   } catch (error) {
     ElMessage.error(apiError(error).message)
   } finally {
@@ -228,6 +230,7 @@ async function remove(memo: any) {
     })
     await http.delete(`/memos/${memo.id}`)
     await load()
+    window.dispatchEvent(new Event('wb:memos-changed'))
   } catch (error: any) {
     if (error === 'cancel' || error === 'close') return
     ElMessage.error(apiError(error).message)
@@ -244,9 +247,11 @@ async function copyContent(memo: any) {
 }
 
 onMounted(load)
+onUnmounted(() => { if (searchTimer) window.clearTimeout(searchTimer) })
 </script>
 
 <style scoped>
+.category-heading { font-size: 13px; font-weight: 500; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .memo-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));

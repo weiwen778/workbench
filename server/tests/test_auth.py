@@ -87,3 +87,38 @@ def test_change_password_revokes_other_sessions():
 def test_logout_revokes_session(auth):
     assert auth.post("/api/v1/auth/logout").status_code == 200
     assert auth.get("/api/v1/auth/me").status_code == 401
+
+
+def test_checkin_navigation_labels_persist_without_affecting_other_preferences(auth):
+    initial = auth.get('/api/v1/preferences').json()
+    assert initial['checkin_shop_label'] == '店铺打卡'
+    assert initial['checkin_social_label'] == '社媒打卡'
+    response = auth.put('/api/v1/preferences', json={'checkin_shop_label': '  运营巡检  '})
+    assert response.status_code == 200
+    assert response.json()['checkin_shop_label'] == '运营巡检'
+    assert response.json()['checkin_social_label'] == '社媒打卡'
+    assert response.json()['theme'] == initial['theme']
+    assert response.json()['theme_color'] == initial['theme_color']
+    assert auth.put('/api/v1/preferences', json={'checkin_social_label': '内容执行'}).status_code == 200
+    assert auth.get('/api/v1/auth/me').json()['user']['checkin_shop_label'] == '运营巡检'
+    assert auth.get('/api/v1/auth/me').json()['user']['checkin_social_label'] == '内容执行'
+    for value in ['', '   ', '字' * 41, 123, ['错误']]:
+        bad = auth.put('/api/v1/preferences', json={'checkin_shop_label': value})
+        assert bad.status_code == 422
+    assert auth.get('/api/v1/preferences').json()['checkin_shop_label'] == '运营巡检'
+
+
+def test_checkin_navigation_labels_are_account_specific(auth):
+    from app.db import SessionLocal
+    from app.models import User
+    from app.security import hash_password
+
+    assert auth.put('/api/v1/preferences', json={'checkin_shop_label': '管理员巡检'}).status_code == 200
+    with SessionLocal() as db:
+        db.add(User(username='operator', password_hash=hash_password('operator12345')))
+        db.commit()
+    auth.post('/api/v1/auth/logout')
+    login = auth.post('/api/v1/auth/login', json={'username': 'operator', 'password': 'operator12345'})
+    assert login.status_code == 200
+    assert login.json()['user']['checkin_shop_label'] == '店铺打卡'
+    assert auth.get('/api/v1/preferences').json()['checkin_social_label'] == '社媒打卡'

@@ -5,8 +5,8 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, defer
 
 from ..db import get_db
 from ..deps import get_current_user
@@ -56,13 +56,14 @@ def _tags_of(db: Session, note_id: int) -> list[NoteTag]:
     )
 
 
-def note_payload(note: Note, tags: list[NoteTag]) -> dict:
-    excerpt = re.sub(r"\s+", " ", (note.content or "").replace("\n", " "))[:120]
-    return {
+def note_payload(note: Note, tags: list[NoteTag], *, summary: bool = False, excerpt_content: str = '') -> dict:
+    content = excerpt_content if summary else (note.content or '')
+    excerpt = re.sub(r"\s+", " ", content.replace("\n", " "))[:120]
+    data = {
         "id": note.id,
         "title": note.title or "未命名笔记",
         "raw_title": note.title,
-        "content": note.content,
+
         "excerpt": excerpt,
         "folder_id": note.folder_id,
         "tags": [t.name for t in tags],
@@ -70,6 +71,9 @@ def note_payload(note: Note, tags: list[NoteTag]) -> dict:
         "updated_at": iso_z(note.updated_at),
         "version": note.version,
     }
+    if not summary:
+        data['content'] = note.content
+    return data
 
 
 def note_detail(db: Session, note: Note) -> dict:
@@ -86,20 +90,10 @@ def note_detail(db: Session, note: Note) -> dict:
 @router.get("/note-folders")
 def list_folders(db: Session = Depends(get_db)):
     folders = db.scalars(select(NoteFolder).order_by(NoteFolder.sort_order, NoteFolder.id)).all()
-    result = []
-    for f in folders:
-        count = len(
-            db.scalars(
-                select(Note.id).where(Note.folder_id == f.id, Note.deleted_at.is_(None))
-            ).all()
-        )
-        result.append({"id": f.id, "name": f.name, "note_count": count})
-    uncategorized = len(
-        db.scalars(
-            select(Note.id).where(Note.folder_id.is_(None), Note.deleted_at.is_(None))
-        ).all()
-    )
-    return {"folders": result, "uncategorized": uncategorized}
+    counts = dict(db.execute(select(Note.folder_id, func.count(Note.id)).where(
+        Note.deleted_at.is_(None)).group_by(Note.folder_id)).all())
+    return {'folders': [{'id': folder.id, 'name': folder.name, 'note_count': counts.get(folder.id, 0)} for folder in folders],
+            'uncategorized': counts.get(None, 0)}
 
 
 @router.post("/note-folders", status_code=201)
@@ -142,18 +136,12 @@ def delete_folder(folder_id: int, db: Session = Depends(get_db)):
 
 @router.get("/note-tags")
 def list_tags(db: Session = Depends(get_db)):
-    tags = db.scalars(select(NoteTag).order_by(NoteTag.name)).all()
-    result = []
-    for t in tags:
-        count = len(
-            db.scalars(
-                select(NoteTagLink.note_id)
-                .join(Note, Note.id == NoteTagLink.note_id)
-                .where(NoteTagLink.tag_id == t.id, Note.deleted_at.is_(None))
-            ).all()
-        )
-        result.append({"id": t.id, "name": t.name, "note_count": count})
-    return result
+    counts = (select(NoteTagLink.tag_id.label('tag_id'), func.count(NoteTagLink.note_id).label('total'))
+              .join(Note, Note.id == NoteTagLink.note_id).where(Note.deleted_at.is_(None))
+              .group_by(NoteTagLink.tag_id).subquery())
+    rows = db.execute(select(NoteTag, func.coalesce(counts.c.total, 0)).outerjoin(
+        counts, counts.c.tag_id == NoteTag.id).order_by(NoteTag.name)).all()
+    return [{'id': tag.id, 'name': tag.name, 'note_count': count} for tag, count in rows]
 
 
 @router.post("/note-tags", status_code=201)
@@ -204,6 +192,7 @@ def list_notes(
     uncategorized: bool = False,
     tag_id: int | None = None,
     q: str | None = None,
+    summary: bool = False,
     db: Session = Depends(get_db),
 ):
     stmt = select(Note).where(Note.deleted_at.is_(None)).order_by(Note.updated_at.desc())
@@ -216,8 +205,19 @@ def list_notes(
     if q:
         like = f"%{q.strip()}%"
         stmt = stmt.where(Note.title.like(like) | Note.content.like(like))
-    notes = db.scalars(stmt).all()
-    return [note_payload(n, _tags_of(db, n.id)) for n in notes]
+    if summary:
+        rows = db.execute(stmt.options(defer(Note.content)).add_columns(func.substr(Note.content, 1, 2048))).all()
+        notes = [note for note, _ in rows]
+        excerpts = {note.id: excerpt or '' for note, excerpt in rows}
+    else:
+        notes = db.scalars(stmt).all()
+        excerpts = {}
+    tags = {}
+    if notes:
+        for note_id, tag in db.execute(select(NoteTagLink.note_id, NoteTag).join(
+                NoteTag, NoteTag.id == NoteTagLink.tag_id).where(NoteTagLink.note_id.in_([n.id for n in notes])).order_by(NoteTagLink.id)):
+            tags.setdefault(note_id, []).append(tag)
+    return [note_payload(n, tags.get(n.id, []), summary=summary, excerpt_content=excerpts.get(n.id, '')) for n in notes]
 
 
 @router.post("/notes", status_code=201)
@@ -259,7 +259,7 @@ def save_note(note_id: int, payload: NoteSave, db: Session = Depends(get_db)):
     new_content = payload.content if payload.content is not None else note.content
     if len(new_content.encode("utf-8")) > MAX_CONTENT:
         raise ApiError("NOTE_TOO_LARGE", "笔记正文不能超过 1 MiB", 413)
-    if payload.folder_id is not None and payload.folder_id != note.folder_id:
+    if 'folder_id' in payload.model_fields_set and payload.folder_id != note.folder_id:
         if payload.folder_id and not db.get(NoteFolder, payload.folder_id):
             raise ApiError("FOLDER_NOT_FOUND", "文件夹不存在", 422)
         note.folder_id = payload.folder_id

@@ -1,4 +1,4 @@
-import { reactive } from 'vue'
+import { computed, reactive } from 'vue'
 import { http } from '@/api/client'
 import { applyThemeColor, DEFAULT_THEME_COLOR } from '@/theme-color'
 
@@ -7,6 +7,8 @@ export interface SessionUser {
   username: string
   theme: 'light' | 'dark'
   theme_color?: string
+  checkin_shop_label?: string
+  checkin_social_label?: string
 }
 
 export const session = reactive({
@@ -17,11 +19,12 @@ export const session = reactive({
 })
 
 function rememberColor(color?: string) {
-  session.themeColor = color && /^#[0-9a-fA-F]{6}$/.test(color) ? color.toLowerCase() : DEFAULT_THEME_COLOR
+  session.themeColor = color && /^#[0-9a-fA-F]{6}$/.test(color) ? (color.toLowerCase() === '#39776f' ? DEFAULT_THEME_COLOR : color.toLowerCase()) : DEFAULT_THEME_COLOR
 }
 
 export function applyTheme(theme: 'light' | 'dark') {
   session.theme = theme
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#191919' : '#ffffff')
   document.documentElement.classList.toggle('dark', theme === 'dark')
   applyThemeColor(session.themeColor, theme)
 }
@@ -67,4 +70,18 @@ export async function toggleTheme() {
 export async function setThemeColor(color: string) {
   session.themeColor = applyThemeColor(color, session.theme)
   await http.put('/preferences', { theme_color: session.themeColor })
+}
+
+export type CheckinNavKey = 'shops' | 'social'
+export const checkinItems = computed(() => [
+  { key: 'shops' as const, label: session.user?.checkin_shop_label || '店铺打卡', path: '/checkins/shops' },
+  { key: 'social' as const, label: session.user?.checkin_social_label || '社媒打卡', path: '/checkins/social' },
+])
+export async function setCheckinLabel(key: CheckinNavKey, label: string) {
+  const field = key === 'shops' ? 'checkin_shop_label' : 'checkin_social_label'
+  const { data } = await http.put('/preferences', { [field]: label.trim() })
+  if (session.user) {
+    session.user.checkin_shop_label = data.checkin_shop_label
+    session.user.checkin_social_label = data.checkin_social_label
+  }
 }

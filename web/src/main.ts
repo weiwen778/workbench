@@ -1,6 +1,5 @@
 import { createApp } from 'vue'
-import ElementPlus from 'element-plus'
-import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import { ElLoading } from 'element-plus'
 
 // 引入顺序固定：组件库基线 → 暗色变量 → 项目主题（必须最后）
 import 'element-plus/dist/index.css'
@@ -12,5 +11,5 @@ import router from './router'
 
 const app = createApp(App)
 app.use(router)
-app.use(ElementPlus, { locale: zhCn })
+app.directive('loading', ElLoading.directive)
 app.mount('#app')

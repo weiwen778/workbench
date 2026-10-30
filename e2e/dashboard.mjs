@@ -46,8 +46,8 @@ try {
   }
   await page.goto(base + `/data/${table.id}`)
   await page.getByRole('button', { name: '可视化', exact: true }).click()
-  await page.getByRole('button', { name: '创建驾驶舱', exact: true }).click()
-  const prompt = page.getByRole('dialog', { name: '新建驾驶舱', exact: true })
+  await page.getByRole('button', { name: '创建看板', exact: true }).click()
+  const prompt = page.getByRole('dialog', { name: '新建看板', exact: true })
   await prompt.getByRole('textbox').fill('店铺经营总览 ' + suffix)
   await prompt.getByRole('button', { name: '创建', exact: true }).click()
 

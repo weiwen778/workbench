@@ -1,1 +1,12 @@
-{"name":"workbench-e2e","private":true,"type":"module","version":"1.0.0","scripts":{"smoke":"node ui-smoke.mjs"},"devDependencies":{"playwright":"^1.55.0"}}
+{
+  "name": "workbench-e2e",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "scripts": {
+    "smoke": "node release-audit.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.55.0"
+  }
+}

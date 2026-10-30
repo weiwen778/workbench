@@ -48,8 +48,8 @@ def file_payload(f: FileObject) -> dict:
 
 
 @router.post("/files", status_code=201)
-async def upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    raw = await file.read()
+def upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    raw = file.file.read(settings.max_upload_bytes + 1)
     if len(raw) > settings.max_upload_bytes:
         raise ApiError(
             "FILE_TOO_LARGE",

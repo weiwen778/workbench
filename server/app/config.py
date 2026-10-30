@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,6 +21,17 @@ class Settings(BaseSettings):
     admin_username: str = "admin"
     admin_password: str = "admin12345"
     session_days: int = 30
+    db_pool_size: int = Field(default=5, ge=1, le=100)
+    db_max_overflow: int = Field(default=10, ge=0, le=100)
+    db_pool_timeout: float = Field(default=5, gt=0, le=60)
+    request_queue_timeout: float = Field(default=10, gt=0, le=120)
+
+    @property
+    def request_concurrency(self) -> int:
+        # Reserve connections for readiness and retention work. Never admit more
+        # sync dependencies than can acquire a connection without tying up threads.
+        return min(32, max(1, self.db_pool_size + self.db_max_overflow - 2))
+
 
     # 翻译凭据加密主密钥（Fernet key）。缺失时禁止保存/读取/测试受保护凭据。
     encryption_key: str | None = None
