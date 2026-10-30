@@ -73,6 +73,7 @@ def create_app() -> FastAPI:
             and path.startswith("/api")
             and path not in CSRF_EXEMPT
             and has_session
+            and not (path.startswith('/api/v1/agent/') and request.headers.get('authorization'))
         ):
             header = request.headers.get("x-csrf-token")
             cookie = request.cookies.get(settings.csrf_cookie_name)
@@ -95,6 +96,8 @@ def create_app() -> FastAPI:
         return response
 
     from .routers import (
+        agent,
+        agent_tokens,
         auth,
         checkin_import,
         checkins,
@@ -114,6 +117,8 @@ def create_app() -> FastAPI:
     api = "/api/v1"
     app.include_router(health.router, prefix=api)
     app.include_router(auth.router, prefix=api)
+    app.include_router(agent.router, prefix=api)
+    app.include_router(agent_tokens.router, prefix=api)
     app.include_router(preferences.router, prefix=api)
     app.include_router(targets.router, prefix=api)
     app.include_router(checkins.router, prefix=api)

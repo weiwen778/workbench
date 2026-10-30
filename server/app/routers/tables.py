@@ -526,7 +526,7 @@ def get_record(record_id: int, db: Session = Depends(get_db)):
 
 @router.put("/records/{record_id}")
 def update_record(record_id: int, payload: RecordIn, db: Session = Depends(get_db)):
-    record = db.get(DataRecord, record_id)
+    record = db.scalar(select(DataRecord).where(DataRecord.id == record_id).with_for_update())
     if not record or record.deleted_at is not None:
         raise ApiError("NOT_FOUND", "数据不存在", 404)
     table = _get_table(db, record.table_id)

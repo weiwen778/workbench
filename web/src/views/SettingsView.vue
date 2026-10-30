@@ -50,6 +50,8 @@
         </el-form>
       </el-card>
 
+      <AgentAccess />
+
       <div class="bottom-grid">
         <el-card shadow="never" class="block">
           <div class="group-title">翻译服务</div>
@@ -82,6 +84,7 @@ import { ElMessage } from 'element-plus'
 import { apiError, http } from '@/api/client'
 import { applyTheme, logout, session, setThemeColor } from '@/stores/session'
 import { DEFAULT_THEME_COLOR } from '@/theme-color'
+import AgentAccess from '@/components/AgentAccess.vue'
 
 const router = useRouter()
 const passwordForm = reactive({ old_password: '', new_password: '', confirm: '' })
