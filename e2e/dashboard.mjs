@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { chromium, request } from 'playwright'
 const base = process.env.WB_BASE || 'http://127.0.0.1:18746'
+assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(new URL(base).hostname), 'Dashboard E2E only runs against a local disposable instance')
 const shots = path.resolve(process.env.WB_SCREENSHOT_DIR || '../docs/screenshots')
 fs.mkdirSync(shots, { recursive: true })
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined })
@@ -29,9 +30,8 @@ try {
   await page.getByPlaceholder('请输入密码').fill(process.env.WB_PASS || 'admin12345')
   await page.getByRole('button', { name: '登录', exact: true }).click()
   await page.waitForURL('**/checkins/shops')
-  for (const board of await (await context.request.get(base + '/api/v1/dashboards')).json()) {
-    await post(`/dashboards/${board.id}?version=${board.version}`, undefined, 'DELETE')
-  }
+  assert.equal((await (await context.request.get(base + '/api/v1/dashboards')).json()).length, 0,
+    'Use a fresh test database without dashboards; existing dashboards will not be removed')
   const table = await post('/tables', { name: '店铺经营日报 ' + suffix, fields: [
     { name: '日期', type: 'date' }, { name: '店铺', type: 'short_text' },
     { name: '销售额', type: 'number' }, { name: '订单数', type: 'number' },
