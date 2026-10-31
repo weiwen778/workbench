@@ -58,6 +58,8 @@
  </div>
 </template>
 <script setup lang="ts">
+import { randomId } from '@/utils/random-id'
+
 import {computed,defineAsyncComponent,onMounted,onUnmounted,reactive,ref,watch} from 'vue'
 import {onBeforeRouteLeave,useRoute} from 'vue-router'
 import {ElMessage,ElMessageBox} from 'element-plus'
@@ -96,8 +98,8 @@ function mergeResult(data:any){
  if(selected.value)selected.value=next.get(selected.value.id)||null
  request++
 }
-async function commit(edits:any[],label:string){if(!table.value)throw new Error('表格尚未载入');const task=mutations.catch(()=>{}).then(async()=>{busy.value=true;request++;try{const {data}=await http.post(`/tables/${tableId}/transactions`,{schema_version:table.value.schema_version,request_id:crypto.randomUUID().replace(/-/g,''),label,edits});mergeResult(data);await loadHistory()}finally{busy.value=false}});mutations=task;return task}
-async function commitCells(changes:{id:number;changes:Record<string,any>}[],label:string){const task=mutations.catch(()=>{}).then(async()=>{busy.value=true;request++;try{const edits=changes.map(c=>{const r=records.value.find(r=>r.id===c.id);if(!r)throw new Error('记录已不存在，请刷新');return {id:c.id,version:r.version,changes:c.changes}});const {data}=await http.post(`/tables/${tableId}/transactions`,{schema_version:table.value.schema_version,request_id:crypto.randomUUID().replace(/-/g,''),label,edits});mergeResult(data);await loadHistory()}finally{busy.value=false}});mutations=task;return task}
+async function commit(edits:any[],label:string){if(!table.value)throw new Error('表格尚未载入');const task=mutations.catch(()=>{}).then(async()=>{busy.value=true;request++;try{const {data}=await http.post(`/tables/${tableId}/transactions`,{schema_version:table.value.schema_version,request_id:randomId().replace(/-/g,''),label,edits});mergeResult(data);await loadHistory()}finally{busy.value=false}});mutations=task;return task}
+async function commitCells(changes:{id:number;changes:Record<string,any>}[],label:string){const task=mutations.catch(()=>{}).then(async()=>{busy.value=true;request++;try{const edits=changes.map(c=>{const r=records.value.find(r=>r.id===c.id);if(!r)throw new Error('记录已不存在，请刷新');return {id:c.id,version:r.version,changes:c.changes}});const {data}=await http.post(`/tables/${tableId}/transactions`,{schema_version:table.value.schema_version,request_id:randomId().replace(/-/g,''),label,edits});mergeResult(data);await loadHistory()}finally{busy.value=false}});mutations=task;return task}
 async function flush(){if(gridRef.value&&!await gridRef.value.flush())return false;if(workbookRef.value&&!await workbookRef.value.flush())return false;await mutations.catch(()=>{});return true}
 async function refresh(){if(!await flush())return;await loadWorkspace()}
 async function discard(){try{await ElMessageBox.confirm('放弃尚未成功保存的单元格修改，并载入服务器数据？','放弃未保存修改',{confirmButtonText:'放弃并载入',cancelButtonText:'取消'});gridRef.value?.discard();await loadWorkspace()}catch{}}
@@ -120,7 +122,7 @@ async function saveRecord(data:Record<string,any>,version:number|null,force:bool
 async function duplicate(){if(!selected.value||!await flush())return;try{const data=Object.fromEntries(fields.value.filter(f=>!computedTypes.has(f.type)).map(f=>[f.key,selected.value!.data[f.key]]));await commit([{changes:data}],'复制记录')}catch(e){report(e)}}
 async function deleteSelected(){if(!await flush())return;const rows:Row[]=gridRef.value?.selectedRows?.length?gridRef.value.selectedRows:selected.value?[selected.value]:[];if(!rows.length)return;try{await ElMessageBox.confirm(`删除选中的 ${rows.length} 行？可通过修改历史撤销，或从回收站恢复。`,'删除记录',{confirmButtonText:'删除',cancelButtonText:'取消'});await commit(rows.map(r=>({id:r.id,version:r.version,delete:true})),'删除选中记录')}catch(e){if(e!=='cancel'&&e!=='close')report(e)}}
 async function pasteClipboard(){try{const text=await navigator.clipboard.readText();await gridRef.value?.paste(text)}catch{ElMessage.info('请选中起始单元格后按 Ctrl/Cmd+V 粘贴')}}
-async function applyUndo(h:any,action='undo'){if(!h||!await flush())return;try{busy.value=true;await http.post(`/table-changes/${h.id}/undo`,{request_id:crypto.randomUUID().replace(/-/g,''),action});await loadWorkspace()}catch(e){report(e)}finally{busy.value=false}}
+async function applyUndo(h:any,action='undo'){if(!h||!await flush())return;try{busy.value=true;await http.post(`/table-changes/${h.id}/undo`,{request_id:randomId().replace(/-/g,''),action});await loadWorkspace()}catch(e){report(e)}finally{busy.value=false}}
 async function undo(){await applyUndo(undoTarget.value,'undo')}
 async function redo(){await applyUndo(redoTarget.value,'redo')}
 async function showChange(h:any){try{changeDetails.value=(await http.get(`/table-changes/${h.id}`)).data.changes;changeOpen.value=true}catch(e){report(e)}}

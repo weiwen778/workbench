@@ -14,6 +14,8 @@
  </el-dialog>
 </template>
 <script setup lang="ts">
+import { randomId } from '@/utils/random-id'
+
 import {computed,reactive,ref,watch} from 'vue'
 import {http,apiError} from '@/api/client'
 import type {Field} from '@/table-core'
@@ -27,7 +29,7 @@ async function loadReference(){const f=props.fields.find(f=>f.key===form.referen
 watch(open,async value=>{if(!value)return;failure.value='';const f=props.editing;Object.assign(form,{name:f?.name||'',type:f?.type||'short_text',required:f?.required||false,default_value:'',expression:'',table_id:null,label_field:'',multiple:false,reference_field:'',target_field:'',operation:'sum',optionsText:(f?.options||[]).map(o=>o.name).join('\n'),...f?.config});try{tables.value=(await http.get('/tables')).data;if(form.table_id)await loadTarget();else targetFields.value=[]}catch(e){failure.value=apiError(e).message}})
 async function save(){saving.value=true;failure.value='';try{const config=form.type==='formula'?{expression:form.expression}:form.type==='reference'?{table_id:form.table_id,label_field:form.label_field,multiple:form.multiple}:['lookup','rollup'].includes(form.type)?{reference_field:form.reference_field,target_field:form.target_field,operation:form.operation}:props.editing?.config||{}
  const names=String(form.optionsText||'').split('\n').map(s=>s.trim()).filter(Boolean);if(new Set(names).size!==names.length)throw new Error('选项名称不能重复')
- const options=names.map(name=>({id:props.editing?.options?.find(o=>o.name===name)?.id||crypto.randomUUID(),name}))
+ const options=names.map(name=>({id:props.editing?.options?.find(o=>o.name===name)?.id||randomId(),name}))
  const payload:any={name:form.name,type:form.type,required:['formula','lookup','rollup'].includes(form.type)?false:form.required,config};if(['select','multiselect'].includes(form.type))payload.options=options
  if(!props.editing&&!['formula','lookup','rollup'].includes(form.type)&&form.default_value!==''){payload.default_value=form.default_value;if(form.type==='select')payload.default_value=options.find(o=>o.name===form.default_value)?.id||form.default_value;if(form.type==='multiselect')payload.default_value=String(form.default_value).split(/[,，、]/).map(v=>options.find(o=>o.name===v)?.id||v)}
  if(props.editing)await http.patch(`/fields/${props.editing.id}`,payload);else await http.post(`/tables/${props.tableId}/fields`,payload);open.value=false;emit('saved')

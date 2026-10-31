@@ -8,6 +8,8 @@
  </div>
 </template>
 <script setup lang="ts">
+import { randomId } from '@/utils/random-id'
+
 import {onMounted,onUnmounted,ref,watch} from 'vue'
 import Decimal from 'decimal.js'
 import {ElMessage,ElMessageBox} from 'element-plus'
@@ -39,7 +41,7 @@ const host=ref<HTMLElement>(),jsonInput=ref<HTMLInputElement>(),excelInput=ref<H
 let univer:any,api:any,workbook:any,version=0,timer:number|undefined,revision=0,active=true,job:Promise<boolean>|null=null,listener:any,recovery:any=null,recoveryResolve:((s:any)=>void)|null=null,lastHash=''
 const recoveryKey=`workbench:${session.user?.id}:${props.tableId}`
 async function recoveryStore(value?:any,remove=false):Promise<any>{return new Promise((resolve,reject)=>{const open=indexedDB.open('workbench-workbook-recovery',1);open.onupgradeneeded=()=>open.result.createObjectStore('workbooks');open.onerror=()=>reject(open.error);open.onsuccess=()=>{const db=open.result,tx=db.transaction('workbooks',value!==undefined||remove?'readwrite':'readonly'),store=tx.objectStore('workbooks'),r=remove?store.delete(recoveryKey):value!==undefined?store.put(value,recoveryKey):store.get(recoveryKey);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);tx.oncomplete=()=>db.close()}})}
-function seed(){if(props.rows.length*Math.max(1,props.fields.length)>100000)throw new Error('原表超过 100000 个单元格，无法整体复制到工作簿');const cellData:any={0:Object.fromEntries(props.fields.map((f,c)=>[c,{v:f.name}]))};props.rows.forEach((r,i)=>{const cells:any={};props.fields.forEach((f,c)=>{const v=r.data[f.key];if(v==null)return;cells[c]=f.type==='number'&&new Decimal(v).sd()<=15?{v:Number(v),t:2}:{v:display(f,v,props.references),t:1}});cellData[i+1]=cells});const id='sheet-'+crypto.randomUUID();return {id:'workbook-'+crypto.randomUUID(),name:props.name,locale:LocaleType.ZH_CN,sheetOrder:[id],sheets:{[id]:{id,name:'原表快照',rowCount:Math.max(1000,props.rows.length+100),columnCount:Math.max(26,props.fields.length),cellData}}}}
+function seed(){if(props.rows.length*Math.max(1,props.fields.length)>100000)throw new Error('原表超过 100000 个单元格，无法整体复制到工作簿');const cellData:any={0:Object.fromEntries(props.fields.map((f,c)=>[c,{v:f.name}]))};props.rows.forEach((r,i)=>{const cells:any={};props.fields.forEach((f,c)=>{const v=r.data[f.key];if(v==null)return;cells[c]=f.type==='number'&&new Decimal(v).sd()<=15?{v:Number(v),t:2}:{v:display(f,v,props.references),t:1}});cellData[i+1]=cells});const id='sheet-'+randomId();return {id:'workbook-'+randomId(),name:props.name,locale:LocaleType.ZH_CN,sheetOrder:[id],sheets:{[id]:{id,name:'原表快照',rowCount:Math.max(1000,props.rows.length+100),columnCount:Math.max(26,props.fields.length),cellData}}}}
 function download(value:string,name:string,type='application/json'){const url=URL.createObjectURL(new Blob([value],{type}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 function snapshot(){return workbook?.save()}
 function changed(){if(!active)return;revision++;dirty.value=true;emit('dirty',true);window.clearTimeout(timer);timer=window.setTimeout(()=>void save(),1200)}
@@ -63,7 +65,7 @@ onMounted(async()=>{try{const response=await http.get(`/tables/${props.tableId}/
  if(!active)return
  const instance=createUniver({locale:LocaleType.ZH_CN,locales:{[LocaleType.ZH_CN]:mergeLocales(CoreLocale,FilterLocale,SortLocale,ConditionalLocale,ValidationLocale,FindLocale)},presets:[UniverSheetsCorePreset({container:host.value!,disableAutoFocus:true}),UniverSheetsFilterPreset(),UniverSheetsSortPreset(),UniverSheetsConditionalFormattingPreset(),UniverSheetsDataValidationPreset(),UniverSheetsFindReplacePreset()]})
  univer=instance.univer;api=instance.univerAPI;api.toggleDarkMode(session.theme==='dark')
- if(!initial){try{initial=seed()}catch{const id='sheet1';initial={id:crypto.randomUUID(),name:props.name,sheetOrder:[id],sheets:{[id]:{id,name:'Sheet1',rowCount:1000,columnCount:26,cellData:{}}}}}}
+ if(!initial){try{initial=seed()}catch{const id='sheet1';initial={id:randomId(),name:props.name,sheetOrder:[id],sheets:{[id]:{id,name:'Sheet1',rowCount:1000,columnCount:26,cellData:{}}}}}}
  await replace(initial);lastHash=response.data.snapshot?JSON.stringify(response.data.snapshot):'';loading.value=false
  if(JSON.stringify(initial)!==lastHash)changed();window.addEventListener('beforeunload',beforeUnload)
  }catch(e:any){failure.value=e.message||apiError(e).message;loading.value=false}})
