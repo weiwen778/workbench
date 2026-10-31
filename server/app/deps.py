@@ -30,6 +30,8 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
         raise ApiError("UNAUTHENTICATED", "请先登录", 401)
     request.state.session = sess
     request.state.user = user
+    db.info["table_actor_id"]=user.id
+    db.info["table_actor"]=user.username
     return user
 
 

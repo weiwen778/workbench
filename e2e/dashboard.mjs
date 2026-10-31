@@ -45,6 +45,7 @@ try {
     records.push(await post(`/tables/${table.id}/records`, { data: { [keys.日期]: day.toISOString().slice(0, 10), [keys.店铺]: ['天猫店', '抖音店', '京东店'][i % 3], [keys.销售额]: String((i + 1) * 1000), [keys.订单数]: String(i + 1), [keys.日报状态]: i % 2 ? 'pending' : 'done' } }))
   }
   await page.goto(base + `/data/${table.id}`)
+  await page.getByRole('button',{name:'更多操作',exact:true}).click();await page.getByRole('menuitem',{name:'文件导入 / 导出',exact:true}).click()
   await page.getByRole('button', { name: '可视化', exact: true }).click()
   await page.getByRole('button', { name: '创建看板', exact: true }).click()
   const prompt = page.getByRole('dialog', { name: '新建看板', exact: true })

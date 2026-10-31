@@ -31,6 +31,8 @@ def get_agent_token(
         raise ApiError('AGENT_UNAUTHENTICATED', '令牌所属账号不存在', 401)
     token.last_used_at = utcnow()
     db.commit()
+    db.info['table_actor_id']=token.user_id
+    db.info['table_actor']='Agent: '+token.name
     return token
 
 

@@ -1,5 +1,5 @@
 <template>
-  <div class="wb-sidebar" :style="{ width: '192px' }">
+  <div class="wb-sidebar" :style="{ width: (width??192)+'px' }">
     <div class="brand"><img src="/favicon.svg?v=20261031-notion" width="24" height="24" alt="" /><span class="ellipsis-1">个人工作台</span><div class="spacer" /><el-button v-if="collapsible" text :icon="Fold" size="small" title="收起侧栏" @click="$emit('collapse')" /></div>
     <div class="wb-nav">
       <button class="wb-nav-item nav-button" :aria-expanded="expandedKey === 'checkin'" @click="toggle('checkin')">
@@ -34,9 +34,10 @@
       <div class="wb-nav-collapse" :class="{ open: expandedKey === 'data' }" :inert="expandedKey !== 'data'" :aria-hidden="expandedKey !== 'data'">
         <div class="wb-nav-sub">
           <div v-if="tables.length > 10" class="table-search"><el-input :model-value="tableSearch" size="small" placeholder="搜索表格" clearable @update:model-value="$emit('update:tableSearch', $event)" /></div>
-          <button v-for="table in filteredTables" :key="table.id" class="wb-nav-item nav-button" :class="{ active: String(route.params.tableId) === String(table.id) }" :title="table.name" @click="go(`/data/${table.id}`)"><span class="ellipsis-1">{{ table.name }}</span></button>
+          <button v-for="table in filteredTables" :key="table.id" class="wb-nav-item nav-button" :class="{ active: String(route.params.tableId) === String(table.id) }" :title="table.name" @click="go(`/data/${table.id}`)"><span class="ellipsis-1">{{ table.name }}</span><span v-if="table.kind==='virtual'" class="text-12 muted" title="虚拟表">虚</span></button>
           <div v-if="!filteredTables.length" class="table-empty">{{ tables.length ? '没有匹配的表格' : '还没有表格' }}</div>
           <button class="wb-nav-item nav-button new-item" @click="$emit('new-table')"><el-icon><Plus /></el-icon><span>新建表格</span></button>
+          <button class="wb-nav-item nav-button new-item" @click="go('/data/virtual/new')"><el-icon><Plus /></el-icon><span>新建虚拟表</span></button>
         </div>
       </div>
 
@@ -53,7 +54,6 @@
       <button class="wb-nav-item nav-button" :aria-expanded="expandedKey === 'notes'" @click="toggle('notes')"><el-icon><Document /></el-icon><span>笔记</span><div class="spacer" /><el-icon class="caret" :class="{ open: expandedKey === 'notes' }"><ArrowRight /></el-icon></button>
       <div class="wb-nav-collapse" :class="{ open: expandedKey === 'notes' }" :inert="expandedKey !== 'notes'" :aria-hidden="expandedKey !== 'notes'">
         <div class="wb-nav-sub" aria-label="笔记文件夹">
-          <button class="wb-nav-item nav-button" :class="{ active: route.path === '/notes' }" @click="go('/notes')">全部笔记</button>
           <button class="wb-nav-item nav-button" :class="{ active: route.params.folderKey === 'uncategorized' }" @click="go('/notes/uncategorized')"><span class="ellipsis-1">未分类</span><span class="nav-count">{{ uncategorizedCount }}</span></button>
           <div v-if="noteFolders.length > 10" class="table-search"><el-input v-model="noteSearch" size="small" placeholder="搜索文件夹" clearable /></div>
           <button v-for="folder in filteredNoteFolders" :key="folder.id" class="wb-nav-item nav-button" :class="{ active: String(route.params.folderKey) === String(folder.id) }" :title="folder.name" :aria-label="`笔记文件夹：${folder.name}`" @click="go(`/notes/${folder.id}`)"><span class="ellipsis-1">{{ folder.name }}</span><span class="nav-count">{{ folder.note_count }}</span></button>
@@ -64,7 +64,6 @@
       <button class="wb-nav-item nav-button" :aria-expanded="expandedKey === 'memos'" @click="toggle('memos')"><el-icon><Memo /></el-icon><span>便利贴</span><div class="spacer" /><el-icon class="caret" :class="{ open: expandedKey === 'memos' }"><ArrowRight /></el-icon></button>
       <div class="wb-nav-collapse" :class="{ open: expandedKey === 'memos' }" :inert="expandedKey !== 'memos'" :aria-hidden="expandedKey !== 'memos'">
         <div class="wb-nav-sub" aria-label="便利贴分类">
-          <button class="wb-nav-item nav-button" :class="{ active: isMemoActive(route) }" @click="go(memoPath())">全部便利贴</button>
           <button class="wb-nav-item nav-button" :class="{ active: isMemoActive(route, null) }" @click="go(memoPath(null))">未分类</button>
           <div v-if="memoCategories.length > 10" class="table-search"><el-input v-model="memoSearch" size="small" placeholder="搜索便利贴分类" clearable /></div>
           <button v-for="name in filteredMemoCategories" :key="name" class="wb-nav-item nav-button" :class="{ active: isMemoActive(route, name) }" :title="name" :aria-label="`便利贴分类：${name}`" @click="go(memoPath(name))"><span class="ellipsis-1">{{ name }}</span></button>
@@ -73,23 +72,39 @@
       </div>
 
       <button v-for="item in mainItems" :key="item.path" class="wb-nav-item nav-button" :class="{ active: route.path === item.path }" @click="go(item.path)"><el-icon><component :is="item.icon" /></el-icon><span>{{ item.label }}</span></button>
+      <button class="wb-nav-item nav-button" :aria-expanded="expandedKey === 'bookmarks'" @click="toggle('bookmarks')"><el-icon><Link /></el-icon><span>网址导航</span><div class="spacer"/><el-icon class="caret" :class="{open:expandedKey === 'bookmarks'}"><ArrowRight /></el-icon></button>
+      <div class="wb-nav-collapse" :class="{open:expandedKey === 'bookmarks'}" :inert="expandedKey !== 'bookmarks'" :aria-hidden="expandedKey !== 'bookmarks'"><div class="wb-nav-sub" aria-label="网址分类">
+        <button class="wb-nav-item nav-button" :class="{active:route.path==='/bookmarks' && route.query.category==='__none'}" @click="go('/bookmarks?category=__none')">未分类</button>
+        <button v-for="name in bookmarkCategories" :key="name" class="wb-nav-item nav-button" :class="{active:route.path==='/bookmarks' && route.query.category===name}" :title="name" @click="go('/bookmarks?category='+encodeURIComponent(name))"><span class="ellipsis-1">{{ name }}</span></button>
+        <button class="wb-nav-item nav-button new-item" @click="createBookmarkCategory"><el-icon><Plus /></el-icon><span>新建分类</span></button>
+      </div></div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowRight, Calendar, DashboardIcon, Collection, Document, Fold, Memo, Plus, Todo, Translate, Picture, Edit } from '@/icons'
+import { ArrowRight, Calendar, DashboardIcon, Collection, Document, Fold, Memo, Plus, Todo, Translate, Picture, Edit, Link } from '@/icons'
 import { checkinItems, type CheckinNavKey } from '@/stores/session'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { http, apiError } from '@/api/client'
 import { isMemoActive, memoPath } from '@/memo-navigation'
-const props = defineProps<{ tables: any[]; dashboards: { id: number; name: string }[]; tableSearch: string; todoLists: any[]; noteFolders: any[]; uncategorizedCount: number; memoCategories: string[]; collapsed?: boolean; collapsible?: boolean }>()
+const props = defineProps<{ tables: any[]; dashboards: { id: number; name: string }[]; tableSearch: string; todoLists: any[]; noteFolders: any[]; uncategorizedCount: number; memoCategories: string[]; collapsed?: boolean; collapsible?: boolean; width?: number }>()
 const emit = defineEmits<{ (e: 'update:tableSearch', value: string): void; (e: 'navigate'): void; (e: 'new-table'): void; (e: 'new-dashboard'): void; (e: 'new-todo-list'): void; (e: 'new-note-folder'): void; (e: 'collapse'): void; (e: 'rename-checkin', key: CheckinNavKey): void }>()
 const route = useRoute(), router = useRouter()
+const bookmarkCategories=ref<string[]>([])
+async function loadBookmarkCategories(){try{const {data}=await http.get('/bookmarks/categories');bookmarkCategories.value=data}catch{/* keep current categories */}}
+async function createBookmarkCategory(){try{const {value}=await ElMessageBox.prompt('分类名称','新建分类',{inputPlaceholder:'例如：运营工具',inputValidator:(v:string)=>v.trim().length>0&&v.trim().length<=80||'请输入 1–80 个字符'});const {data}=await http.post('/bookmarks/categories',{name:value.trim()});window.dispatchEvent(new Event('wb-bookmarks-changed'));await loadBookmarkCategories();go('/bookmarks?category='+encodeURIComponent(data.name))}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(apiError(e).message)}}
+
+onMounted(()=>{if(route.path==='/bookmarks')void loadBookmarkCategories();window.addEventListener('wb-bookmarks-changed',loadBookmarkCategories)})
+onBeforeUnmount(()=>window.removeEventListener('wb-bookmarks-changed',loadBookmarkCategories))
+watch(()=>route.path,()=>{if(route.path==='/bookmarks')void loadBookmarkCategories()})
 const dashboardSearch = ref('')
 const todoSearch = ref(''), noteSearch = ref(''), memoSearch = ref('')
 // Expansion is intentionally transient: reload starts with every group closed.
 const expandedKey = ref<string | null>(null)
+watch(expandedKey,key=>{if(key==='bookmarks')void loadBookmarkCategories()})
 const mainItems = [
   { label: '翻译', path: '/translate', icon: Translate }, { label: '图片处理', path: '/images', icon: Picture },
 ]

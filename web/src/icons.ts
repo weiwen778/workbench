@@ -42,6 +42,7 @@ export {
   IconFolder as Folder,
   IconFolderOpen as FolderOpened,
   IconPhoto as Picture,
+  IconLink as Link,
   IconEye as View,
   IconSend as Promotion,
   IconArrowsExchange as Switch,

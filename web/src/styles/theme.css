@@ -745,3 +745,9 @@ html.dark {
   --wb-memo-purple: rgba(168, 85, 247, 0.14);
   --wb-memo-purple-text: #c3a6f2;
 }
+
+.wb-topbar .page-title { margin:0;flex-shrink:1;line-height:1.5; }
+
+/* Reserve scrollbar space when settings sections have different heights. */
+.wb-content.settings-scroll { scrollbar-gutter:stable; }
+@supports not (scrollbar-gutter:stable) { .wb-content.settings-scroll { overflow-y:scroll; } }

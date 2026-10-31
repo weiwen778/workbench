@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <div ref="checkinRoot" class="page">
     <div class="page-toolbar">
       <el-radio-group v-model="period" size="default" @change="load">
         <el-radio-button value="daily">今日</el-radio-button>
@@ -28,7 +28,7 @@
       <div class="spacer" />
 
       <div class="toolbar-actions">
-        <el-button text :icon="Refresh" @click="load">刷新</el-button>
+        <el-button text :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
         <el-button text :icon="Clock" @click="historyOpen = true">历史</el-button>
         <el-button text :icon="Upload" @click="openImport">导入</el-button>
         <el-button class="btn-tonal" :icon="Setting" @click="manageOpen = true">管理{{ kindLabel }}</el-button>
@@ -36,7 +36,7 @@
     </div>
 
     <div class="page-body">
-      <div v-if="loading" class="empty-hint">加载中…</div>
+      <div v-if="loading && !groups.length" class="empty-hint">加载中…</div>
       <div v-else-if="!groups.length" class="empty-hint">
         <div>{{ emptyText }}</div>
         <el-button v-if="!targets.length" class="btn-tonal" @click="manageOpen = true">先添加{{ kindLabel }}</el-button>
@@ -52,10 +52,13 @@
             :key="item.id"
             class="checkin-row"
             :class="{ done: item.completed }"
+            :data-instance-id="item.id"
+            :aria-busy="busyIds.has(item.id)"
           >
             <el-checkbox
+              :key="checkboxVersions[item.id] || 0"
               :model-value="item.completed"
-              :disabled="item.locked || busyId === item.id"
+              :disabled="item.locked || busyIds.has(item.id)"
               size="large"
               @change="toggle(item)"
             />
@@ -84,13 +87,13 @@
               trigger="click"
             >
               <template #reference>
-                <el-button text size="small" :disabled="item.locked">{{ item.note ? '改备注' : '备注' }}</el-button>
+                <el-button text size="small" :disabled="item.locked || busyIds.has(item.id)">{{ item.note ? '改备注' : '备注' }}</el-button>
               </template>
               <div class="text-13" style="margin-bottom: 6px">本次备注（可选）</div>
               <el-input v-model="noteDraft[item.id]" type="textarea" :rows="3" maxlength="2000" show-word-limit />
               <div class="toolbar-actions" style="justify-content: flex-end; margin-top: 8px">
                 <el-button size="small" @click="notePopover[item.id] = false">取消</el-button>
-                <el-button size="small" type="primary" @click="saveNote(item)">保存</el-button>
+                <el-button size="small" type="primary" :loading="busyIds.has(item.id)" @click="saveNote(item)">保存</el-button>
               </div>
             </el-popover>
           </div>
@@ -238,7 +241,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Clock, Download, InfoFilled, Plus, Refresh, Setting, Upload } from '@/icons'
@@ -259,7 +262,12 @@ const statistics = ref<{ completed: number; total: number; rate: number | null }
 })
 const periodRange = ref('')
 const loading = ref(false)
-const busyId = ref<number | null>(null)
+const checkinRoot = ref<HTMLElement>()
+const busyIds = reactive(new Set<number>())
+const checkboxVersions = reactive<Record<number, number>>({})
+let requestVersion = 0
+let viewActive = true
+onUnmounted(() => { viewActive = false; requestVersion++ })
 const noteDraft = reactive<Record<number, string>>({})
 const notePopover = reactive<Record<number, boolean>>({})
 
@@ -306,11 +314,18 @@ function formatShort(value: string) {
 }
 
 async function load() {
-  loading.value = true
+  await refreshCheckins(true)
+}
+
+async function refreshCheckins(showLoading = false) {
+  const request = ++requestVersion
+  if (showLoading) loading.value = true
   try {
     const params: Record<string, any> = { kind: kind.value, period: period.value, status: status.value }
     if (targetId.value) params.target_id = targetId.value
     const { data } = await http.get('/checkin-instances', { params })
+    if (!viewActive || request !== requestVersion) return
+    // Keyed groups/rows stay mounted, preserving scroll, focus and note drafts.
     groups.value = data.groups
     targets.value = data.targets
     statistics.value = data.statistics
@@ -321,14 +336,15 @@ async function load() {
       }
     }
   } catch (error) {
-    ElMessage.error(apiError(error).message)
+    if (viewActive && request === requestVersion) ElMessage.error(apiError(error).message)
   } finally {
-    loading.value = false
+    if (viewActive && request === requestVersion) loading.value = false
   }
 }
 
 async function toggle(item: any) {
-  busyId.value = item.id
+  if (item.locked || busyIds.has(item.id)) return
+  busyIds.add(item.id)
   try {
     if (item.completed) {
       await http.post(`/checkin-instances/${item.id}/cancel`)
@@ -336,22 +352,38 @@ async function toggle(item: any) {
       const note = (noteDraft[item.id] || '').trim()
       await http.post(`/checkin-instances/${item.id}/complete`, { note: note || null })
     }
-    await load()
+    if (viewActive) await refreshCheckins()
   } catch (error) {
-    ElMessage.error(apiError(error).message)
+    if (viewActive) {
+      const row = checkinRoot.value?.querySelector(`[data-instance-id="${item.id}"]`)
+      const restoreFocus = row?.contains(document.activeElement)
+      // Element's native input can remain checked when a write fails without
+      // changing its model prop. Reset just this control, never the list.
+      checkboxVersions[item.id] = (checkboxVersions[item.id] || 0) + 1
+      busyIds.delete(item.id)
+      await nextTick()
+      if (restoreFocus) row?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.focus({ preventScroll: true })
+      ElMessage.error(apiError(error).message)
+      if (apiError(error).code === 'PERIOD_LOCKED') await refreshCheckins()
+    }
   } finally {
-    busyId.value = null
+    busyIds.delete(item.id)
   }
 }
 
 async function saveNote(item: any) {
+  if (item.locked || busyIds.has(item.id)) return
+  busyIds.add(item.id)
   try {
     await http.patch(`/checkin-instances/${item.id}`, { note: (noteDraft[item.id] || '').trim() || null })
+    if (!viewActive) return
     notePopover[item.id] = false
     ElMessage.success('备注已保存')
-    await load()
+    await refreshCheckins()
   } catch (error) {
-    ElMessage.error(apiError(error).message)
+    if (viewActive) ElMessage.error(apiError(error).message)
+  } finally {
+    busyIds.delete(item.id)
   }
 }
 

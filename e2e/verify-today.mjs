@@ -265,7 +265,7 @@ await step('回收站筛选项与说明', async () => {
   assert(t.includes('便利贴'), '缺「便利贴」')
   assert(t.includes('表格行'), '缺「表格行」')
   assert(t.includes('店铺、社媒账号不进回收站'), '说明未更新')
-  assert(!t.includes('数据表'), '仍有「数据表」')
+  assert(!t.includes('记录表'), '仍有「数据表」')
   await shot('12-回收站')
 })
 

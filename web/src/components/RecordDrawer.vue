@@ -16,9 +16,11 @@
         :label="field.name"
         :required="field.required"
       >
+        <div v-if="['formula','lookup','rollup'].includes(field.type)" class="secondary text-13">{{ record?.computed_errors?.[field.key] || (Array.isArray(data[field.key]) ? data[field.key].join('、') : data[field.key]) || '保存后自动计算' }}</div>
+        <el-select v-else-if="field.type === 'reference'" v-model="data[field.key]" :multiple="field.config?.multiple" filterable clearable style="width:100%"><el-option v-for="option in references?.[field.key] || []" :key="option.id" :label="option.label" :value="option.id" /></el-select>
         <!-- 短文本 -->
         <el-input
-          v-if="field.type === 'short_text'"
+          v-else-if="field.type === 'short_text'"
           v-model="data[field.key]"
           maxlength="500"
           show-word-limit
@@ -127,6 +129,8 @@ const props = defineProps<{
   tableId: number
   fields: any[]
   record: any | null
+  references?: Record<string, {id:number;label:string}[]>
+  saveHandler?: (data: Record<string,any>, version:number|null, force:boolean)=>Promise<void>
 }>()
 
 const emit = defineEmits<{
@@ -197,6 +201,7 @@ function removeFile(field: any) {
 function buildPayload() {
   const payload: Record<string, any> = {}
   for (const field of props.fields) {
+    if (['formula','lookup','rollup'].includes(field.type)) continue
     const value = data[field.key]
     payload[field.key] = value === '' || value === undefined ? null : value
   }
@@ -207,7 +212,9 @@ async function save(force: boolean) {
   if (uploading.value !== null || saving.value) return
   saving.value = true
   try {
-    if (props.record) {
+    if (props.saveHandler) {
+      await props.saveHandler(buildPayload(), version.value, force)
+    } else if (props.record) {
       const body: Record<string, any> = { data: buildPayload() }
       if (!force) body.version = version.value
       const { data: saved } = await http.put(`/records/${props.record.id}`, body)

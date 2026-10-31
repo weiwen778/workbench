@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -12,6 +12,7 @@ from ..deps import get_current_user
 from ..errors import ApiError
 from ..models import DataField, DataRecord, DataTable, FileObject, FileRef, utcnow
 from ..services.fields import FIELD_TYPES, validate_record
+from ..services.virtual_tables import physical_only
 from ..services.query import paginate, parse_filters
 from ..services.trash import push
 from ..utils import iso_z
@@ -28,6 +29,7 @@ class FieldIn(BaseModel):
     required: bool = False
     default_value: Any = None
     options: list[dict] | None = None
+    config: dict | None = None
 
 
 class TableIn(BaseModel):
@@ -48,6 +50,7 @@ class FieldPatch(BaseModel):
     required: bool | None = None
     default_value: Any = None
     options: list[dict] | None = None
+    config: dict | None = None
     sort_order: int | None = None
 
 
@@ -69,6 +72,7 @@ def field_payload(f: DataField) -> dict:
         "required": f.required,
         "default_value": f.default_value,
         "options": f.options or [],
+        "config": f.config or {},
         "sort_order": f.sort_order,
     }
 
@@ -79,6 +83,8 @@ def table_payload(t: DataTable, fields: list[DataField] | None = None, record_co
         "name": t.name,
         "note": t.note,
         "schema_version": t.schema_version,
+        "kind": t.kind,
+        "virtual_config": t.virtual_config if t.kind=="virtual" else None,
         "sort_order": t.sort_order,
         "created_at": iso_z(t.created_at),
         "updated_at": iso_z(t.updated_at),
@@ -90,8 +96,11 @@ def table_payload(t: DataTable, fields: list[DataField] | None = None, record_co
     return out
 
 
-def record_payload(r: DataRecord) -> dict:
-    return {
+def record_payload(r: DataRecord, db=None) -> dict:
+    if db is not None:
+        from ..services.table_calculated_query import project
+        r=project(db,[r],{f.key:f for f in _fields(db,r.table_id)})[0]
+    out = {
         "id": r.id,
         "data": r.data,
         "version": r.version,
@@ -99,11 +108,22 @@ def record_payload(r: DataRecord) -> dict:
         "updated_at": iso_z(r.updated_at),
     }
 
+    if hasattr(r,"computed_errors"):out["computed_errors"]=r.computed_errors
+    if hasattr(r,"origins"):out.update(origins=r.origins,origin_count=r.origin_count)
+    return out
+
 
 def _get_table(db: Session, table_id: int) -> DataTable:
     table = db.get(DataTable, table_id)
     if not table or table.deleted_at is not None:
         raise ApiError("TABLE_NOT_FOUND", "表格不存在或已删除", 404)
+    return table
+
+
+def _lock_table(db, table_id):
+    table=_get_table(db,table_id)
+    locked=db.execute(update(DataTable).where(DataTable.id==table_id,DataTable.schema_version==table.schema_version,DataTable.deleted_at.is_(None)).values(schema_version=table.schema_version,updated_at=table.updated_at))
+    if locked.rowcount!=1:raise ApiError('SCHEMA_CONFLICT','表格结构已改变，请刷新后重试',409)
     return table
 
 
@@ -119,6 +139,7 @@ def _check_field_payload(payload: FieldIn, existing_names: set[str]) -> None:
     if payload.type not in FIELD_TYPES:
         raise ApiError("INVALID_FIELD_TYPE", "列类型不合法", 422, {"field": payload.name})
     name = payload.name.strip()
+    if not name: raise ApiError("INVALID_FIELD_NAME", "字段名称不能为空", 422)
     if name in existing_names:
         raise ApiError("FIELD_NAME_DUPLICATED", "同一张表格里列名不能重复", 409, {"field": name})
     if payload.type in {"select", "multiselect"}:
@@ -159,7 +180,8 @@ def list_tables(db: Session = Depends(get_db)):
             "id": t.id,
             "name": t.name,
             "note": t.note,
-            "record_count": counts.get(t.id, 0),
+            "kind": t.kind,
+            "record_count": None if t.kind=="virtual" else counts.get(t.id, 0),
             "field_count": field_counts.get(t.id, 0),
             "schema_version": t.schema_version,
         }
@@ -201,9 +223,13 @@ def create_table(payload: TableIn, db: Session = Depends(get_db)):
                 required=f.required,
                 default_value=f.default_value,
                 options=options,
+                config=f.config,
                 sort_order=index,
             )
         )
+    db.flush()
+    from ..services.table_expressions import configure
+    for field in _fields(db, table.id): configure(db, field, _fields(db, table.id))
     db.commit()
     return table_payload(table, _fields(db, table.id), 0)
 
@@ -219,12 +245,12 @@ def get_table(table_id: int, db: Session = Depends(get_db)):
         )
         or 0
     )
-    return table_payload(table, _fields(db, table_id), count)
+    return table_payload(table, _fields(db, table_id), None if table.kind=="virtual" else count)
 
 
 @router.patch("/tables/{table_id}")
 def update_table(table_id: int, payload: TablePatch, db: Session = Depends(get_db)):
-    table = _get_table(db, table_id)
+    table = _lock_table(db, table_id)
     if payload.name is not None:
         name = payload.name.strip()
         dup = db.scalar(
@@ -245,7 +271,7 @@ def update_table(table_id: int, payload: TablePatch, db: Session = Depends(get_d
 
 @router.delete("/tables/{table_id}")
 def delete_table(table_id: int, db: Session = Depends(get_db)):
-    table = _get_table(db, table_id)
+    table = _lock_table(db, table_id)
     table.deleted_at = utcnow()
     push(
         db,
@@ -285,7 +311,8 @@ def list_fields(table_id: int, db: Session = Depends(get_db)):
 
 @router.post("/tables/{table_id}/fields", status_code=201)
 def add_field(table_id: int, payload: FieldIn, db: Session = Depends(get_db)):
-    table = _get_table(db, table_id)
+    table = _lock_table(db, table_id)
+    physical_only(table)
     fields = _fields(db, table_id)
     if len(fields) >= MAX_FIELDS:
         raise ApiError("TOO_MANY_FIELDS", f"每张表格最多 {MAX_FIELDS} 列", 422)
@@ -311,11 +338,14 @@ def add_field(table_id: int, payload: FieldIn, db: Session = Depends(get_db)):
         required=payload.required,
         default_value=payload.default_value,
         options=options,
+        config=payload.config,
         sort_order=(max([f.sort_order for f in fields]) + 1) if fields else 0,
     )
     db.add(field)
     table.schema_version += 1
     db.flush()
+    from ..services.table_expressions import configure
+    configure(db, field, _fields(db, table_id))
     if field.required and field.default_value is not None:
         for record in db.scalars(
             select(DataRecord).where(DataRecord.table_id == table_id, DataRecord.deleted_at.is_(None))
@@ -329,12 +359,14 @@ def add_field(table_id: int, payload: FieldIn, db: Session = Depends(get_db)):
     return field_payload(field)
 
 
+
 @router.patch("/fields/{field_id}")
 def update_field(field_id: int, payload: FieldPatch, db: Session = Depends(get_db)):
     field = db.get(DataField, field_id)
     if not field:
         raise ApiError("NOT_FOUND", "列不存在", 404)
-    table = _get_table(db, field.table_id)
+    table = _lock_table(db, field.table_id)
+    physical_only(table)
     fields = _fields(db, table.id)
 
     if payload.name is not None:
@@ -399,9 +431,13 @@ def update_field(field_id: int, payload: FieldPatch, db: Session = Depends(get_d
     if payload.sort_order is not None:
         field.sort_order = payload.sort_order
 
+    if payload.config is not None: field.config = payload.config
+    from ..services.table_expressions import configure
+    configure(db, field, fields)
     table.schema_version += 1
     db.commit()
     return field_payload(field)
+
 
 
 @router.delete("/fields/{field_id}")
@@ -409,7 +445,8 @@ def delete_field(field_id: int, confirm: bool = Query(default=False), db: Sessio
     field = db.get(DataField, field_id)
     if not field:
         raise ApiError("NOT_FOUND", "列不存在", 404)
-    table = _get_table(db, field.table_id)
+    table = _lock_table(db, field.table_id)
+    physical_only(table)
     active_count = _count_non_empty(db, table.id, field, include_deleted=False)
     trashed_count = _count_non_empty(db, table.id, field, include_deleted=True) - active_count
     if not confirm:
@@ -419,10 +456,17 @@ def delete_field(field_id: int, confirm: bool = Query(default=False), db: Sessio
             409,
             {"active": active_count, "trashed": trashed_count},
         )
+    remaining=[f for f in _fields(db,table.id) if f.id!=field.id]
+    for record in db.scalars(select(DataRecord).where(DataRecord.table_id==table.id)):
+        values=dict(record.data or {})
+        if field.key in values:
+            values.pop(field.key);record.data=values;record.version+=1
+            _sync_file_refs(db,"record",record.id,remaining,values)
     db.delete(field)
     table.schema_version += 1
     db.commit()
     return {"ok": True, "removed_active_values": active_count, "removed_trashed_values": trashed_count}
+
 
 
 def _has_any_data(db: Session, table_id: int) -> bool:
@@ -489,8 +533,14 @@ def list_records(
     table = _get_table(db, table_id)
     if page_size not in (20, 50, 100):
         raise ApiError("INVALID_PAGE_SIZE", "每页只能是 20、50 或 100 条", 422)
-    parsed_filters = parse_filters(json.loads(filters) if filters else [])
-    parsed_sorts = json.loads(sorts) if sorts else []
+    try:
+        raw_filters = json.loads(filters) if filters else []
+        parsed_sorts = json.loads(sorts) if sorts else []
+    except (ValueError, TypeError):
+        raise ApiError("INVALID_QUERY", "筛选和排序需要有效 JSON 数组", 422)
+    if not isinstance(raw_filters,list) or not isinstance(parsed_sorts,list) or any(not isinstance(s,dict) for s in [*raw_filters,*parsed_sorts]):
+        raise ApiError("INVALID_QUERY", "筛选和排序需要条件数组", 422)
+    parsed_filters = parse_filters(raw_filters)
     total, rows, _fields_map = paginate(db, table_id, parsed_filters, parsed_sorts, page, page_size)
     return {
         "total": total,
@@ -503,7 +553,8 @@ def list_records(
 
 @router.post("/tables/{table_id}/records", status_code=201)
 def create_record(table_id: int, payload: RecordIn, db: Session = Depends(get_db)):
-    table = _get_table(db, table_id)
+    table = _lock_table(db, table_id)
+    physical_only(table)
     fields = _fields(db, table_id)
     if not fields:
         raise ApiError("NO_FIELDS", "请先加至少一列，再添加内容", 409)
@@ -512,8 +563,11 @@ def create_record(table_id: int, payload: RecordIn, db: Session = Depends(get_db
     db.add(record)
     db.flush()
     _sync_file_refs(db, "record", record.id, fields, data)
+    from ..services.table_history import append,snapshot
+    append(db,table,"添加记录",[{"id":record.id,"before":None,"after":snapshot(record)}],fields)
     db.commit()
-    return record_payload(record)
+    return record_payload(record, db)
+
 
 
 @router.get("/records/{record_id}")
@@ -521,25 +575,41 @@ def get_record(record_id: int, db: Session = Depends(get_db)):
     record = db.get(DataRecord, record_id)
     if not record or record.deleted_at is not None:
         raise ApiError("NOT_FOUND", "数据不存在", 404)
-    return record_payload(record)
+    return record_payload(record, db)
 
 
 @router.put("/records/{record_id}")
 def update_record(record_id: int, payload: RecordIn, db: Session = Depends(get_db)):
-    record = db.scalar(select(DataRecord).where(DataRecord.id == record_id).with_for_update())
+    record = db.get(DataRecord, record_id)
     if not record or record.deleted_at is not None:
         raise ApiError("NOT_FOUND", "数据不存在", 404)
-    table = _get_table(db, record.table_id)
+    table = _lock_table(db, record.table_id)
+    physical_only(table)
+    db.refresh(record)
+    if record.deleted_at is not None:raise ApiError("NOT_FOUND","数据不存在",404)
     if payload.version is not None and payload.version != record.version:
         raise ApiError("VERSION_CONFLICT", "这条数据已在其他位置被修改，请刷新后重试", 409,
                        {"current_version": record.version})
     fields = _fields(db, table.id)
-    data = validate_record(db, fields, payload.data, table_id=table.id)
-    record.data = data
-    record.version += 1
+    from ..services.table_expressions import COMPUTED
+    incoming=dict(payload.data)
+    computed=[f for f in fields if f.type in COMPUTED and f.key in incoming]
+    if computed:
+        current=record_payload(record,db)['data']
+        for field in computed:
+            if incoming[field.key]!=current.get(field.key):raise ApiError('READ_ONLY_FIELD','计算列不能手动修改',422)
+            incoming.pop(field.key)
+    data = validate_record(db, fields, incoming, table_id=table.id)
+    from ..services.table_history import append,snapshot
+    before=snapshot(record);expected=record.version
+    changed=db.execute(update(DataRecord).where(DataRecord.id==record.id,DataRecord.version==expected,DataRecord.deleted_at.is_(None)).values(data=data,version=expected+1,updated_at=utcnow()))
+    if changed.rowcount!=1:raise ApiError('VERSION_CONFLICT','数据已被修改，请重新读取',409)
+    db.refresh(record)
     _sync_file_refs(db, "record", record.id, fields, data)
+    append(db,table,"编辑记录",[{"id":record.id,"before":before,"after":snapshot(record)}],fields)
     db.commit()
-    return record_payload(record)
+    return record_payload(record, db)
+
 
 
 @router.delete("/records/{record_id}")
@@ -547,7 +617,13 @@ def delete_record(record_id: int, db: Session = Depends(get_db)):
     record = db.get(DataRecord, record_id)
     if not record or record.deleted_at is not None:
         raise ApiError("NOT_FOUND", "数据不存在", 404)
-    table = db.get(DataTable, record.table_id)
+    table = _lock_table(db, record.table_id)
+    physical_only(table)
+    db.refresh(record)
+    if record.deleted_at is not None:
+        raise ApiError("NOT_FOUND", "数据已删除", 404)
+    from ..services.table_history import append,snapshot
+    before=snapshot(record)
     record.deleted_at = utcnow()
     record.deleted_snapshot = {
         "data": record.data,
@@ -562,27 +638,38 @@ def delete_record(record_id: int, db: Session = Depends(get_db)):
         record.deleted_snapshot,
         parent_id=record.table_id,
     )
+    record.version+=1
+    append(db,table,"删除记录",[{"id":record.id,"before":before,"after":snapshot(record)}],_fields(db,table.id))
     db.commit()
     return {"ok": True}
 
 
+
 @router.post("/tables/{table_id}/records/batch-delete")
 def batch_delete(table_id: int, payload: BatchDeleteIn, db: Session = Depends(get_db)):
-    table = _get_table(db, table_id)
+    table = _lock_table(db, table_id)
+    physical_only(table)
     if len(payload.ids) > 100:
         raise ApiError("BATCH_TOO_LARGE", "单批最多删除 100 条", 422)
+    from ..services.table_history import append,snapshot
+    entries=[]
     deleted = 0
     for record_id in payload.ids:
         record = db.get(DataRecord, record_id)
         if not record or record.table_id != table_id or record.deleted_at is not None:
             continue
+        before=snapshot(record)
         record.deleted_at = utcnow()
         record.deleted_snapshot = {"data": record.data, "version": record.version, "table_name": table.name}
         push(db, "record", record.id, f"{table.name} #{record.id}", record.deleted_snapshot,
              parent_id=table.id)
+        record.version+=1
+        entries.append({"id":record.id,"before":before,"after":snapshot(record)})
         deleted += 1
+    append(db,table,"批量删除",entries,_fields(db,table.id))
     db.commit()
     return {"ok": True, "deleted": deleted}
+
 
 
 def _sync_file_refs(db: Session, owner_type: str, owner_id: int, fields: list[DataField], data: dict) -> None:

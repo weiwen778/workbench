@@ -21,6 +21,7 @@ FIELD_TYPES = {
     "checkbox",
     "url",
     "attachment",
+    "reference", "formula", "lookup", "rollup",
 }
 
 LIMITS = {
@@ -58,6 +59,28 @@ def validate_value(db: Session, field, raw, *, table_id: int) -> object:
     """返回入库值；空值返回 None。0 与 False 不是空值。"""
     fname = field.name
     ftype = field.type
+
+    if ftype in {"formula", "lookup", "rollup"}:
+        if raw is not None:
+            _fail(fname, "计算列由系统生成，不能手动写入")
+        return None
+
+    if ftype == "reference":
+        from ..models import DataRecord, DataTable
+        config = field.config or {}
+        if raw is None or raw == "": return None
+        values = raw if isinstance(raw, list) else [raw]
+        if len(values) > 100 or not config.get('multiple') and len(values) > 1:
+            _fail(fname, "关联记录数量不合法")
+        tid = config.get('table_id'); table = db.get(DataTable, tid)
+        if not table or table.deleted_at is not None: _fail(fname, "关联表已删除")
+        cleaned=[]
+        for rid in values:
+            if isinstance(rid, bool) or not isinstance(rid, int): _fail(fname, "关联值需要记录 ID")
+            record=db.get(DataRecord, rid)
+            if not record or record.table_id != tid or record.deleted_at is not None: _fail(fname, "关联记录不存在")
+            if rid not in cleaned: cleaned.append(rid)
+        return cleaned if config.get('multiple') else cleaned[0] if cleaned else None
 
     if ftype == "checkbox":
         if raw is None or raw == "":
@@ -159,7 +182,8 @@ def validate_record(db: Session, fields: list, data: dict, *, table_id: int) -> 
                     value = field.default_value
                 else:
                     _fail(field.name, "必填列不能为空")
-        result[field.key] = value
+        if field.type not in {"formula", "lookup", "rollup"}:
+            result[field.key] = value
     return result
 
 

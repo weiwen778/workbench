@@ -1,8 +1,8 @@
 <template>
-  <el-card shadow="never" class="agent-access-card">
+  <el-card ref="card" shadow="never" class="agent-access-card">
     <div class="heading">
       <div>
-        <div class="group-title">Agent 接入</div>
+        <div v-if="!embedded" class="group-title">Agent 接入</div>
         <div class="text-13 secondary">为每个 Agent 创建独立令牌，让它读取任务、回写执行结果和修改表格状态。</div>
       </div>
       <div class="actions">
@@ -28,11 +28,11 @@
         <template #default="{ row }"><el-button v-if="row.status === 'active'" link type="danger" @click="revoke(row)">撤销</el-button></template>
       </el-table-column>
     </el-table>
-    <div class="activity-heading">
+    <div ref="activityHeading" class="activity-heading">
       <span class="text-13 secondary">最近成功的写入操作（最多 100 条）</span>
       <el-button text size="small" @click="load">刷新</el-button>
     </div>
-    <el-table :data="activity" empty-text="暂无 Agent 写入记录" max-height="260">
+    <el-table :data="activity" empty-text="暂无 Agent 写入记录" :max-height="activityMaxHeight">
       <el-table-column label="时间" min-width="150"><template #default="{ row }">{{ time(row.created_at) }}</template></el-table-column>
       <el-table-column prop="agent_name" label="Agent" min-width="120" />
       <el-table-column label="操作" min-width="160"><template #default="{ row }">{{ actionLabel(row) }}</template></el-table-column>
@@ -68,14 +68,26 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiError, copyText, http } from '@/api/client'
 
+const props=defineProps<{embedded?:boolean}>()
 interface Token { id: number; name: string; scopes: string[]; status: string; expires_at: string; last_used_at: string | null }
 interface Activity { id: number; agent_name: string; method: string; path: string; created_at: string }
 const scopeLabels: Record<string, string> = { 'todos:read': '读取待办', 'todos:write': '添加和修改待办', 'tables:read': '读取表格', 'tables:write': '添加和修改表格记录' }
 const statusLabels: Record<string, string> = { active: '有效', revoked: '已撤销', expired: '已过期' }
+const card=ref<{$el:HTMLElement}>(),activityHeading=ref<HTMLElement>(),activityMaxHeight=ref(260)
+let observer:ResizeObserver|undefined,resizeFrame=0
+function resizeActivity(){
+ resizeFrame=0
+ if(!props.embedded||!activityHeading.value)return
+ const scroller=activityHeading.value.closest('.wb-content') as HTMLElement|null
+ if(!scroller)return
+ const top=activityHeading.value.getBoundingClientRect().bottom-scroller.getBoundingClientRect().top+scroller.scrollTop
+ activityMaxHeight.value=Math.max(260,Math.floor(scroller.clientHeight-top-48))
+}
+function scheduleActivitySize(){if(!resizeFrame)resizeFrame=requestAnimationFrame(resizeActivity)}
 const tokens = ref<Token[]>([])
 const activity = ref<Activity[]>([])
 const loading = ref(false)
@@ -108,6 +120,8 @@ async function load() {
     loadError.value = apiError(error).message
   } finally {
     loading.value = false
+    await nextTick()
+    scheduleActivitySize()
   }
 }
 async function create() {
@@ -145,7 +159,12 @@ async function copySecret() {
   if (await copyText(secret.value)) ElMessage.success('令牌已复制')
   else ElMessage.error('复制失败，请手动选中令牌复制')
 }
-onMounted(load)
+defineExpose({hasUnsaved:computed(()=>showSecret.value||(showCreate.value&&!!form.name))})
+onMounted(()=>{
+ void load()
+ if(props.embedded){observer=new ResizeObserver(scheduleActivitySize);if(card.value?.$el)observer.observe(card.value.$el);window.addEventListener('resize',scheduleActivitySize);scheduleActivitySize()}
+})
+onUnmounted(()=>{observer?.disconnect();cancelAnimationFrame(resizeFrame);window.removeEventListener('resize',scheduleActivitySize)})
 </script>
 
 <style scoped>

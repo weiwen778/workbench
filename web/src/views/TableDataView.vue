@@ -1,545 +1,143 @@
 <template>
-  <div class="page">
-    <div class="page-toolbar">
-      <div class="title-15">{{ table?.name || '表格' }}</div>
-      <el-tooltip v-if="table?.note" :content="table.note" placement="bottom">
-        <el-icon class="muted"><InfoFilled /></el-icon>
-      </el-tooltip>
-      <span class="text-12 muted">共 {{ total }} 行</span>
-      <div class="spacer" />
-      <div class="toolbar-actions">
-        <el-button text :icon="DashboardIcon" @click="router.push({ path: '/visualizations', query: { table: tableId } })">可视化</el-button>
-        <el-button text :icon="Refresh" @click="reload">刷新</el-button>
-        <el-popover placement="bottom-end" :width="360" trigger="click">
-          <template #reference>
-            <el-button text :icon="Sort">
-              排序{{ sorts.length ? `(${sorts.length})` : '' }}
-            </el-button>
-          </template>
-          <div class="text-13" style="margin-bottom: 6px">排序（最多 3 列，临时生效）</div>
-          <div v-for="(sort, index) in sortDraft" :key="index" class="filter-item" style="margin-bottom: 6px">
-            <el-select v-model="sort.field" size="small" style="width: 140px" placeholder="列">
-              <el-option v-for="f in sortableFields" :key="f.key" :label="f.name" :value="f.key" />
-            </el-select>
-            <el-select v-model="sort.order" size="small" style="width: 90px">
-              <el-option label="升序" value="asc" />
-              <el-option label="降序" value="desc" />
-            </el-select>
-            <el-button text size="small" :icon="Close" @click="sortDraft.splice(index, 1)" />
-          </div>
-          <div class="toolbar-actions">
-            <el-button v-if="sortDraft.length < 3" text size="small" :icon="Plus" @click="addSort">添加排序</el-button>
-            <el-button size="small" @click="clearSorts">清除</el-button>
-            <el-button size="small" type="primary" @click="applySorts">应用</el-button>
-          </div>
-        </el-popover>
-        <el-button text :icon="Setting" @click="fieldsOpen = true">列设置</el-button>
-        <el-button text :icon="Download" @click="exportOpen = true">导出</el-button>
-        <el-button text :icon="Upload" @click="importOpen = true">批量导入</el-button>
-        <el-button class="btn-tonal" :icon="Plus" :disabled="!fields.length" @click="openCreate">添加一行</el-button>
-      </div>
-    </div>
-
-    <!-- 筛选条 -->
-    <div class="filter-bar">
-      <div v-for="(filter, index) in filters" :key="index" class="filter-item">
-        <el-select v-model="filter.field" placeholder="列" style="width: 130px" @change="onFilterFieldChange(filter)">
-          <el-option v-for="f in sortableFields" :key="f.key" :label="f.name" :value="f.key" />
-        </el-select>
-        <el-select v-model="filter.op" style="width: 104px">
-          <el-option v-for="op in operatorsFor(filter.field)" :key="op.value" :label="op.label" :value="op.value" />
-        </el-select>
-        <template v-if="!['empty', 'not_empty'].includes(filter.op)">
-          <template v-if="filter.op === 'between'">
-            <el-date-picker
-              v-if="fieldType(filter.field) === 'date'"
-              v-model="filter.value"
-              type="daterange"
-              value-format="YYYY-MM-DD"
-              start-placeholder="从"
-              end-placeholder="到"
-              style="width: 230px"
-            />
-            <div v-else class="range-inputs">
-              <el-input v-model="filter.value[0]" placeholder="最小" style="width: 90px" />
-              <span class="muted">~</span>
-              <el-input v-model="filter.value[1]" placeholder="最大" style="width: 90px" />
-            </div>
-          </template>
-          <el-select
-            v-else-if="['select', 'multiselect'].includes(fieldType(filter.field))"
-            v-model="filter.value"
-            :multiple="fieldType(filter.field) === 'multiselect'"
-            clearable
-            style="width: 160px"
-          >
-            <el-option
-              v-for="opt in optionsOf(filter.field)"
-              :key="opt.id"
-              :label="opt.name"
-              :value="opt.id"
-            />
-          </el-select>
-          <el-select v-else-if="fieldType(filter.field) === 'checkbox'" v-model="filter.value" style="width: 110px">
-            <el-option label="是" :value="true" />
-            <el-option label="否" :value="false" />
-          </el-select>
-          <el-input
-            v-else
-            v-model="filter.value"
-            placeholder="值"
-            style="width: 140px"
-            @keyup.enter="applyFilters"
-          />
-        </template>
-        <el-button text :icon="Close" size="small" title="移除条件" @click="removeFilter(index)" />
-      </div>
-      <div class="toolbar-actions">
-        <el-button v-if="filters.length < 10" text :icon="Plus" size="small" @click="addFilter">添加条件</el-button>
-        <el-button size="small" type="primary" @click="applyFilters">查询</el-button>
-        <el-button v-if="filters.length" size="small" @click="resetFilters">重置</el-button>
-      </div>
-    </div>
-
-    <div class="page-body">
-      <div v-if="!fields.length" class="empty-hint">
-        <div>这张表格还没有列</div>
-        <el-button class="btn-tonal" @click="fieldsOpen = true">添加一列</el-button>
-      </div>
-      <template v-else>
-        <div class="table-scroll">
-          <el-table
-            :data="rows"
-            v-loading="loading"
-            size="small"
-            height="100%"
-            style="width: 100%"
-            @selection-change="onSelectionChange"
-            @row-click="openEdit"
-          >
-            <el-table-column type="selection" width="42" />
-            <el-table-column
-              v-for="field in fields"
-              :key="field.key"
-              :label="field.name"
-              :min-width="columnWidth(field)"
-              show-overflow-tooltip
-            >
-              <template #default="{ row }">
-                <span v-if="field.type === 'checkbox'">
-                  <el-icon v-if="row.data[field.key]" color="var(--wb-primary)"><Check /></el-icon>
-                  <span v-else class="muted">否</span>
-                </span>
-                <el-link
-                  v-else-if="field.type === 'url' && row.data[field.key]"
-                  :href="row.data[field.key]"
-                  target="_blank"
-                  :underline="false"
-                  @click.stop
-                >{{ row.data[field.key] }}</el-link>
-                <el-link
-                  v-else-if="field.type === 'attachment' && row.data[field.key]"
-                  underline="never"
-                  @click.stop="openAttachment(row.data[field.key])"
-                >查看附件</el-link>
-                <span v-else-if="field.type === 'select'">{{ optionName(field, row.data[field.key]) }}</span>
-                <span v-else-if="field.type === 'multiselect'">{{ multiName(field, row.data[field.key]) }}</span>
-                <span v-else>{{ row.data[field.key] ?? '' }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="120" fixed="right">
-              <template #default="{ row }">
-                <div class="actions-group">
-                  <el-button text size="small" @click.stop="openEdit(row)">编辑</el-button>
-                  <el-button text size="small" @click.stop="removeRecord(row)">删除</el-button>
-                </div>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
-
-        <div class="pager">
-          <div class="toolbar-actions">
-            <el-button v-if="selection.length" size="small" @click="batchDelete">
-              删除选中的 {{ selection.length }} 行
-            </el-button>
-            <span v-if="!rows.length" class="text-12 muted">没有符合条件的内容</span>
-          </div>
-          <div class="spacer" />
-          <el-pagination
-            v-model:current-page="page"
-            v-model:page-size="pageSize"
-            :total="total"
-            :page-sizes="[20, 50, 100]"
-            layout="total, sizes, prev, pager, next"
-            @current-change="loadRecords"
-            @size-change="onPageSizeChange"
-          />
-        </div>
-      </template>
-    </div>
-
-    <RecordDrawer
-      v-model="recordOpen"
-      :table-id="tableId"
-      :fields="fields"
-      :record="editingRecord"
-      @saved="loadRecords"
-    />
-    <AttachmentPreview v-model="previewOpen" :file="previewFile" />
-    <FieldManager v-model="fieldsOpen" :table-id="tableId" :fields="fields" @updated="reload" />
-    <ImportWizard v-model="importOpen" :table-id="tableId" :existing-fields="fields" @done="reload" />
-
-    <!-- 导出 -->
-    <el-dialog v-model="exportOpen" title="导出表格" width="420px">
-      <el-radio-group v-model="exportScope">
-        <el-radio value="all">整张表格（{{ total }} 行）</el-radio>
-        <el-radio value="filtered">当前筛选结果</el-radio>
-      </el-radio-group>
-      <div v-if="exportScope === 'filtered'" class="text-12 muted" style="margin-top: 8px">
-        导出所有符合条件的内容（不只是这一页），顺序照当前排序。
-      </div>
-      <template #footer>
-        <div class="toolbar-actions" style="justify-content: flex-end">
-          <el-button @click="exportOpen = false">取消</el-button>
-          <el-button type="primary" :loading="exporting" @click="doExport">导出</el-button>
-        </div>
-      </template>
-    </el-dialog>
+ <div class="table-workbench">
+  <div v-if="!classic" class="workbench-head">
+   <el-radio-group class="table-modes" :model-value="kind" size="small" aria-label="表格显示方式" @change="changeKind"><el-radio-button value="grid">记录表</el-radio-button><el-radio-button value="summary">分类汇总</el-radio-button><el-radio-button value="pivot">交叉统计</el-radio-button><el-radio-button value="workbook">自由工作簿</el-radio-button></el-radio-group>
+   <span class="record-count text-12 muted" v-if="kind!=='workbook'">{{ filteredRows.length }} / {{ records.length }} 条记录</span><span v-if="busy" class="text-12 muted">正在保存…</span><span class="spacer"/>
+   <div class="table-primary-actions"><template v-if="kind!=='workbook'"><el-button text size="small" @click="undo" :disabled="!undoTarget" title="撤回上一次数据修改">撤销</el-button><el-button text size="small" @click="redo" :disabled="!redoTarget" title="恢复已撤销的数据修改">重做</el-button></template>
+   <el-dropdown trigger="click" @command="tableCommand"><el-button size="small">更多操作 <span aria-hidden="true">⌄</span></el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="help">如何使用表格</el-dropdown-item><el-dropdown-item command="refresh">重新加载数据</el-dropdown-item><el-dropdown-item v-if="kind!=='workbook'" command="history">查看修改记录</el-dropdown-item><el-dropdown-item command="legacy" divided>文件导入 / 导出</el-dropdown-item></el-dropdown-menu></template></el-dropdown>
+   <el-button v-if="kind!=='workbook'" type="primary" size="small" @click="openCreate">＋ 添加记录</el-button></div>
   </div>
+  <LegacyTableView v-if="classic"><template #header-actions><el-button size="small" @click="switchClassic">返回表格工作区</el-button></template></LegacyTableView>
+  <template v-else>
+   <div class="table-tools">
+    <template v-if="kind!=='workbook'">
+    <el-input class="table-search" v-model="config.search" placeholder="搜索表格内容" aria-label="搜索表格内容" clearable size="small"/>
+    <el-button size="small" :type="queryOpen||config.filters.length+config.sorts.length?'primary':undefined" plain @click="queryOpen=!queryOpen">筛选与排序<template v-if="config.filters.length+config.sorts.length"> · {{ config.filters.length+config.sorts.length }}</template></el-button>
+    <el-button size="small" @click="columnsOpen=true">字段设置</el-button><el-button size="small" :type="config.detail?'primary':undefined" plain @click="config.detail=!config.detail">记录详情</el-button>
+    </template><span v-else class="text-12 secondary">独立工作簿：修改不会写回记录表。<el-button text size="small" @click="helpOpen=true">了解区别</el-button></span>
+    <span class="spacer"/><div class="scheme-controls"><span class="text-12 secondary scheme-label">显示方案</span>
+    <el-dropdown class="view-picker" trigger="click" @command="viewCommand"><el-button size="small" :title="activeView?.name||'全部记录'">{{ activeView?.name||'全部记录' }} <span aria-hidden="true">⌄</span></el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="default">全部记录</el-dropdown-item><el-dropdown-item v-for="v in views" :key="v.id" :command="'view:'+v.id">{{ v.name }}</el-dropdown-item><el-dropdown-item command="new" divided>将当前设置保存为新方案</el-dropdown-item><template v-if="activeView"><el-dropdown-item command="save">保存方案更改</el-dropdown-item><el-dropdown-item command="delete">删除此方案</el-dropdown-item></template></el-dropdown-menu></template></el-dropdown><span v-if="viewDirty&&activeView" class="scheme-dirty text-12 muted">方案有更改</span></div>
+   </div>
+   <div v-if="kind==='workbook'" class="workbook-explanation text-12 secondary">自由工作簿提供单独的单元格、公式和多工作表编辑，修改不会写回记录表。<el-button text size="small" @click="helpOpen=true">了解区别</el-button></div>
+   <div v-if="queryOpen&&kind!=='workbook'" class="query-panel">
+    <div v-for="(f,i) in config.filters" :key="i" class="query-row"><el-select v-model="f.field" size="small" placeholder="字段"><el-option v-for="field in fields" :key="field.key" :label="field.name" :value="field.key"/></el-select><el-select v-model="f.op" size="small"><el-option v-for="o in filterOps" :key="o.value" :label="o.label" :value="o.value"/></el-select><el-input v-if="!['empty','not_empty'].includes(f.op)" v-model="f.value" size="small" placeholder="值"/><el-button text size="small" @click="config.filters.splice(i,1)">移除</el-button></div>
+    <div v-for="(s,i) in config.sorts" :key="'s'+i" class="query-row"><span class="text-12 muted">排序</span><el-select v-model="s.field" size="small"><el-option v-for="f in fields" :key="f.key" :label="f.name" :value="f.key"/></el-select><el-select v-model="s.order" size="small"><el-option label="升序" value="asc"/><el-option label="降序" value="desc"/></el-select><el-button text size="small" @click="config.sorts.splice(i,1)">移除</el-button></div>
+    <div class="toolbar-actions"><el-button size="small" :disabled="config.filters.length>=10||!fields.length" @click="config.filters.push({field:fields[0].key,op:'contains',value:''})">添加筛选</el-button><el-button size="small" :disabled="config.sorts.length>=3||!fields.length" @click="config.sorts.push({field:fields[0].key,order:'asc'})">添加排序</el-button><el-button size="small" @click="config.filters=[];config.sorts=[];config.search=''">清除查询</el-button></div>
+   </div>
+   <el-alert v-if="config.filters.some(f=>!fields.some(field=>field.key===f.field))" title="筛选字段已删除，请重新配置筛选条件。" type="warning" :closable="false"/>
+   <el-alert v-if="failure" :title="failure" type="error" :closable="false"/>
+   <div v-if="loading&&!table" class="empty-hint">正在打开表格…</div>
+   <WorkbookEditor v-else-if="kind==='workbook'&&table" ref="workbookRef" :table-id="tableId" :name="table.name" :fields="fields" :rows="records" :references="references" @dirty="workbookDirty=$event"/>
+   <template v-else-if="table">
+    <TableAnalysis v-if="['summary','pivot'].includes(kind)" :rows="filteredRows" :fields="fields" :references="references" :kind="kind" :config="kind==='pivot'?config.pivot:config.summary" :selection="analysisSelection" @update:config="setAnalysisConfig" @select="analysisSelection=$event"/>
+    <div class="grid-actions" :class="{'has-selection':!!selected||gridDirty}">
+     <template v-if="selected||gridDirty"><span class="text-12 secondary">{{ selected?'已选中 '+(gridRef?.selectedRows?.length||1)+' 行':'有未保存的修改' }}</span><template v-if="selected"><el-button size="small" @click="openEdit(selected)">编辑记录</el-button><el-button size="small" @click="gridRef?.copy()">复制单元格</el-button><el-button size="small" @click="pasteClipboard">粘贴</el-button><el-dropdown trigger="click" @command="selectionCommand"><el-button size="small">批量操作 <span aria-hidden="true">⌄</span></el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="down">向下填充选区</el-dropdown-item><el-dropdown-item command="right">向右填充选区</el-dropdown-item><el-dropdown-item command="clear">清空所选单元格</el-dropdown-item><el-dropdown-item command="duplicate" divided>复制当前记录</el-dropdown-item><el-dropdown-item command="delete">删除选中记录</el-dropdown-item></el-dropdown-menu></template></el-dropdown></template><template v-if="gridDirty"><el-button size="small" type="primary" @click="gridRef?.retry()">重试保存</el-button><el-button size="small" @click="discard">放弃未保存修改</el-button></template></template>
+     <span v-else class="table-start-hint text-12 secondary">{{ modeHelp[kind] }}</span><span class="spacer"/><el-button v-if="!selected&&!gridDirty" text size="small" @click="helpOpen=true">使用说明</el-button>
+    </div>
+    <div v-if="!fields.length" class="empty-hint"><span>先添加字段，再录入记录</span><el-button @click="editField(null)">添加字段</el-button></div>
+    <div v-else class="data-area">
+     <div v-if="config.group" class="group-rail"><button :class="{active:!groupSelection}" @click="groupSelection=''">全部 {{ filteredRows.length }}</button><button v-for="g in grouped" :key="g.key" :class="{active:groupSelection===g.key}" @click="groupSelection=g.key">{{ g.key }} <span>{{ g.count }}</span></button></div>
+     <div class="grid-container"><VTableGrid ref="gridRef" :rows="displayRows" :fields="fields" :config="config" :references="references" :commit="commitCells" @select="selected=$event" @width="(key,width)=>config.widths[key]=width" @dirty="gridDirty=$event" @detail="openEdit" @attachment="openAttachment" @order="moveColumns" @undo="undo" @redo="redo"/></div>
+     <aside v-if="config.detail" class="record-details"><template v-if="selected"><div class="detail-head"><strong>记录 #{{ selected.id }}</strong><el-button size="small" @click="openEdit(selected)">编辑</el-button></div><div v-for="f in fields" :key="f.key" class="detail-field"><label>{{ f.name }}</label><div v-if="selected.computed_errors?.[f.key]" class="error-text">{{ selected.computed_errors[f.key] }}</div><el-button v-else-if="f.type==='attachment'&&selected.data[f.key]" text @click="openAttachment(selected.data[f.key])">查看附件</el-button><span v-else>{{ display(f,selected.data[f.key],references,config.formats[f.key])||'—' }}</span></div></template><div v-else class="empty-hint">选择一行查看详情</div></aside>
+    </div>
+    <div class="table-summary"><span v-if="displayRows.length!==filteredRows.length">联动明细：{{ displayRows.length }} 行</span><template v-for="f in visibleFields.filter(f=>['number','formula','rollup'].includes(f.type)).slice(0,4)" :key="f.key"><span>{{ f.name }} 合计 {{ aggregate(filteredRows,f.key,'sum') }}</span></template><span class="spacer"/><el-button text size="small" @click="downloadFiltered">导出筛选 CSV</el-button></div>
+   </template>
+  </template>
+  <el-drawer v-model="columnsOpen" title="字段设置" size="min(620px,100%)" append-to-body>
+   <div class="column-options"><el-form-item label="冻结前几列"><el-input-number v-model="config.frozen" :min="0" :max="Math.min(fields.length,5)" size="small"/></el-form-item><el-form-item label="行高"><el-select v-model="config.rowHeight" size="small"><el-option :value="30" label="紧凑"/><el-option :value="36" label="标准"/><el-option :value="48" label="宽松"/></el-select></el-form-item><el-form-item label="分组侧栏"><el-select v-model="config.group" clearable size="small"><el-option v-for="f in fields" :key="f.key" :label="f.name" :value="f.key"/></el-select></el-form-item></div>
+   <div class="toolbar-actions"><el-button type="primary" size="small" @click="editField(null)">添加字段</el-button><span class="text-12 muted">隐藏列只影响当前视图，删除字段会影响原表</span></div>
+   <div v-for="(f,index) in orderedFields" :key="f.key" class="field-setting"><el-checkbox :model-value="!config.hidden.includes(f.key)" @change="toggleField(f.key)">{{ f.name }}</el-checkbox><span class="text-12 muted">{{ typeName(f.type) }}</span><span class="spacer"/><el-button text size="small" :disabled="!index" @click="moveField(index,-1)">上移</el-button><el-button text size="small" :disabled="index===fields.length-1" @click="moveField(index,1)">下移</el-button><el-button text size="small" @click="editField(f)">设置</el-button><el-button text size="small" @click="removeField(f)">删除</el-button><div class="field-format"><el-select :model-value="config.formats[f.key]?.style||'plain'" size="small" @change="setFormat(f.key,$event)"><el-option v-for="o in formats" :key="o.value" :value="o.value" :label="o.label"/></el-select><el-input-number v-if="config.formats[f.key]" v-model="config.formats[f.key].digits" :min="0" :max="6" size="small" aria-label="小数位"/></div></div>
+   <h4>条件格式</h4><div v-for="(rule,i) in config.conditions" :key="i" class="query-row"><el-select v-model="rule.field" size="small"><el-option v-for="f in fields" :key="f.key" :label="f.name" :value="f.key"/></el-select><el-select v-model="rule.op" size="small"><el-option label="等于" value="eq"/><el-option label="大于" value="gt"/><el-option label="小于" value="lt"/><el-option label="为空" value="empty"/></el-select><el-input v-model="rule.value" size="small"/><el-select v-model="rule.color" size="small"><el-option label="红" value="red"/><el-option label="黄" value="yellow"/><el-option label="绿" value="green"/><el-option label="蓝" value="blue"/></el-select><el-button text size="small" @click="config.conditions.splice(i,1)">移除</el-button></div><el-button size="small" :disabled="config.conditions.length>=20||!fields.length" @click="config.conditions.push({field:fields[0].key,op:'eq',value:'',color:'yellow'})">添加规则</el-button>
+  </el-drawer>
+  <el-dialog v-model="helpOpen" title="如何使用表格" width="min(620px,94vw)"><div class="table-help"><p><strong>先录入，再整理，最后统计。</strong>日常工作从“记录表”开始。</p><ol><li><b>添加或修改</b><span>点击“添加记录”录入一条数据；双击单元格可直接编辑，修改自动保存。</span></li><li><b>找到需要的数据</b><span>搜索表格内容，或用“筛选与排序”限定条件；“字段设置”管理列、显示格式和行高。</span></li><li><b>处理选中的内容</b><span>点击单元格后出现复制、粘贴和批量操作。先选好区域，再填充或清空。删除记录会再次确认。</span></li></ol><div class="mode-explanations"><p><b>记录表</b>查看和编辑每条原始记录。</p><p><b>分类汇总</b>按一个字段分组，计算合计或数量；点击某组可查看下方对应记录。</p><p><b>交叉统计</b>选择行、列两个分组维度，比较交叉汇总结果。</p><p><b>自由工作簿</b>像 Excel 一样编辑多个工作表，拥有独立内容，不会修改记录表。</p></div><p class="text-12 secondary">“显示方案”保存当前筛选、排序、字段显示和统计方式，方便下次直接打开。文件导入和导出在“更多操作”中。</p></div></el-dialog>
+  <TableFieldEditor v-model="fieldOpen" :table-id="tableId" :fields="fields" :editing="editingField" @saved="loadWorkspace"/>
+  <RecordDrawer v-model="recordOpen" :table-id="tableId" :fields="fields" :record="editingRecord" :references="references" :save-handler="saveRecord" @saved="loadWorkspace"/>
+  <AttachmentPreview v-model="previewOpen" :file="previewFile"/>
+  <el-drawer v-model="historyOpen" title="修改历史" size="min(600px,100%)" append-to-body><p class="text-12 secondary">本账号的表格修改记录（含 Agent 写入）。撤销会检查版本，后续修改不会被覆盖。</p><div v-for="h in history" :key="h.id" class="history-entry"><div><strong>{{ h.label }}</strong><span class="text-12 muted"> · {{ h.record_count }} 行 · {{ h.source }} · {{ new Date(h.created_at).toLocaleString() }}</span></div><div class="toolbar-actions"><el-button text size="small" @click="showChange(h)">查看前后值</el-button><el-button v-if="!h.undone_by" text size="small" @click="applyUndo(h,h.action==='undo'?'redo':'undo')">{{ h.action==='undo'?'重做':'撤销' }}</el-button><span v-else class="text-12 muted">{{ h.undone_by===-1?'重做分支已替换':'已撤销' }}</span></div></div><el-button v-if="history.length" size="small" @click="loadHistory(true)">加载更早记录</el-button></el-drawer>
+  <el-dialog v-model="changeOpen" title="修改前后值" width="min(850px,95%)"><div class="change-details" v-for="entry in changeDetails" :key="entry.id"><strong>记录 #{{ entry.id }}</strong><div v-for="f in fields.filter(f=>JSON.stringify(entry.before?.data?.[f.key])!==JSON.stringify(entry.after?.data?.[f.key]))" :key="f.key"><b>{{ f.name }}</b><del>{{ display(f,entry.before?.data?.[f.key],references)||'（空）' }}</del><span> → </span><span>{{ display(f,entry.after?.data?.[f.key],references)||'（空）' }}</span></div><div v-if="entry.before?.deleted!==entry.after?.deleted">{{ entry.after?.deleted?'移入回收站':'恢复记录' }}</div></div></el-dialog>
+ </div>
 </template>
-
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Close, DashboardIcon, Download, InfoFilled, Plus, Refresh, Setting, Sort, Upload } from '@/icons'
-import { apiError, http } from '@/api/client'
+import {computed,defineAsyncComponent,onMounted,onUnmounted,reactive,ref,watch} from 'vue'
+import {onBeforeRouteLeave,useRoute} from 'vue-router'
+import {ElMessage,ElMessageBox} from 'element-plus'
+import {http,apiError} from '@/api/client'
+import {session} from '@/stores/session'
+import {aggregate,computedTypes,csvCell,defaultConfig,display,normalizeConfig,queryRows,type Field,type Row,type ViewConfig} from '@/table-core'
+import TableFieldEditor from '@/components/TableFieldEditor.vue'
+import TableAnalysis from '@/components/TableAnalysis.vue'
 import RecordDrawer from '@/components/RecordDrawer.vue'
 import AttachmentPreview from '@/components/AttachmentPreview.vue'
-import FieldManager from '@/components/FieldManager.vue'
-import ImportWizard from '@/components/ImportWizard.vue'
-
-const route = useRoute()
-const router = useRouter()
-const previewOpen = ref(false)
-const previewFile = ref<any | null>(null)
-async function openAttachment(id: number) {
-  try {
-    previewFile.value = (await http.get(`/files/${id}`)).data
-    previewOpen.value = true
-  } catch (cause) { ElMessage.error(apiError(cause).message) }
+const VTableGrid=defineAsyncComponent(()=>import('@/components/VTableGrid.vue')),WorkbookEditor=defineAsyncComponent(()=>import('@/components/WorkbookEditor.vue')),LegacyTableView=defineAsyncComponent(()=>import('@/views/LegacyTableView.vue'))
+const route=useRoute(),tableId=Number(route.params.tableId),table=ref<any>(null),fields=ref<Field[]>([]),records=ref<Row[]>([]),references=ref<Record<string,any[]>>({}),views=ref<any[]>([]),activeView=ref<any>(null),kind=ref('grid'),classic=ref(false),config=reactive<ViewConfig>(defaultConfig()),loading=ref(false),busy=ref(false),failure=ref('')
+const helpOpen=ref(false)
+const modeHelp:Record<string,string>={grid:'双击单元格编辑，修改自动保存。选中内容后可复制、粘贴或批量处理。',summary:'先选择分组字段和统计方式；点击汇总中的分组，下方显示对应记录。',pivot:'选择行、列两个分组字段和统计指标，查看交叉汇总；点击结果可查看明细。'}
+async function tableCommand(command:string){if(command==='help')helpOpen.value=true;else if(command==='refresh')await refresh();else if(command==='history'){historyOpen.value=true;await loadHistory()}else if(command==='legacy')await switchClassic()}
+async function viewCommand(command:string){if(command==='default')await chooseView(null);else if(command==='new')await saveAs();else if(command==='save')await saveView();else if(command==='delete')await removeView();else await chooseView(views.value.find(v=>'view:'+v.id===command)||null)}
+async function selectionCommand(command:string){if(command==='down'||command==='right')await gridRef.value?.fill(command==='down'?'down':'right');else if(command==='clear')await gridRef.value?.clear();else if(command==='duplicate')await duplicate();else if(command==='delete')await deleteSelected()}
+const gridRef=ref<any>(),workbookRef=ref<any>(),gridDirty=ref(false),workbookDirty=ref(false),selected=ref<Row|null>(null),queryOpen=ref(false),columnsOpen=ref(false),fieldOpen=ref(false),editingField=ref<Field|null>(null),recordOpen=ref(false),editingRecord=ref<Row|null>(null),historyOpen=ref(false),history=ref<any[]>([]),changeOpen=ref(false),changeDetails=ref<any[]>([]),previewOpen=ref(false),previewFile=ref<any>(null),analysisSelection=ref<any>(null),groupSelection=ref('')
+const configKey=`wb-table-view:${session.user?.id}:${tableId}`,savedConfig=ref(''),viewDirty=computed(()=>JSON.stringify(config)!==savedConfig.value||!!activeView.value&&activeView.value.kind!==kind.value),filteredRows=computed(()=>queryRows(records.value,fields.value,config,references.value))
+const orderedFields=computed(()=>[...fields.value].sort((a,b)=>{const ai=config.order.indexOf(a.key),bi=config.order.indexOf(b.key);return (ai<0?999:ai)-(bi<0?999:bi)})),visibleFields=computed(()=>orderedFields.value.filter(f=>!config.hidden.includes(f.key)))
+const grouped=computed(()=>{const f=fields.value.find(f=>f.key===config.group),map=new Map<string,number>();if(f)for(const r of filteredRows.value){const label=display(f,r.data[f.key],references.value)||'（空）';map.set(label,(map.get(label)||0)+1)}return [...map].map(([key,count])=>({key,count}))})
+function label(row:Row,key:string){const f=fields.value.find(f=>f.key===key);return f?display(f,row.data[key],references.value)||'（空）':'全部'}
+const displayRows=computed(()=>filteredRows.value.filter(r=>{if(config.group&&groupSelection.value&&label(r,config.group)!==groupSelection.value)return false;const s=analysisSelection.value;if(s){const cfg=kind.value==='pivot'?config.pivot:config.summary;if(label(r,kind.value==='pivot'?config.pivot.row:config.summary.group)!==s.group)return false;if(kind.value==='pivot'&&s.column!==null&&label(r,config.pivot.column)!==s.column)return false}return true}))
+const undoTarget=computed(()=>history.value.find(h=>!h.undone_by&&h.action!=='undo'&&h.schema_version===table.value?.schema_version)),redoTarget=computed(()=>history.value.find(h=>!h.undone_by&&h.action==='undo'&&h.schema_version===table.value?.schema_version))
+const formats=[['plain','原始格式'],['decimal','数字'],['currency','金额'],['percent','百分比'],['bar','数据条（0–100）'],['sparkline','迷你趋势图']].map(([value,label])=>({value,label}))
+const filterOps=[['contains','包含'],['eq','等于'],['ne','不等于'],['gt','大于'],['gte','大于等于'],['lt','小于'],['lte','小于等于'],['empty','为空'],['not_empty','不为空']].map(([value,label])=>({value,label}))
+let request=0,active=true,mutations:Promise<any>=Promise.resolve()
+function report(e:any){failure.value=e?.response?apiError(e).message:e.message||'操作失败';ElMessage.error(failure.value)}
+async function loadWorkspace(){const ticket=++request;loading.value=true;try{const {data}=await http.get(`/tables/${tableId}/workspace`);if(!active||ticket!==request)return;table.value=data.table;fields.value=data.fields;records.value=data.records;references.value=data.references;views.value=data.views;failure.value='';if(selected.value)selected.value=records.value.find(r=>r.id===selected.value!.id)||null;await loadHistory()}catch(e){if(active&&ticket===request)report(e)}finally{if(active&&ticket===request)loading.value=false}}
+async function loadHistory(more=false){try{const before=more?history.value[history.value.length-1]?.id:undefined;const {data}=await http.get(`/tables/${tableId}/changes`,{params:{before}});history.value=more?[...history.value,...data]:data}catch(e){report(e)}}
+function mergeResult(data:any){
+ if(!active)return
+ const next=new Map(records.value.map(r=>[r.id,r]))
+ for(const r of data.records||[]){if(r.deleted)next.delete(r.id);else next.set(r.id,r)}
+ records.value=[...next.values()].sort((a,b)=>a.id-b.id)
+ if(selected.value)selected.value=next.get(selected.value.id)||null
+ request++
 }
-const tableId = Number(route.params.tableId)
-
-const table = ref<any>(null)
-const fields = ref<any[]>([])
-const rows = ref<any[]>([])
-const total = ref(0)
-const page = ref(1)
-const pageSize = ref(50)
-const loading = ref(false)
-const selection = ref<any[]>([])
-
-const filters = ref<any[]>([])
-const sorts = ref<any[]>([])
-const sortDraft = ref<any[]>([])
-
-const recordOpen = ref(false)
-const editingRecord = ref<any>(null)
-const fieldsOpen = ref(false)
-const importOpen = ref(false)
-const exportOpen = ref(false)
-const exportScope = ref<'all' | 'filtered'>('all')
-const exporting = ref(false)
-
-const sortableFields = computed(() => fields.value.filter((f) => !['long_text', 'multiselect', 'attachment'].includes(f.type)))
-
-const operatorsByType: Record<string, { label: string; value: string }[]> = {
-  short_text: [
-    { label: '包含', value: 'contains' },
-    { label: '等于', value: 'eq' },
-    { label: '为空', value: 'empty' },
-    { label: '不为空', value: 'not_empty' },
-  ],
-  long_text: [
-    { label: '包含', value: 'contains' },
-    { label: '为空', value: 'empty' },
-    { label: '不为空', value: 'not_empty' },
-  ],
-  number: [
-    { label: '等于', value: 'eq' },
-    { label: '大于', value: 'gt' },
-    { label: '小于', value: 'lt' },
-    { label: '区间', value: 'between' },
-    { label: '为空', value: 'empty' },
-    { label: '不为空', value: 'not_empty' },
-  ],
-  date: [
-    { label: '等于', value: 'eq' },
-    { label: '早于', value: 'lt' },
-    { label: '晚于', value: 'gt' },
-    { label: '区间', value: 'between' },
-    { label: '为空', value: 'empty' },
-  ],
-  select: [
-    { label: '等于', value: 'eq' },
-    { label: '不等于', value: 'ne' },
-    { label: '为空', value: 'empty' },
-  ],
-  multiselect: [
-    { label: '包含任一', value: 'has_any' },
-    { label: '包含全部', value: 'has_all' },
-    { label: '为空', value: 'empty' },
-  ],
-  checkbox: [
-    { label: '已勾选', value: 'eq' },
-    { label: '未勾选', value: 'eq' },
-  ],
-  url: [
-    { label: '包含', value: 'contains' },
-    { label: '为空', value: 'empty' },
-  ],
-  attachment: [
-    { label: '有附件', value: 'not_empty' },
-    { label: '无附件', value: 'empty' },
-  ],
-}
-
-function fieldType(key: string) {
-  return fields.value.find((f) => f.key === key)?.type || 'short_text'
-}
-
-function optionsOf(key: string) {
-  return fields.value.find((f) => f.key === key)?.options || []
-}
-
-function operatorsFor(key: string) {
-  return operatorsByType[fieldType(key)] || operatorsByType.short_text
-}
-
-function columnWidth(field: any) {
-  if (field.type === 'long_text') return 220
-  if (field.type === 'url') return 200
-  return 130
-}
-
-function optionName(field: any, value: string) {
-  return (field.options || []).find((o: any) => o.id === value)?.name || ''
-}
-
-function multiName(field: any, value: any) {
-  if (!Array.isArray(value)) return ''
-  return value.map((v: string) => optionName(field, v)).filter(Boolean).join('、')
-}
-
-function addSort() {
-  const first = sortableFields.value[0]
-  if (!first) return
-  sortDraft.value.push({ field: first.key, order: 'asc' })
-}
-
-function applySorts() {
-  sorts.value = sortDraft.value
-    .filter((item) => item.field)
-    .map((item) => ({ field: item.field, order: item.order }))
-  page.value = 1
-  loadRecords()
-}
-
-function clearSorts() {
-  sortDraft.value = []
-  sorts.value = []
-  page.value = 1
-  loadRecords()
-}
-
-function addFilter() {
-  const first = sortableFields.value[0]
-  if (!first) return
-  filters.value.push({ field: first.key, op: operatorsFor(first.key)[0].value, value: '' })
-}
-
-function removeFilter(index: number) {
-  filters.value.splice(index, 1)
-}
-
-function onFilterFieldChange(filter: any) {
-  filter.op = operatorsFor(filter.field)[0].value
-  filter.value = filter.op === 'between' ? ['', ''] : ''
-}
-
-function resetFilters() {
-  filters.value = []
-  page.value = 1
-  loadRecords()
-}
-
-function normalizedFilters() {
-  const out: any[] = []
-  for (const filter of filters.value) {
-    if (!filter.field || !filter.op) continue
-    if (!['empty', 'not_empty'].includes(filter.op)) {
-      if (filter.op === 'between') {
-        if (!filter.value || (!filter.value[0] && !filter.value[1])) continue
-      } else if (filter.value === '' || filter.value === null || filter.value === undefined) {
-        continue
-      }
-    }
-    out.push({ field: filter.field, op: filter.op, value: filter.value })
-  }
-  return out
-}
-
-async function applyFilters() {
-  page.value = 1
-  await loadRecords()
-}
-
-async function loadTable() {
-  const { data } = await http.get(`/tables/${tableId}`)
-  table.value = data
-  fields.value = data.fields
-}
-
-async function loadRecords() {
-  loading.value = true
-  try {
-    const params: Record<string, any> = { page: page.value, page_size: pageSize.value }
-    const activeFilters = normalizedFilters()
-    if (activeFilters.length) params.filters = JSON.stringify(activeFilters)
-    if (sorts.value.length) params.sorts = JSON.stringify(sorts.value)
-    const { data } = await http.get(`/tables/${tableId}/records`, { params })
-    rows.value = data.items
-    total.value = data.total
-  } catch (error) {
-    ElMessage.error(apiError(error).message)
-  } finally {
-    loading.value = false
-  }
-}
-
-async function reload() {
-  try {
-    await loadTable()
-    await loadRecords()
-    window.dispatchEvent(new Event('wb:tables-changed'))
-  } catch (error) {
-    ElMessage.error(apiError(error).message)
-  }
-}
-
-function onPageSizeChange() {
-  page.value = 1
-  loadRecords()
-}
-
-function onSelectionChange(value: any[]) {
-  selection.value = value
-}
-
-function openCreate() {
-  editingRecord.value = null
-  recordOpen.value = true
-}
-
-function openEdit(row: any) {
-  editingRecord.value = row
-  recordOpen.value = true
-}
-
-async function removeRecord(row: any) {
-  try {
-    await ElMessageBox.confirm('删除这一行？删除后会在回收站保留 30 天。', '删除行', {
-      type: 'warning',
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-    })
-    await http.delete(`/records/${row.id}`)
-    await loadRecords()
-  } catch (error: any) {
-    if (error === 'cancel' || error === 'close') return
-    ElMessage.error(apiError(error).message)
-  }
-}
-
-async function batchDelete() {
-  try {
-    await ElMessageBox.confirm(`删除选中的 ${selection.value.length} 行？一次最多 100 行。`, '删除行', {
-      type: 'warning',
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-    })
-    await http.post(`/tables/${tableId}/records/batch-delete`, {
-      ids: selection.value.map((row) => row.id),
-    })
-    ElMessage.success('已移入回收站')
-    await loadRecords()
-  } catch (error: any) {
-    if (error === 'cancel' || error === 'close') return
-    ElMessage.error(apiError(error).message)
-  }
-}
-
-async function doExport() {
-  exporting.value = true
-  try {
-    const body: Record<string, any> = { scope: exportScope.value }
-    if (exportScope.value === 'filtered') {
-      body.filters = normalizedFilters()
-      body.sorts = sorts.value
-    }
-    const { data } = await http.post(`/tables/${tableId}/exports`, body)
-    ElMessage.success(`已导出 ${data.rows} 行`)
-    exportOpen.value = false
-    window.open(data.download_url, '_blank')
-  } catch (error) {
-    ElMessage.error(apiError(error).message)
-  } finally {
-    exporting.value = false
-  }
-}
-
-onMounted(async () => {
-  try {
-    await loadTable()
-    await loadRecords()
-  } catch (error) {
-    ElMessage.error(apiError(error).message)
-  }
-})
+async function commit(edits:any[],label:string){if(!table.value)throw new Error('表格尚未载入');const task=mutations.catch(()=>{}).then(async()=>{busy.value=true;request++;try{const {data}=await http.post(`/tables/${tableId}/transactions`,{schema_version:table.value.schema_version,request_id:crypto.randomUUID().replace(/-/g,''),label,edits});mergeResult(data);await loadHistory()}finally{busy.value=false}});mutations=task;return task}
+async function commitCells(changes:{id:number;changes:Record<string,any>}[],label:string){const task=mutations.catch(()=>{}).then(async()=>{busy.value=true;request++;try{const edits=changes.map(c=>{const r=records.value.find(r=>r.id===c.id);if(!r)throw new Error('记录已不存在，请刷新');return {id:c.id,version:r.version,changes:c.changes}});const {data}=await http.post(`/tables/${tableId}/transactions`,{schema_version:table.value.schema_version,request_id:crypto.randomUUID().replace(/-/g,''),label,edits});mergeResult(data);await loadHistory()}finally{busy.value=false}});mutations=task;return task}
+async function flush(){if(gridRef.value&&!await gridRef.value.flush())return false;if(workbookRef.value&&!await workbookRef.value.flush())return false;await mutations.catch(()=>{});return true}
+async function refresh(){if(!await flush())return;await loadWorkspace()}
+async function discard(){try{await ElMessageBox.confirm('放弃尚未成功保存的单元格修改，并载入服务器数据？','放弃未保存修改',{confirmButtonText:'放弃并载入',cancelButtonText:'取消'});gridRef.value?.discard();await loadWorkspace()}catch{}}
+async function chooseView(view:any){if(!await flush())return;if(activeView.value&&viewDirty.value)try{await ElMessageBox.confirm('当前视图配置尚未保存，切换后放弃这些配置改动？','切换视图',{confirmButtonText:'切换',cancelButtonText:'取消'})}catch{return}gridRef.value?.resetSelection();selected.value=null;activeView.value=view;kind.value=view?.kind||'grid';Object.assign(config,normalizeConfig(view?.config));savedConfig.value=JSON.stringify(config);analysisSelection.value=null;groupSelection.value=''}
+async function changeKind(value:any){if(!await flush())return;gridRef.value?.resetSelection();selected.value=null;kind.value=String(value);analysisSelection.value=null;groupSelection.value=''}
+async function saveAs(){try{if(!await flush())return;const {value}=await ElMessageBox.prompt('为当前显示设置命名','保存显示方案',{inputPattern:/\S+/,inputErrorMessage:'名称不能为空',confirmButtonText:'创建',cancelButtonText:'取消'});const {data}=await http.post(`/tables/${tableId}/views`,{name:value.trim(),kind:kind.value,config});views.value.push(data);activeView.value=data;savedConfig.value=JSON.stringify(config)}catch(e){if(e!=='cancel'&&e!=='close')report(e)}}
+async function saveView(){if(!activeView.value)return;try{const {data}=await http.put(`/table-views/${activeView.value.id}`,{...activeView.value,kind:kind.value,config});activeView.value=data;views.value=views.value.map(v=>v.id===data.id?data:v);savedConfig.value=JSON.stringify(config);ElMessage.success('显示方案已保存')}catch(e){report(e)}}
+async function removeView(){if(!activeView.value)return;try{await ElMessageBox.confirm('删除这个视图？原始数据保持不变。','删除视图',{confirmButtonText:'删除',cancelButtonText:'取消'});await http.delete(`/table-views/${activeView.value.id}`);views.value=views.value.filter(v=>v.id!==activeView.value.id);activeView.value=null;kind.value='grid';Object.assign(config,defaultConfig());savedConfig.value=JSON.stringify(config)}catch(e){if(e!=='cancel'&&e!=='close')report(e)}}
+async function switchClassic(){if(!await flush())return;if(classic.value)await loadWorkspace();classic.value=!classic.value}
+function toggleField(key:string){config.hidden=config.hidden.includes(key)?config.hidden.filter(k=>k!==key):[...config.hidden,key]}
+function moveColumns(keys:string[]){let i=0;const visible=new Set(keys);config.order=orderedFields.value.map(f=>visible.has(f.key)?keys[i++]:f.key)}
+function moveField(index:number,delta:number){const order=orderedFields.value.map(f=>f.key);[order[index],order[index+delta]]=[order[index+delta],order[index]];config.order=order}
+function setFormat(key:string,style:string){config.formats[key]={style,digits:style==='percent'?1:2}}
+function typeName(type:string){return ({short_text:'文本',long_text:'长文本',number:'数字',date:'日期',select:'单选',multiselect:'多选',checkbox:'勾选',url:'链接',attachment:'附件',formula:'公式',reference:'关联',lookup:'查找',rollup:'汇总'} as any)[type]||type}
+async function editField(f:Field|null){if(!await flush())return;editingField.value=f;fieldOpen.value=true}
+async function removeField(f:Field){try{if(!await flush())return;await ElMessageBox.confirm(`删除「${f.name}」？所有视图都会受到影响，字段删除后不能通过单元格撤销恢复。`,'删除字段',{confirmButtonText:'删除字段',cancelButtonText:'取消'});await http.delete(`/fields/${f.id}`,{params:{confirm:true}});await loadWorkspace()}catch(e){if(e!=='cancel'&&e!=='close')report(e)}}
+async function openCreate(){if(!await flush())return;editingRecord.value=null;recordOpen.value=true}
+async function openEdit(r:Row|null){if(!r||!await flush())return;editingRecord.value=JSON.parse(JSON.stringify(r));recordOpen.value=true}
+async function saveRecord(data:Record<string,any>,version:number|null,force:boolean){if(editingRecord.value){if(force)version=(await http.get(`/records/${editingRecord.value.id}`)).data.version;await commit([{id:editingRecord.value.id,version,changes:data}],'编辑记录详情')}else await commit([{changes:data}],'添加记录')}
+async function duplicate(){if(!selected.value||!await flush())return;try{const data=Object.fromEntries(fields.value.filter(f=>!computedTypes.has(f.type)).map(f=>[f.key,selected.value!.data[f.key]]));await commit([{changes:data}],'复制记录')}catch(e){report(e)}}
+async function deleteSelected(){if(!await flush())return;const rows:Row[]=gridRef.value?.selectedRows?.length?gridRef.value.selectedRows:selected.value?[selected.value]:[];if(!rows.length)return;try{await ElMessageBox.confirm(`删除选中的 ${rows.length} 行？可通过修改历史撤销，或从回收站恢复。`,'删除记录',{confirmButtonText:'删除',cancelButtonText:'取消'});await commit(rows.map(r=>({id:r.id,version:r.version,delete:true})),'删除选中记录')}catch(e){if(e!=='cancel'&&e!=='close')report(e)}}
+async function pasteClipboard(){try{const text=await navigator.clipboard.readText();await gridRef.value?.paste(text)}catch{ElMessage.info('请选中起始单元格后按 Ctrl/Cmd+V 粘贴')}}
+async function applyUndo(h:any,action='undo'){if(!h||!await flush())return;try{busy.value=true;await http.post(`/table-changes/${h.id}/undo`,{request_id:crypto.randomUUID().replace(/-/g,''),action});await loadWorkspace()}catch(e){report(e)}finally{busy.value=false}}
+async function undo(){await applyUndo(undoTarget.value,'undo')}
+async function redo(){await applyUndo(redoTarget.value,'redo')}
+async function showChange(h:any){try{changeDetails.value=(await http.get(`/table-changes/${h.id}`)).data.changes;changeOpen.value=true}catch(e){report(e)}}
+function setAnalysisConfig(value:any){if(kind.value==='pivot')config.pivot=value;else config.summary=value}
+async function openAttachment(id:number){try{previewFile.value=(await http.get(`/files/${id}`)).data;previewOpen.value=true}catch(e){report(e)}}
+function downloadFiltered(){const cols=visibleFields.value,quote=csvCell,content='\ufeff'+[cols.map(f=>quote(f.name)).join(','),...filteredRows.value.map(r=>cols.map(f=>quote(display(f,r.data[f.key],references.value))).join(','))].join('\r\n');const url=URL.createObjectURL(new Blob([content],{type:'text/csv;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download=`${table.value.name}-筛选.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+watch(()=>[config.filters,config.sorts,config.search,config.group],()=>{analysisSelection.value=null;groupSelection.value='';selected.value=null},{deep:true})
+watch([activeView,kind],()=>{try{sessionStorage.setItem(configKey+':active',JSON.stringify({id:activeView.value?.id,kind:kind.value}))}catch{}})
+watch(config,()=>{try{sessionStorage.setItem(configKey,JSON.stringify(config))}catch{}},{deep:true})
+onBeforeRouteLeave(async()=>{const ok=await flush();if(!ok)ElMessage.warning('有未保存的修改，请先重试、导出备份或放弃修改');return ok})
+function beforeUnload(e:BeforeUnloadEvent){if(gridDirty.value||workbookDirty.value){e.preventDefault();e.returnValue=''}}
+onMounted(async()=>{await loadWorkspace();try{const stored=sessionStorage.getItem(configKey);if(stored)Object.assign(config,normalizeConfig(JSON.parse(stored)));const meta=JSON.parse(sessionStorage.getItem(configKey+':active')||'{}');activeView.value=views.value.find(v=>v.id===meta.id)||null;kind.value=['grid','summary','pivot','workbook'].includes(meta.kind)?meta.kind:activeView.value?.kind||'grid'}catch{}savedConfig.value=JSON.stringify(config);if(route.query.record){const original=records.value.find(r=>r.id===Number(route.query.record));if(original){selected.value=original;config.detail=true}}window.addEventListener('beforeunload',beforeUnload)})
+onUnmounted(()=>{active=false;request++;window.removeEventListener('beforeunload',beforeUnload)})
 </script>
-
 <style scoped>
-.filter-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding: 8px 10px;
-  border: 1px solid var(--wb-border);
-  border-radius: 10px;
-  background: var(--wb-surface);
-  min-height: 50px;
-}
-.filter-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.range-inputs {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.pager {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-top: 2px;
-}
-.table-scroll {
-  flex: 1;
-  min-height: 0;
-}
+.table-workbench{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}.workbench-head,.view-bar,.table-tools,.grid-actions{display:flex;align-items:center;gap:6px;padding:7px 12px;border-bottom:1px solid var(--wb-border);flex-wrap:wrap}.workbench-head strong{font-size:15px}.view-bar{flex-wrap:nowrap;overflow:auto;min-height:42px;flex-shrink:0}.view-tab{appearance:none;background:none;border:0;border-radius:4px;padding:6px 10px;color:var(--wb-text-secondary);font:inherit;font-size:13px;white-space:nowrap;cursor:pointer}.view-tab.active{background:var(--wb-nav-active);color:var(--wb-text)}.data-area{display:flex;flex:1;min-height:250px;overflow:hidden}.grid-container{flex:1;min-width:0;min-height:0}.record-details{width:290px;flex-shrink:0;overflow:auto;border-left:1px solid var(--wb-border);padding:12px}.detail-head{display:flex;align-items:center;justify-content:space-between}.detail-field{display:flex;flex-direction:column;gap:4px;padding:10px 0;border-bottom:1px solid var(--wb-border);font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}.detail-field label{color:var(--wb-text-tertiary);font-size:12px}.table-summary{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:4px 12px;min-height:32px;border-top:1px solid var(--wb-border);font-size:12px;color:var(--wb-text-secondary)}.group-rail{width:155px;border-right:1px solid var(--wb-border);overflow:auto;padding:6px}.group-rail button{display:flex;align-items:center;justify-content:space-between;width:100%;padding:8px 6px;border:0;background:none;color:var(--wb-text);font:inherit;font-size:12px;cursor:pointer}.group-rail button.active{background:var(--wb-nav-active);border-radius:4px}.query-panel{padding:8px 12px;border-bottom:1px solid var(--wb-border);max-height:220px;overflow:auto}.query-row{display:flex;align-items:center;gap:6px;margin-bottom:6px}.query-row>.el-select,.query-row>.el-input{max-width:150px}.column-options{display:flex;gap:12px;flex-wrap:wrap}.column-options .el-select{width:130px}.field-setting{display:flex;align-items:center;gap:4px;padding:8px 0;border-bottom:1px solid var(--wb-border);flex-wrap:wrap}.field-format{display:flex;gap:8px;width:100%}.field-format>.el-select{width:160px}.history-entry{padding:12px 0;border-bottom:1px solid var(--wb-border);font-size:13px}.change-details{padding:10px 0;border-bottom:1px solid var(--wb-border);font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}.change-details b{display:inline-block;min-width:80px}.change-details del{color:var(--el-color-danger);margin:0 10px}.error-text{color:var(--el-color-danger)}
+@media(max-width:700px){.record-details{width:230px}.data-area:has(.record-details) .grid-container{min-width:180px}.data-area{overflow:auto}.workbench-head,.table-tools,.grid-actions{padding:6px}.grid-actions{max-height:90px;overflow:auto}.table-summary>span:nth-of-type(n+3){display:none}.group-rail{width:110px;flex-shrink:0}}
+.workbench-head{gap:14px;padding:10px 14px;flex-shrink:0}.table-primary-actions{display:flex;align-items:center;gap:8px}.table-primary-actions :deep(.el-button+.el-button),.table-tools :deep(.el-button+.el-button),.grid-actions :deep(.el-button+.el-button){margin-left:0}.table-tools{padding:9px 14px;gap:8px;flex-shrink:0}.table-search{width:230px}.view-picker{max-width:220px}.view-picker :deep(.el-button){max-width:100%}.view-picker :deep(.el-button>span){overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}.grid-actions{min-height:42px;padding:6px 14px;gap:8px;flex-shrink:0;box-sizing:border-box}.grid-actions.has-selection{background:var(--wb-surface-subtle)}.table-start-hint{line-height:1.6}.workbook-explanation{padding:7px 14px;line-height:1.7;border-bottom:1px solid var(--wb-border);flex-shrink:0}.table-help{line-height:1.8;color:var(--wb-text-secondary)}.table-help strong,.table-help b{color:var(--wb-text)}.table-help ol{padding-left:22px}.table-help li{margin:14px 0}.table-help li span{display:block}.mode-explanations{padding:8px 14px;background:var(--wb-surface-subtle);border-radius:6px}.mode-explanations b{display:inline-block;min-width:85px}.mode-explanations p{margin:8px 0}@media(max-width:700px){.workbench-head{padding:8px;gap:8px}.table-modes{width:100%}.table-primary-actions{margin-left:auto;gap:5px;flex-wrap:wrap}.table-primary-actions :deep(.el-button){padding-left:6px;padding-right:6px}.table-tools{padding:8px}.table-search{width:100%}.table-tools>.spacer{display:none}.scheme-controls{margin-left:auto}.view-picker{max-width:170px}.scheme-dirty{max-width:100%}.grid-actions{padding:6px 8px;max-height:none}.record-count{font-size:11px}.grid-actions:not(.has-selection){align-items:flex-start}.table-start-hint{flex:1;min-width:0}}
+.scheme-controls{display:flex;align-items:center;gap:7px;max-width:100%;min-width:0}.scheme-label{white-space:nowrap}.scheme-dirty{white-space:nowrap}@media(max-width:700px){.grid-actions:not(.has-selection)>.spacer{display:none}.scheme-controls{flex-wrap:wrap}.table-start-hint{font-size:12px}}
 </style>

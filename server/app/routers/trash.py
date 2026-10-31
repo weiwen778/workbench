@@ -231,6 +231,7 @@ def _purge_entity(db: Session, kind: str, entity_id: int) -> None:
 
 def _release_record_files(db: Session, record_id: int) -> None:
     _release_owner_files(db, "record", record_id)
+    _release_owner_files(db, "table_change_record", record_id)
 
 
 def _release_owner_files(db: Session, owner_type: str, owner_id: int) -> None:

@@ -82,7 +82,7 @@ try{
   await showNavGroup(side,'待办')
   await side.getByRole('button',{name:'待办清单：活动跟进',exact:true}).click();await page.waitForURL(`**/todos/${todo2.id}`)
   assert.equal(await page.locator('.task-title').count(),0)
-  await page.reload();await page.locator('.task-pane .title-15').getByText('活动跟进',{exact:true}).waitFor()
+  await page.reload();await page.locator('.wb-topbar').getByRole('heading',{name:'活动跟进',exact:true}).waitFor()
   assert.equal(await page.locator('.list-pane').count(),0)
   await page.getByRole('button',{name:'清单操作',exact:true}).click();await page.getByRole('menuitem',{name:'重命名清单',exact:true}).click()
   const rename=page.getByRole('dialog',{name:'重命名',exact:true})

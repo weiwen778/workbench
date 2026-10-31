@@ -14,6 +14,7 @@ export interface SessionUser {
 export const session = reactive({
   user: null as SessionUser | null,
   loaded: false,
+  appearanceSaving: false,
   theme: 'light' as 'light' | 'dark',
   themeColor: DEFAULT_THEME_COLOR,
 })
@@ -54,22 +55,29 @@ export async function login(username: string, password: string) {
 }
 
 export async function logout() {
-  try {
-    await http.post('/auth/logout')
-  } finally {
-    session.user = null
-  }
+  await http.post('/auth/logout')
+  session.user = null
 }
 
-export async function toggleTheme() {
-  const next = session.theme === 'dark' ? 'light' : 'dark'
-  applyTheme(next)
-  await http.put('/preferences', { theme: next })
+export async function setTheme(theme:'light'|'dark') {
+  if(session.appearanceSaving)return
+  const previous=session.theme
+  session.appearanceSaving=true
+  applyTheme(theme)
+  try{const {data}=await http.put('/preferences',{theme});applyTheme(data.theme||theme);if(session.user)session.user.theme=session.theme}
+  catch(error){applyTheme(previous);throw error}
+  finally{session.appearanceSaving=false}
 }
+export async function toggleTheme(){return setTheme(session.theme==='dark'?'light':'dark')}
 
-export async function setThemeColor(color: string) {
-  session.themeColor = applyThemeColor(color, session.theme)
-  await http.put('/preferences', { theme_color: session.themeColor })
+export async function setThemeColor(color:string) {
+  if(session.appearanceSaving)return
+  const previous=session.themeColor
+  session.appearanceSaving=true
+  session.themeColor=applyThemeColor(color,session.theme)
+  try{const {data}=await http.put('/preferences',{theme_color:session.themeColor});session.themeColor=applyThemeColor(data.theme_color||session.themeColor,session.theme);if(session.user)session.user.theme_color=session.themeColor}
+  catch(error){session.themeColor=applyThemeColor(previous,session.theme);throw error}
+  finally{session.appearanceSaving=false}
 }
 
 export type CheckinNavKey = 'shops' | 'social'

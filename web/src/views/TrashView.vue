@@ -1,7 +1,6 @@
 <template>
   <div class="page">
     <div class="page-toolbar">
-      <div class="title-15">回收站</div>
       <span class="text-12 muted">删除后保留 30 天，到期不可恢复</span>
       <div class="spacer" />
       <div class="toolbar-actions">

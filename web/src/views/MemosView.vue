@@ -9,7 +9,6 @@
         :prefix-icon="Search"
         @input="onSearch"
       />
-      <strong class="category-heading" :title="currentCategoryLabel">{{ currentCategoryLabel }}</strong>
       <span class="text-12 muted">{{ memos.length }} 张便利贴</span>
       <div class="spacer" />
       <div class="toolbar-actions">

@@ -1,223 +1,91 @@
 <template>
-  <div class="page">
-    <div class="page-toolbar">
-      <div class="title-15">设置</div>
-    </div>
-
-    <el-tabs :model-value="activeTab" class="settings-tabs" @tab-change="changeTab">
-      <el-tab-pane label="通用设置" name="general" />
-      <el-tab-pane label="回收站" name="trash" />
-    </el-tabs>
-
-    <TrashView v-if="activeTab === 'trash'" class="settings-trash" />
-    <div v-else class="page-body">
-      <el-card shadow="never" class="block">
-        <div class="group-title">主题</div>
-        <div class="row">
-          <el-radio-group :model-value="session.theme" @change="changeTheme">
-            <el-radio-button value="light">浅色</el-radio-button>
-            <el-radio-button value="dark">深色</el-radio-button>
-          </el-radio-group>
-          <span class="text-13 secondary" style="margin-left: 10px">主题色</span>
-          <el-color-picker
-            :model-value="session.themeColor"
-            :predefine="presetColors"
-            @change="changeColor"
-          />
-          <el-button text size="small" @click="changeColor(DEFAULT_THEME_COLOR)">恢复默认</el-button>
-          <div class="spacer" />
-          <span class="text-12 muted">主题和颜色会保存到账号，换设备也一致</span>
-        </div>
-      </el-card>
-
-      <el-card shadow="never" class="block">
-        <div class="group-title">账号</div>
-        <el-form label-position="top" style="max-width: 760px">
-          <el-form-item label="用户名">
-            <el-input :model-value="session.user?.username" disabled style="max-width: 420px" />
-          </el-form-item>
-          <div class="pwd-grid">
-            <el-form-item label="原密码">
-              <el-input v-model="passwordForm.old_password" type="password" show-password autocomplete="current-password" />
-            </el-form-item>
-            <el-form-item label="新密码（至少 8 位）">
-              <el-input v-model="passwordForm.new_password" type="password" show-password autocomplete="new-password" />
-            </el-form-item>
-            <el-form-item label="确认新密码">
-              <el-input v-model="passwordForm.confirm" type="password" show-password autocomplete="new-password" />
-            </el-form-item>
-          </div>
-          <div class="row">
-            <el-button type="primary" :loading="savingPassword" @click="changePassword">修改密码</el-button>
-            <div class="spacer" />
-            <el-button plain @click="handleLogout">退出登录</el-button>
-          </div>
-          <div class="text-12 muted" style="margin-top: 6px">改完后其他设备上的登录会失效，当前这台不受影响。</div>
-        </el-form>
-      </el-card>
-
-      <AgentAccess />
-
-      <div class="bottom-grid">
-        <el-card shadow="never" class="block">
-          <div class="group-title">翻译服务</div>
-          <div class="row">
-            <span class="text-13 secondary">
-              百度、有道、DeepSeek 的密钥在翻译页「服务设置」里填，保存后只显示打码内容
-            </span>
-            <div class="spacer" />
-            <el-button class="btn-tonal" @click="$router.push('/translate')">前往翻译页</el-button>
-          </div>
-        </el-card>
-
-        <el-card shadow="never" class="block">
-          <div class="group-title">系统状态</div>
-          <div class="usage-grid">
-            <div class="usage-item"><span class="muted">服务状态</span><span>{{ health.status || '未知' }}</span></div>
-            <div class="usage-item"><span class="muted">数据存储</span><span>{{ health.database || '未知' }}</span></div>
-            <div class="usage-item"><span class="muted">时区</span><span>Asia/Shanghai（北京时间）</span></div>
-          </div>
-        </el-card>
-      </div>
-    </div>
-  </div>
+ <div class="settings-shell">
+  <aside class="settings-nav" aria-label="设置分类">
+   <el-input v-model="search" :prefix-icon="Search" placeholder="搜索设置" clearable aria-label="搜索设置"/>
+   <template v-for="group in groups" :key="group.name"><div v-if="filtered.some(i=>i.group===group.name)" class="settings-group">{{ group.name }}</div><button v-for="item in filtered.filter(i=>i.group===group.name)" :key="item.key" class="settings-nav-item" :class="{active:section===item.key}" :aria-current="section===item.key?'page':undefined" @click="navigate(item.key)"><el-icon><component :is="item.icon"/></el-icon><span>{{ item.label }}</span></button></template>
+   <p v-if="!filtered.length" class="text-12 muted">没有匹配的设置</p>
+   <div class="settings-identity"><span class="identity-avatar">{{ session.user?.username?.slice(0,1).toUpperCase() }}</span><div><strong>{{ session.user?.username }}</strong><span class="text-12 muted">个人工作台</span></div></div>
+  </aside>
+  <main class="settings-content">
+   <header class="settings-section-head"><h2>{{ current.label }}</h2><p v-if="current.description">{{ current.description }}</p></header>
+   <el-alert v-if="feedback" :title="feedback" :type="feedbackError?'error':'success'" :closable="false" show-icon class="settings-feedback"/>
+   <template v-if="section==='appearance'">
+    <section class="setting-card"><div class="setting-label"><h3>界面主题</h3><p>主题和强调色保存到账号，在其他设备上也能使用。</p></div><div class="theme-choices">
+     <button v-for="option in themeChoices" :key="option.value" class="theme-choice" :class="{selected:session.theme===option.value}" :disabled="session.appearanceSaving" :aria-pressed="session.theme===option.value" @click="changeTheme(option.value)"><div class="theme-preview" :class="option.value"><i/><div><b/><span/><span/><span/></div></div><span>{{ option.label }}</span><el-icon v-if="session.theme===option.value"><Check/></el-icon></button>
+    </div><div class="setting-divider"/><div class="setting-label"><h3>强调色</h3><p>用于按钮、选中状态和交互提示。</p></div><div class="accent-options"><button class="accent-swatch" v-for="color in presetColors" :key="color" :style="{'--swatch':color}" :class="{selected:session.themeColor===color}" :aria-label="`主题色 ${color}`" :aria-pressed="session.themeColor===color" :disabled="session.appearanceSaving" @click="changeColor(color)"><el-icon v-if="session.themeColor===color"><Check/></el-icon></button><el-color-picker :model-value="session.themeColor" :disabled="session.appearanceSaving" aria-label="自定义主题色" @change="changeColor"/><span class="text-12 muted">{{ session.themeColor.toUpperCase() }}</span><el-button text :disabled="session.appearanceSaving||session.themeColor===DEFAULT_THEME_COLOR" @click="changeColor(DEFAULT_THEME_COLOR)">恢复默认颜色</el-button></div></section>
+    <section class="setting-card setting-row"><div class="setting-label"><h3>减少动态效果</h3><p>关闭页面淡入和装饰动画，保留加载进度。仅保存在本设备；系统的减少动态效果偏好始终生效。</p></div><el-switch :model-value="reduceMotion" aria-label="减少动态效果" @change="(v:boolean|string|number)=>changeMotion(!!v)"/></section>
+   </template>
+   <template v-else-if="section==='navigation'">
+    <section class="setting-card"><el-form label-position="top" @submit.prevent="saveNavigation"><div class="setting-label"><h3>打卡导航名称</h3><p>修改显示名称，打卡记录与任务归属保持不变。</p></div><el-form-item label="店铺打卡名称" for="setting-shop-label"><el-input id="setting-shop-label" v-model="navForm.shop" maxlength="40" show-word-limit :disabled="savingNavigation"/></el-form-item><el-form-item label="社媒打卡名称" for="setting-social-label"><el-input id="setting-social-label" v-model="navForm.social" maxlength="40" show-word-limit :disabled="savingNavigation"/></el-form-item><div class="setting-actions"><el-button native-type="submit" type="primary" :loading="savingNavigation" :disabled="!navDirty">保存名称</el-button><el-button :disabled="savingNavigation" @click="resetNames">填入默认名称</el-button><span class="text-12 muted">{{ navDirty?'有未保存修改':'已与账号同步' }}</span></div></el-form></section>
+   </template>
+   <template v-else-if="section==='account'">
+    <section class="setting-card"><div class="account-summary"><span class="identity-avatar large">{{ session.user?.username?.slice(0,1).toUpperCase() }}</span><div><strong>{{ session.user?.username }}</strong><p class="text-12 muted">当前登录账号</p></div></div><div class="setting-divider"/><el-form label-position="top" @submit.prevent="changePassword"><div class="setting-label"><h3>修改密码</h3><p>修改后其他设备需要重新登录，当前设备继续保留登录状态。</p></div><el-form-item label="原密码" for="settings-current-password"><el-input id="settings-current-password" v-model="passwordForm.old_password" type="password" show-password autocomplete="current-password" :disabled="savingPassword"/></el-form-item><div class="password-grid"><el-form-item label="新密码" for="settings-new-password"><el-input id="settings-new-password" v-model="passwordForm.new_password" type="password" show-password autocomplete="new-password" placeholder="至少 8 位" :disabled="savingPassword"/></el-form-item><el-form-item label="确认新密码" for="settings-confirm-password"><el-input id="settings-confirm-password" v-model="passwordForm.confirm" type="password" show-password autocomplete="new-password" :disabled="savingPassword"/></el-form-item></div><p v-if="passwordForm.new_password" class="text-12" :class="passwordValid?'success-text':'secondary'">{{ passwordValid?'新密码长度与两次输入均符合要求':'新密码至少 8 位，两次输入需一致' }}</p><el-button type="primary" native-type="submit" :loading="savingPassword" :disabled="!passwordValid">更新密码</el-button></el-form></section>
+    <section class="setting-card setting-row"><div class="setting-label"><h3>退出当前设备</h3><p>退出后需要重新登录才能访问工作台。</p></div><el-button :loading="loggingOut" @click="handleLogout">退出登录</el-button></section>
+   </template>
+   <AgentAccess v-else-if="section==='agents'" ref="agentRef" embedded/>
+   <TranslationSettings v-else-if="section==='translation'" ref="translationRef"/>
+   <TrashView v-else-if="section==='trash'" class="settings-trash"/>
+   <template v-else-if="section==='system'">
+    <section class="setting-card"><div class="setting-row"><div class="setting-label"><h3>运行状态</h3><p>检查工作台服务和数据连接是否正常。</p></div><el-button :loading="checkingHealth" @click="checkHealth">重新检查</el-button></div><p v-if="healthError" class="error-text" role="alert">{{ healthError }}</p><dl class="system-facts"><div><dt>工作台服务</dt><dd :class="health.status==='ok'?'success-text':'error-text'">{{ checkingHealth?'检查中…':health.status==='ok'?'运行正常':'连接异常' }}</dd></div><div><dt>数据连接</dt><dd>{{ checkingHealth?'检查中…':health.database==='ok'?'连接正常':'暂时不可用' }}</dd></div><div><dt>服务检查时间</dt><dd>{{ checkedAt?new Date(checkedAt).toLocaleTimeString('zh-CN'):'尚未检查' }}</dd></div><div><dt>工作台时区</dt><dd>北京时间 · Asia/Shanghai</dd></div><div><dt>当前地址</dt><dd class="breakable">{{ origin }}</dd></div></dl></section>
+    <section class="setting-card"><div class="setting-label"><h3>数据与隐私</h3><p>笔记、待办、表格等数据保存在当前工作台。图片处理在浏览器本地完成，不上传图片；翻译内容会发送到你启用的翻译服务。</p></div><div class="setting-actions"><el-button @click="navigate('trash')">打开回收站</el-button><el-button @click="navigate('translation')">管理翻译服务</el-button></div></section>
+   </template>
+  </main>
+ </div>
 </template>
-
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { apiError, http } from '@/api/client'
-import { applyTheme, logout, session, setThemeColor } from '@/stores/session'
-import { DEFAULT_THEME_COLOR } from '@/theme-color'
+import {computed,nextTick,onMounted,onUnmounted,reactive,ref,watch} from 'vue'
+import {onBeforeRouteLeave,onBeforeRouteUpdate,useRoute,useRouter} from 'vue-router'
+import {ElMessageBox} from 'element-plus'
+import {Search,Sunny,Menu,Setting,Translate,Delete,InfoFilled,Check,Todo} from '@/icons'
+import {http,apiError} from '@/api/client'
+import {session,setTheme,setThemeColor,logout} from '@/stores/session'
+import {DEFAULT_THEME_COLOR} from '@/theme-color'
+import {reduceMotion,setReduceMotion} from '@/stores/motion'
 import AgentAccess from '@/components/AgentAccess.vue'
+import TranslationSettings from '@/components/TranslationSettings.vue'
 import TrashView from '@/views/TrashView.vue'
-
-const router = useRouter()
-const route = useRoute()
-const activeTab = computed(() => route.name === 'settings-trash' ? 'trash' : 'general')
-function changeTab(name: string | number) { router.push(name === 'trash' ? '/settings/trash' : '/settings') }
-const passwordForm = reactive({ old_password: '', new_password: '', confirm: '' })
-const savingPassword = ref(false)
-const health = reactive<Record<string, any>>({})
-
-const presetColors = ['#2383e2', '#37352f', '#787774', '#448361', '#337ea9', '#9065b0', '#c14c8a', '#cb912f']
-
-async function changeColor(value: string | null) {
-  if (!value) return
-  try {
-    await setThemeColor(value)
-    ElMessage.success('主题色已更新')
-  } catch (error) {
-    ElMessage.error(apiError(error).message)
-  }
-}
-
-async function changeTheme(value: any) {
-  const theme = value === 'dark' ? 'dark' : 'light'
-  applyTheme(theme)
-  try {
-    await http.put('/preferences', { theme })
-  } catch (error) {
-    ElMessage.error(apiError(error).message)
-  }
-}
-
-async function changePassword() {
-  if (!passwordForm.old_password || !passwordForm.new_password) {
-    ElMessage.warning('请填写原密码和新密码')
-    return
-  }
-  if (passwordForm.new_password.length < 8) {
-    ElMessage.warning('新密码至少 8 位')
-    return
-  }
-  if (passwordForm.new_password !== passwordForm.confirm) {
-    ElMessage.warning('两次输入的新密码不一致')
-    return
-  }
-  savingPassword.value = true
-  try {
-    await http.post('/auth/password', {
-      old_password: passwordForm.old_password,
-      new_password: passwordForm.new_password,
-    })
-    ElMessage.success('密码已修改')
-    passwordForm.old_password = ''
-    passwordForm.new_password = ''
-    passwordForm.confirm = ''
-  } catch (error) {
-    ElMessage.error(apiError(error).message)
-  } finally {
-    savingPassword.value = false
-  }
-}
-
-async function handleLogout() {
-  await logout()
-  router.replace('/login')
-}
-
-onMounted(async () => {
-  try {
-    const { data } = await http.get('/health')
-    Object.assign(health, data)
-  } catch {
-    health.status = '不可用'
-  }
-})
+const route=useRoute(),router=useRouter(),search=ref(''),feedback=ref(''),feedbackError=ref(false)
+const groups=[{name:'偏好设置'},{name:'账号与连接'},{name:'数据与维护'}]
+const items=[{key:'appearance',label:'外观与动效',group:'偏好设置',icon:Sunny,description:'调整工作台的主题、强调色和动画体验。',keywords:'主题 深色 浅色 颜色 动画'}, {key:'navigation',label:'导航与命名',group:'偏好设置',icon:Menu,description:'让导航名称更符合你的使用习惯。',keywords:'打卡 店铺 社媒 重命名'}, {key:'account',label:'账号与安全',group:'账号与连接',icon:Setting,description:'管理登录密码和当前设备的登录状态。',keywords:'密码 用户名 退出 登录'}, {key:'agents',label:'Agent 接入',group:'账号与连接',icon:Todo,description:'管理自动化助手的访问权限和写入记录。',keywords:'令牌 API token 自动化 权限'}, {key:'translation',label:'翻译服务',group:'账号与连接',icon:Translate,description:'配置、启用和测试翻译服务，密钥留空时保留原有值。',keywords:'百度 有道 DeepSeek 密钥 模型'}, {key:'trash',label:'回收站',group:'数据与维护',icon:Delete,description:'恢复误删内容，或清理不再需要的数据。',keywords:'删除 恢复 清理 数据'}, {key:'system',label:'系统信息',group:'数据与维护',icon:InfoFilled,description:'查看运行状态、数据连接及工作台的数据处理方式。',keywords:'健康 时区 隐私 状态'}]
+const section=computed(()=>route.name==='settings-trash'?'trash':String(route.params.section||'appearance'))
+const current=computed(()=>items.find(i=>i.key===section.value)||items[0])
+const filtered=computed(()=>items.filter(i=>(i.label+i.keywords).toLowerCase().includes(search.value.trim().toLowerCase())))
+const themeChoices=[{value:'light' as const,label:'浅色'},{value:'dark' as const,label:'深色'}],presetColors=['#2383e2','#37352f','#787774','#448361','#337ea9','#9065b0','#c14c8a','#cb912f']
+const passwordForm=reactive({old_password:'',new_password:'',confirm:''}),navForm=reactive({shop:session.user?.checkin_shop_label||'店铺打卡',social:session.user?.checkin_social_label||'社媒打卡'})
+const navDirty=computed(()=>navForm.shop!==(session.user?.checkin_shop_label||'店铺打卡')||navForm.social!==(session.user?.checkin_social_label||'社媒打卡'))
+const passwordValid=computed(()=>!!passwordForm.old_password&&passwordForm.new_password.length>=8&&passwordForm.new_password===passwordForm.confirm)
+const savingNavigation=ref(false),savingPassword=ref(false),loggingOut=ref(false),checkingHealth=ref(false),health=reactive<Record<string,any>>({}),healthError=ref(''),checkedAt=ref(0),origin=window.location.origin
+const translationRef=ref<InstanceType<typeof TranslationSettings>>(),agentRef=ref<InstanceType<typeof AgentAccess>>()
+const pending=computed(()=>savingNavigation.value||savingPassword.value||session.appearanceSaving||translationRef.value?.pending)
+const dirty=computed(()=>(section.value==='navigation'&&navDirty.value)||(section.value==='account'&&Object.values(passwordForm).some(Boolean))||translationRef.value?.dirty||agentRef.value?.hasUnsaved)
+function notify(message:string,error=false){feedback.value=message;feedbackError.value=error}
+async function guard(){if(pending.value){notify('正在保存，请稍候再切换。',true);return false}if(!dirty.value)return true;try{await ElMessageBox.confirm('未保存的输入将被放弃；新建令牌请先复制保存。','离开当前设置',{confirmButtonText:'放弃并离开',cancelButtonText:'继续编辑'});return true}catch{return false}}
+onBeforeRouteLeave(guard);onBeforeRouteUpdate(guard)
+function navigate(key:string){router.push(key==='appearance'?'/settings':`/settings/${key}`)}
+async function changeTheme(value:'light'|'dark'){try{await setTheme(value);notify('主题已保存到账号。')}catch(e){notify(apiError(e).message+'，已恢复原主题。',true)}}
+async function changeColor(value:string|null){if(!value)return;try{await setThemeColor(value);notify('强调色已保存到账号。')}catch(e){notify(apiError(e).message+'，已恢复原颜色。',true)}}
+function changeMotion(value:boolean){const stored=setReduceMotion(value);notify(stored?'动态效果偏好已保存在本设备。':'已应用到当前页面，浏览器未允许保存本机偏好。',!stored)}
+function resetNames(){navForm.shop='店铺打卡';navForm.social='社媒打卡';feedback.value=''}
+async function saveNavigation(){if(savingNavigation.value)return;if(!navForm.shop.trim()||!navForm.social.trim()){notify('两个导航名称都不能为空。',true);return}savingNavigation.value=true;try{const {data}=await http.put('/preferences',{checkin_shop_label:navForm.shop.trim(),checkin_social_label:navForm.social.trim()});if(session.user){session.user.checkin_shop_label=data.checkin_shop_label;session.user.checkin_social_label=data.checkin_social_label}navForm.shop=data.checkin_shop_label;navForm.social=data.checkin_social_label;notify('导航名称已保存。')}catch(e){notify(apiError(e).message,true)}finally{savingNavigation.value=false}}
+async function changePassword(){if(!passwordValid.value||savingPassword.value)return;savingPassword.value=true;try{await http.post('/auth/password',{old_password:passwordForm.old_password,new_password:passwordForm.new_password});Object.assign(passwordForm,{old_password:'',new_password:'',confirm:''});notify('密码已更新，其他设备需要重新登录。')}catch(e){notify(apiError(e).message,true)}finally{savingPassword.value=false}}
+async function handleLogout(){if(!await guard())return;loggingOut.value=true;try{await logout();Object.assign(passwordForm,{old_password:'',new_password:'',confirm:''});await router.replace('/login')}catch(e){notify(apiError(e).message,true)}finally{loggingOut.value=false}}
+async function checkHealth(){if(checkingHealth.value)return;checkingHealth.value=true;healthError.value='';try{const {data}=await http.get('/health');Object.assign(health,data)}catch(e){health.status='error';health.database='error';healthError.value=apiError(e).message+'，可重新检查。'}finally{checkedAt.value=Date.now();checkingHealth.value=false}}
+function beforeUnload(e:BeforeUnloadEvent){if(dirty.value||pending.value){e.preventDefault();e.returnValue=''}}
+watch(section,async()=>{
+ feedback.value=''
+ Object.assign(passwordForm,{old_password:'',new_password:'',confirm:''})
+ Object.assign(navForm,{shop:session.user?.checkin_shop_label||'店铺打卡',social:session.user?.checkin_social_label||'社媒打卡'})
+ if(section.value==='system')void checkHealth()
+ await nextTick()
+ // Reset section content without replacing the persistent navigation or frame.
+ const scroller=document.querySelector<HTMLElement>('.wb-content.settings-scroll')
+ if(scroller)scroller.scrollTop=0
+},{flush:'sync'})
+onMounted(()=>{window.addEventListener('beforeunload',beforeUnload);if(section.value==='system')void checkHealth()})
+onUnmounted(()=>window.removeEventListener('beforeunload',beforeUnload))
 </script>
-
 <style scoped>
-.settings-tabs { flex-shrink: 0; }
-.settings-tabs :deep(.el-tabs__header) { margin-bottom: 0; }
-.settings-trash { padding: 0; height: auto; min-height: 320px; flex: 1; }
-
-.block {
-  flex: 0 0 auto;
-  margin-bottom: 10px;
-}
-.bottom-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-.bottom-grid .block {
-  margin-bottom: 0;
-}
-@media (max-width: 900px) {
-  .bottom-grid {
-    grid-template-columns: 1fr;
-  }
-}
-.row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.pwd-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0 12px;
-}
-@media (max-width: 900px) {
-  .pwd-grid {
-    grid-template-columns: 1fr;
-  }
-}
-.usage-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 8px 16px;
-}
-.usage-item {
-  display: flex;
-  gap: 8px;
-  font-size: 13px;
-  line-height: 1.6;
-}
-.usage-item .muted {
-  flex: 0 0 82px;
-}
+.settings-shell{display:grid;grid-template-columns:200px minmax(0,1fr);min-height:100%;width:100%;margin:0;color:var(--wb-text)}.settings-nav{padding:20px 14px;border-right:1px solid var(--wb-border);align-self:start;position:sticky;top:0}.settings-group{font-size:11px;color:var(--wb-text-tertiary);font-weight:500;margin:18px 10px 7px}.settings-nav-item{width:100%;display:flex;align-items:center;gap:10px;border:0;border-radius:6px;background:transparent;color:var(--wb-text-secondary);padding:9px 10px;font:inherit;font-size:13px;cursor:pointer;text-align:left;margin:3px 0;font-weight:500}.settings-nav-item .el-icon{font-size:17px}.settings-nav-item:hover{background:var(--wb-nav-hover)}.settings-nav-item.active{background:var(--wb-nav-active);color:var(--wb-text);font-weight:500}.settings-nav-item:focus-visible,.theme-choice:focus-visible,.accent-options button:focus-visible{outline:2px solid var(--wb-primary);outline-offset:2px}.settings-identity{display:flex;gap:10px;align-items:center;border-top:1px solid var(--wb-border);padding:18px 8px 0;margin-top:22px}.settings-identity strong{display:block;font-size:13px;font-weight:500;margin-bottom:4px}.identity-avatar{display:grid;place-items:center;width:32px;height:32px;flex-shrink:0;border-radius:8px;background:var(--wb-surface-subtle);font-size:15px;font-weight:600}.identity-avatar.large{width:42px;height:42px;font-size:20px}.settings-content{padding:24px 28px 24px;min-width:0;max-width:100%;display:flex;flex-direction:column;gap:16px}.settings-section-head{margin-bottom:4px}.settings-section-head h2{font-size:21px;font-weight:600;letter-spacing:-.4px;margin:0 0 6px}.settings-section-head p{font-size:13px;line-height:1.8;color:var(--wb-text-secondary);margin:0}.setting-card{border:1px solid var(--wb-border);background:var(--wb-surface);border-radius:10px;padding:20px}.setting-label h3{font-size:14px;font-weight:600;margin:0 0 7px}.setting-label p{font-size:12px;line-height:1.8;color:var(--wb-text-secondary);margin:0 0 18px}.setting-row{display:flex;justify-content:space-between;align-items:center;gap:22px}.setting-row .setting-label{max-width:85%}.setting-row .setting-label p{margin-bottom:0}.setting-divider{height:1px;background:var(--wb-border);margin:24px 0}.setting-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.setting-actions .el-button+.el-button{margin-left:0}.theme-choices{display:grid;grid-template-columns:1fr 1fr;gap:18px;max-width:480px}.theme-choice{display:flex;align-items:center;flex-wrap:wrap;gap:10px;text-align:left;padding:10px 10px 12px;border:1px solid var(--wb-border);background:var(--wb-surface);color:var(--wb-text);border-radius:8px;cursor:pointer;font:inherit;font-size:13px}.theme-choice.selected{border-color:var(--wb-primary);box-shadow:0 0 0 1px var(--wb-primary)}.theme-choice>.el-icon{margin-left:auto;color:var(--wb-primary)}.theme-preview{display:flex;gap:12px;width:100%;height:100px;background:#fff;border:1px solid #e9e9e7;border-radius:4px;overflow:hidden}.theme-preview>i{display:block;background:#f1f1ef;width:25%}.theme-preview>div{padding:15px 15px 15px 0;flex:1}.theme-preview b,.theme-preview span{display:block;background:#e9e9e7;height:6px;border-radius:2px;margin:9px 0}.theme-preview b{height:8px;width:55%;background:#b4b3b0}.theme-preview span:last-child{width:65%}.theme-preview.dark{background:#202020;border-color:#363636}.theme-preview.dark>i{background:#2d2d2d}.theme-preview.dark b{background:#787774}.theme-preview.dark span{background:#363636}.accent-options{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.accent-options>.accent-swatch{display:grid;place-items:center;cursor:pointer;width:28px;height:28px;background:var(--swatch);color:white;border:2px solid var(--wb-surface);border-radius:50%}.accent-options>.accent-swatch.selected{outline:1px solid var(--swatch)}.accent-options>.accent-swatch:disabled{cursor:wait;opacity:.6}.password-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.account-summary{display:flex;align-items:center;gap:14px}.account-summary p{margin:5px 0 0}.system-facts{margin:20px 0 0;font-size:13px}.system-facts>div{display:flex;justify-content:space-between;gap:20px;border-top:1px solid var(--wb-border);padding:16px 0}.system-facts dt{color:var(--wb-text-secondary);flex-shrink:0}.system-facts dd{margin:0;text-align:right}.success-text{color:var(--el-color-success)}.error-text{color:var(--el-color-danger);font-size:13px}.breakable{word-break:break-all}.settings-trash{height:auto;min-height:320px}.settings-trash :deep(.page-toolbar){padding:0 0 16px;border:0}.settings-trash :deep(.page-body){padding:16px 0 0}.settings-trash :deep(.empty-hint){padding:30px 10px}.settings-content :deep(.agent-access-card){margin:0}.settings-feedback{flex-shrink:0}
+@media(max-width:1000px){.settings-content{padding:28px 22px}.settings-shell{grid-template-columns:190px minmax(0,1fr)}.settings-nav{padding:24px 12px}}
+@media(max-width:700px){.settings-shell{display:flex;flex-direction:column}.settings-nav{position:static;border:0;border-bottom:1px solid var(--wb-border);padding:14px 16px;width:100%;box-sizing:border-box;display:flex;gap:8px;flex-wrap:wrap}.settings-nav>.el-input{flex-basis:100%;margin-bottom:4px}.settings-group,.settings-identity{display:none}.settings-nav-item{width:auto;gap:6px;padding:9px;margin:0;font-size:12px}.settings-nav-item .el-icon{font-size:15px}.settings-content{padding:24px 16px 36px;gap:16px}.settings-section-head h2{font-size:21px}.setting-card{padding:18px}.theme-choices{gap:12px}.theme-preview{height:82px}.setting-row{gap:16px}.password-grid{grid-template-columns:1fr;gap:0}.system-facts>div{gap:10px}.accent-options{gap:12px}.accent-options>.accent-swatch{width:30px;height:30px}}
 </style>

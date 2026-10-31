@@ -1,4 +1,5 @@
 from __future__ import annotations
+from .routers import virtual_tables
 
 import logging
 import asyncio
@@ -108,9 +109,12 @@ def create_app() -> FastAPI:
         files,
         health,
         memos,
+        bookmarks,
         notes,
         preferences,
         tables,
+        table_workspaces,
+        workbook_files,
         targets,
         todos,
         transfers,
@@ -130,10 +134,14 @@ def create_app() -> FastAPI:
     app.include_router(checkin_import.router, prefix=api)
     app.include_router(todos.router, prefix=api)
     app.include_router(tables.router, prefix=api)
+    app.include_router(virtual_tables.router, prefix=api)
+    app.include_router(table_workspaces.router, prefix=api)
+    app.include_router(workbook_files.router, prefix=api)
     app.include_router(transfers.router, prefix=api)
     app.include_router(files.router, prefix=api)
     app.include_router(notes.router, prefix=api)
     app.include_router(memos.router, prefix=api)
+    app.include_router(bookmarks.router, prefix=api)
     app.include_router(translate.router, prefix=api)
     app.include_router(trash.router, prefix=api)
 

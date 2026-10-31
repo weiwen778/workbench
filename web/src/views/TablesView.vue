@@ -1,12 +1,12 @@
 <template>
   <div class="page">
     <div class="page-toolbar">
-      <div class="title-15">表格</div>
       <span class="text-12 muted">共 {{ tables.length }} 张表格</span>
       <div class="spacer" />
       <div class="toolbar-actions">
         <el-button text :icon="Refresh" @click="load">刷新</el-button>
         <el-button :icon="Upload" @click="importOpen = true">从 Excel 导入</el-button>
+        <el-button :icon="Plus" @click="router.push('/data/virtual/new')">新建虚拟表</el-button>
         <el-button class="btn-tonal" :icon="Plus" @click="createOpen = true">新建表格</el-button>
       </div>
     </div>
@@ -15,7 +15,7 @@
       <el-table :data="tables" v-loading="loading" size="default">
         <el-table-column prop="name" label="表格名称" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-link type="primary" :underline="false" @click="open(row)">{{ row.name }}</el-link>
+            <el-link type="primary" :underline="false" @click="open(row)">{{ row.name }}</el-link><el-tag v-if="row.kind==='virtual'" size="small" effect="plain" style="margin-left:8px">虚拟表</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="note" label="说明" min-width="200" show-overflow-tooltip />
@@ -23,7 +23,7 @@
           <template #default="{ row }">{{ row.field_count ?? '—' }}</template>
         </el-table-column>
         <el-table-column label="数据" width="80" align="center">
-          <template #default="{ row }">{{ row.record_count }}</template>
+          <template #default="{ row }">{{ row.kind==='virtual'?'动态计算':row.record_count }}</template>
         </el-table-column>
         <el-table-column label="操作" width="190">
           <template #default="{ row }">

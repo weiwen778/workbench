@@ -281,6 +281,10 @@ def preview_import(
     sheet: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
+    if table_id:
+        from ..services.virtual_tables import physical_only
+        target=db.get(DataTable,table_id)
+        if target:physical_only(target)
     raw = file.file.read(settings.max_upload_bytes + 1)
     if len(raw) > settings.max_upload_bytes:
         raise ApiError("FILE_TOO_LARGE", "文件不能超过 20 MB", 413)
@@ -547,6 +551,8 @@ def confirm_import(job_id: int, db: Session = Depends(get_db)):
         table = db.get(DataTable, job.table_id) if job.table_id else None
         if not table or table.deleted_at is not None:
             raise ApiError("TABLE_NOT_FOUND", "表格不存在", 404)
+        from ..services.virtual_tables import physical_only
+        physical_only(table)
         existing_def = [
             {"key": f.key, "name": f.name, "type": f.type, "required": f.required, "options": f.options or []}
             for f in db.scalars(select(DataField).where(DataField.table_id == table.id)).all()
@@ -688,27 +694,33 @@ def export_table(table_id: int, payload: ExportIn, db: Session = Depends(get_db)
     if payload.scope not in {"all", "filtered"}:
         raise ApiError("INVALID_SCOPE", "导出范围不合法", 422)
 
-    if payload.scope == "filtered":
-        total, rows, _ = paginate(db, table_id, parse_filters(payload.filters), payload.sorts, 1, 100)
-        # 导出全部匹配数据，不只当前页
-        from ..services.query import build_conditions, build_order
-
-        fields_map = {f.key: f for f in fields}
-        stmt = select(DataRecord).where(
-            DataRecord.table_id == table_id, DataRecord.deleted_at.is_(None)
-        )
-        conditions = build_conditions(db, fields_map, payload.filters)
-        if conditions:
-            stmt = stmt.where(*conditions)
-        all_rows = list(db.scalars(stmt.order_by(*build_order(db, fields_map, payload.sorts))).all())
+    from ..services.table_expressions import COMPUTED
+    if table.kind=='virtual' or any(f.type in COMPUTED for f in fields):
+        computed_total,all_rows,_=paginate(db,table_id,parse_filters(payload.filters) if payload.scope=='filtered' else [],payload.sorts if payload.scope=='filtered' else [],1,10001)
+        if computed_total>10000:raise ApiError('ANALYSIS_LIMIT','计算列导出最多 10000 行，请缩小筛选范围',422)
     else:
-        all_rows = list(
-            db.scalars(
-                select(DataRecord)
-                .where(DataRecord.table_id == table_id, DataRecord.deleted_at.is_(None))
-                .order_by(DataRecord.id)
-            ).all()
-        )
+        if payload.scope == "filtered":
+            total, rows, _ = paginate(db, table_id, parse_filters(payload.filters), payload.sorts, 1, 100)
+            # 导出全部匹配数据，不只当前页
+            from ..services.query import build_conditions, build_order
+
+            fields_map = {f.key: f for f in fields}
+            stmt = select(DataRecord).where(
+                DataRecord.table_id == table_id, DataRecord.deleted_at.is_(None)
+            )
+            conditions = build_conditions(db, fields_map, payload.filters)
+            if conditions:
+                stmt = stmt.where(*conditions)
+            all_rows = list(db.scalars(stmt.order_by(*build_order(db, fields_map, payload.sorts))).all())
+        else:
+            all_rows = list(
+                db.scalars(
+                    select(DataRecord)
+                    .where(DataRecord.table_id == table_id, DataRecord.deleted_at.is_(None))
+                    .order_by(DataRecord.id)
+                ).all()
+            )
+
 
     wb = Workbook()
     ws = wb.active
@@ -723,8 +735,10 @@ def export_table(table_id: int, payload: ExportIn, db: Session = Depends(get_db)
         row = []
         for field in fields:
             value = (record.data or {}).get(field.key)
-            if field.type == "checkbox":
-                row.append("是" if value else "否")
+            if getattr(record, 'computed_errors', {}).get(field.key):
+                row.append('#ERROR · '+record.computed_errors[field.key])
+            elif field.type == "checkbox":
+                row.append("" if value is None else "是" if value else "否")
             elif field.type in {"select", "multiselect"}:
                 names = option_names.get(field.key, {})
                 if isinstance(value, list):

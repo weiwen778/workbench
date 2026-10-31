@@ -110,7 +110,7 @@ def _ensure_readable(obj: FileObject, db: Session) -> None:
         if obj.expires_at is not None and obj.expires_at > utcnow():
             return
     for ref in db.scalars(select(FileRef).where(FileRef.file_id == obj.id)).all():
-        if ref.owner_type == "record":
+        if ref.owner_type in {"record", "table_change_record"}:
             record = db.get(DataRecord, ref.owner_id)
             table = db.get(DataTable, record.table_id) if record else None
             if record and record.deleted_at is None and table and table.deleted_at is None:

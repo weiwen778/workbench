@@ -107,3 +107,14 @@
   .wb-task-enter-from, .wb-task-leave-to { transform: none; }
   :is(.el-button, .icon-btn):active:not(:disabled):not(.is-disabled):not(.is-loading) { transform: none; }
 }
+
+/* Optional per-device preference, in addition to the operating-system setting. */
+:root[data-reduce-motion] { --wb-motion-fast:0s;--wb-motion-duration:0s;--wb-motion-dialog:0s; }
+[data-reduce-motion] .wb-route-frame,[data-reduce-motion] .el-dropdown-menu,
+[data-reduce-motion] .dialog-fade-enter-active .el-dialog,[data-reduce-motion] .dialog-fade-leave-active .el-dialog,
+[data-reduce-motion] .fade-in-linear-enter-active .el-message-box,[data-reduce-motion] .fade-in-linear-leave-active .el-message-box {animation:none;}
+[data-reduce-motion] .wb-task-enter-from,[data-reduce-motion] .wb-task-leave-to {transform:none;}
+[data-reduce-motion] :is(.el-button,.icon-btn):active:not(:disabled):not(.is-disabled):not(.is-loading){transform:none;}
+
+/* Section changes keep the settings shell and navigation stationary. */
+.wb-route-frame.settings-route-frame { animation:none; }

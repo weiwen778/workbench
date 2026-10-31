@@ -1,0 +1,256 @@
+{
+  "sqlite_backend_tests_passed": 240,
+  "postgres_backend_tests_passed": 240,
+  "browser": [
+    {
+      "script": "table-core.mjs",
+      "passed": true
+    },
+    {
+      "script": "table-workspace.mjs",
+      "passed": true
+    },
+    {
+      "script": "virtual-tables.mjs",
+      "passed": true
+    },
+    {
+      "script": "checkin-inplace.mjs",
+      "passed": true
+    },
+    {
+      "script": "image-tools.mjs",
+      "passed": true
+    },
+    {
+      "script": "release-audit.mjs",
+      "passed": true
+    },
+    {
+      "script": "settings-stability.mjs",
+      "passed": true
+    },
+    {
+      "script": "sidebar-resize.mjs",
+      "passed": true
+    },
+    {
+      "script": "table-workbook-recovery.mjs",
+      "passed": true
+    },
+    {
+      "script": "agent-access.mjs",
+      "passed": true
+    }
+  ],
+  "large_browser": {
+    "results": [
+      {
+        "rows": 1000,
+        "grid_open_ms": 545,
+        "js_heap_mb": 23,
+        "longtasks": {
+          "count": 1,
+          "max_ms": 117
+        }
+      },
+      {
+        "rows": 10000,
+        "grid_open_ms": 990,
+        "js_heap_mb": 45,
+        "longtasks": {
+          "count": 4,
+          "max_ms": 136
+        }
+      },
+      {
+        "rows": 50000,
+        "limited": true,
+        "message": "增强表格限制10000行",
+        "classic_available": true
+      }
+    ],
+    "errors": []
+  },
+  "notes": [
+    "Short soak only: 180 seconds",
+    "Production host not tested",
+    "No deployment or GitHub push"
+  ],
+  "performance": {
+    "normal-final": {
+      "name": "normal-final",
+      "concurrency": 10,
+      "requested_duration_s": 30,
+      "measured_duration_s": 30.07,
+      "target_rps": 20.0,
+      "requests": 600,
+      "rps": 19.95,
+      "p50_ms": 61.27,
+      "p95_ms": 151.0,
+      "p99_ms": 205.29,
+      "error_rate": 0.0,
+      "statuses": {
+        "200": 600
+      },
+      "failures": []
+    },
+    "peak-60rps": {
+      "name": "peak-60rps",
+      "concurrency": 30,
+      "requested_duration_s": 30,
+      "measured_duration_s": 30.48,
+      "target_rps": 60.0,
+      "requests": 1795,
+      "rps": 58.9,
+      "p50_ms": 127.26,
+      "p95_ms": 387.17,
+      "p99_ms": 599.31,
+      "error_rate": 0.0,
+      "statuses": {
+        "200": 1795
+      },
+      "failures": []
+    },
+    "burst-60users": {
+      "name": "burst-60users",
+      "concurrency": 60,
+      "requested_duration_s": 30,
+      "measured_duration_s": 31.25,
+      "target_rps": null,
+      "requests": 2229,
+      "rps": 71.32,
+      "p50_ms": 782.56,
+      "p95_ms": 1305.93,
+      "p99_ms": 1616.93,
+      "error_rate": 0.0,
+      "statuses": {
+        "200": 2229
+      },
+      "failures": []
+    },
+    "stability-3min": {
+      "name": "stability-3min",
+      "concurrency": 10,
+      "requested_duration_s": 180,
+      "measured_duration_s": 180.39,
+      "target_rps": 20.0,
+      "requests": 3600,
+      "rps": 19.96,
+      "p50_ms": 60.7,
+      "p95_ms": 158.3,
+      "p99_ms": 224.42,
+      "error_rate": 0.0,
+      "statuses": {
+        "200": 3600
+      },
+      "failures": []
+    }
+  },
+  "extended": {
+    "capacity": [
+      {
+        "rows": 1000,
+        "endpoint": "records?page=1&page_size=50",
+        "p50_ms": 18.08,
+        "max_ms": 19.36,
+        "statuses": [
+          200,
+          200,
+          200,
+          200,
+          200
+        ],
+        "response_bytes": 15747
+      },
+      {
+        "rows": 1000,
+        "endpoint": "workspace",
+        "p50_ms": 60.54,
+        "max_ms": 101.85,
+        "statuses": [
+          200,
+          200,
+          200,
+          200,
+          200
+        ],
+        "response_bytes": 317305
+      },
+      {
+        "rows": 10000,
+        "endpoint": "records?page=1&page_size=50",
+        "p50_ms": 19.69,
+        "max_ms": 20.19,
+        "statuses": [
+          200,
+          200,
+          200,
+          200,
+          200
+        ],
+        "response_bytes": 15748
+      },
+      {
+        "rows": 10000,
+        "endpoint": "workspace",
+        "p50_ms": 535.12,
+        "max_ms": 568.24,
+        "statuses": [
+          200,
+          200,
+          200,
+          200,
+          200
+        ],
+        "response_bytes": 3186711
+      },
+      {
+        "rows": 50000,
+        "endpoint": "records?page=1&page_size=50",
+        "p50_ms": 28.21,
+        "max_ms": 28.9,
+        "statuses": [
+          200,
+          200,
+          200,
+          200,
+          200
+        ],
+        "response_bytes": 12718
+      },
+      {
+        "rows": 50000,
+        "endpoint": "workspace",
+        "p50_ms": 20.01,
+        "max_ms": 22.73,
+        "statuses": [
+          422,
+          422,
+          422,
+          422,
+          422
+        ],
+        "response_bytes": 127
+      }
+    ],
+    "agent": {
+      "workers": 10,
+      "read_write_cycles": 200,
+      "cycle_p95_ms": 862.3,
+      "cycle_p99_ms": 1318.25,
+      "statuses": {
+        "GET 200": 200,
+        "PATCH 200": 200
+      },
+      "same_version_browser_agent_write_statuses": [
+        409,
+        200
+      ],
+      "agent_cookie_api_denied_status": 401
+    },
+    "concurrent_category_statuses": {
+      "200": 20
+    }
+  }
+}

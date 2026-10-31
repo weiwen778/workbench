@@ -1,5 +1,5 @@
 <template>
-  <div class="layout" :class="{ narrow: isNarrow }">
+  <div class="layout" :class="{ narrow: isNarrow, 'resizing-sidebar': resizingSidebar }" :style="{'--sidebar-width':sidebarWidth+'px'}">
     <!-- 窄屏：临时抽屉 -->
     <el-drawer
       v-if="isNarrow"
@@ -64,13 +64,11 @@
               <button class="wb-nav-item collapsed-item" @click="openNewTodoList"><el-icon><Plus /></el-icon><span>新建清单</span></button>
             </template>
             <template v-if="group.key === 'notes'">
-              <button class="wb-nav-item collapsed-item" :class="{ active: route.path === '/notes' }" @click="go('/notes')">全部笔记</button>
               <button class="wb-nav-item collapsed-item" :class="{ active: route.params.folderKey === 'uncategorized' }" @click="go('/notes/uncategorized')">未分类</button>
               <button v-for="folder in noteFolders" :key="folder.id" class="wb-nav-item collapsed-item" :class="{ active: String(route.params.folderKey) === String(folder.id) }" :title="folder.name" @click="go(`/notes/${folder.id}`)"><span class="ellipsis-1">{{ folder.name }}</span><span class="text-12 muted">{{ folder.note_count }}</span></button>
               <button class="wb-nav-item collapsed-item" @click="openNewNoteFolder"><el-icon><Plus /></el-icon><span>新建文件夹</span></button>
             </template>
             <template v-if="group.key === 'memos'">
-              <button class="wb-nav-item collapsed-item" :class="{ active: isMemoActive(route) }" @click="go(memoPath())">全部便利贴</button>
               <button class="wb-nav-item collapsed-item" :class="{ active: isMemoActive(route, null) }" @click="go(memoPath(null))">未分类</button>
               <button v-for="name in memoCategories" :key="name" class="wb-nav-item collapsed-item" :class="{ active: isMemoActive(route, name) }" :title="name" :aria-label="`便利贴分类：${name}`" @click="go(memoPath(name))"><span class="ellipsis-1">{{ name }}</span></button>
             </template>
@@ -104,6 +102,7 @@
 
       <SidebarContent
         v-if="!collapsed"
+        :width="sidebarWidth"
         :collapsed="false"
         :collapsible="true"
         :tables="tables"
@@ -122,12 +121,14 @@
         @rename-checkin="renameCheckinItem"
         @collapse="setCollapsed(true)"
       />
+      <div v-if="!collapsed" class="sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="调整侧边栏宽度" :aria-valuemin="180" :aria-valuemax="sidebarMax" :aria-valuenow="sidebarWidth" tabindex="0" title="拖动调整侧栏宽度，双击恢复默认；方向键微调" @pointerdown="startSidebarResize" @keydown="sidebarResizeKey" @dblclick="resetSidebarWidth"/>
+
     </template>
 
     <div class="wb-main">
       <div class="wb-topbar">
         <el-button v-if="isNarrow" text :icon="Menu" aria-label="打开导航" @click="drawerOpen = true" />
-        <div class="title-15" :title="pageTitle">{{ pageTitle }}</div>
+        <h1 class="title-15 page-title" :title="pageTitle">{{ pageTitle }}</h1>
         <div class="spacer" />
         <el-tooltip content="设置" placement="bottom">
           <el-button
@@ -135,18 +136,19 @@
             circle
             :icon="Setting"
             class="topbar-action"
+            aria-label="打开设置"
             :class="{ current: route.path.startsWith('/settings') }"
             @click="go('/settings')"
           />
         </el-tooltip>
         <el-tooltip content="切换浅色／深色主题" placement="bottom">
-          <el-button text circle :icon="themeIcon" class="topbar-action" @click="toggleTheme" />
+          <el-button text circle :icon="themeIcon" class="topbar-action" aria-label="切换主题" :disabled="session.appearanceSaving" @click="handleThemeToggle" />
         </el-tooltip>
         <span v-if="collapsed || isNarrow" class="text-12 muted">{{ session.user?.username }}</span>
       </div>
-      <div class="wb-content" :class="{ scroll: scrollable }">
-        <div :key="route.path" class="wb-route-frame">
-          <router-view :key="route.fullPath" />
+      <div class="wb-content" :class="{ scroll: scrollable, 'settings-scroll': isSettingsRoute }">
+        <div :key="viewKey" class="wb-route-frame" :class="{ 'settings-route-frame': isSettingsRoute }">
+          <router-view :key="isSettingsRoute ? 'settings' : route.fullPath" />
         </div>
       </div>
     </div>
@@ -191,6 +193,7 @@ import {
   Todo,
   Translate,
   Picture,
+  Link,
 } from '@/icons'
 import SidebarContent from './SidebarContent.vue'
 import { isMemoActive, memoPath, memoTitle } from '@/memo-navigation'
@@ -199,10 +202,30 @@ import { checkinItems, session, setCheckinLabel, toggleTheme, type CheckinNavKey
 
 const route = useRoute()
 const router = useRouter()
+// Settings owns a persistent shell across all of its section routes.
+const isSettingsRoute = computed(() => route.path.startsWith('/settings'))
+const viewKey = computed(() => isSettingsRoute.value ? 'settings' : route.path)
 
 const collapsed = ref(localStorage.getItem('wb_sidebar_collapsed') === '1')
 const drawerOpen = ref(false)
 const isNarrow = ref(window.innerWidth < 1280)
+const viewportWidth=ref(window.innerWidth),resizingSidebar=ref(false)
+const sidebarMax=computed(()=>Math.max(180,Math.min(360,Math.floor(viewportWidth.value*.28),viewportWidth.value-640)))
+function storedSidebarWidth(){try{const n=Number(localStorage.getItem('wb_sidebar_width'));return Number.isFinite(n)&&n>=180&&n<=360?n:192}catch{return 192}}
+const preferredSidebarWidth=ref(storedSidebarWidth())
+const sidebarWidth=computed(()=>Math.round(Math.max(180,Math.min(sidebarMax.value,preferredSidebarWidth.value))))
+let sidebarDrag:{pointer:number;x:number;width:number;preferred:number}|null=null
+function persistSidebarWidth(){try{localStorage.setItem('wb_sidebar_width',String(preferredSidebarWidth.value))}catch{/* Storage may be disabled; resizing still works. */}}
+function startSidebarResize(e:PointerEvent){if(e.button!==0||isNarrow.value||collapsed.value)return;e.preventDefault();sidebarDrag={pointer:e.pointerId,x:e.clientX,width:sidebarWidth.value,preferred:preferredSidebarWidth.value};resizingSidebar.value=true;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);window.addEventListener('pointermove',moveSidebarResize);window.addEventListener('pointerup',finishSidebarResize);window.addEventListener('pointercancel',cancelSidebarResize);window.addEventListener('blur',cancelSidebarResize);window.addEventListener('keydown',escapeSidebarResize)}
+function moveSidebarResize(e:PointerEvent){if(!sidebarDrag||e.pointerId!==sidebarDrag.pointer)return;preferredSidebarWidth.value=Math.max(180,Math.min(sidebarMax.value,sidebarDrag.width+e.clientX-sidebarDrag.x))}
+function clearSidebarResize(){sidebarDrag=null;resizingSidebar.value=false;window.removeEventListener('pointermove',moveSidebarResize);window.removeEventListener('pointerup',finishSidebarResize);window.removeEventListener('pointercancel',cancelSidebarResize);window.removeEventListener('blur',cancelSidebarResize);window.removeEventListener('keydown',escapeSidebarResize)}
+function finishSidebarResize(e:PointerEvent){if(e.pointerId!==sidebarDrag?.pointer)return;clearSidebarResize();persistSidebarWidth()}
+function cancelSidebarResize(){if(sidebarDrag)preferredSidebarWidth.value=sidebarDrag.preferred;clearSidebarResize()}
+function escapeSidebarResize(e:KeyboardEvent){if(e.key==='Escape'){e.preventDefault();cancelSidebarResize()}}
+function resetSidebarWidth(){cancelSidebarResize();preferredSidebarWidth.value=192;persistSidebarWidth()}
+function sidebarResizeKey(e:KeyboardEvent){if(sidebarDrag||!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();preferredSidebarWidth.value=e.key==='Home'?180:e.key==='End'?sidebarMax.value:Math.max(180,Math.min(sidebarMax.value,sidebarWidth.value+(e.key==='ArrowRight'?1:-1)*(e.shiftKey?20:10)));persistSidebarWidth()}
+watch([collapsed,isNarrow],cancelSidebarResize)
+
 const tables = ref<any[]>([])
 const dashboards = ref<any[]>([])
 const tableSearch = ref('')
@@ -236,9 +259,11 @@ const collapsedGroups = computed(() => [
 const simpleItems = [
   { label: '翻译', path: '/translate', icon: Translate },
   { label: '图片处理', path: '/images', icon: Picture },
+  { label: '网址导航', path: '/bookmarks', icon: Link },
 ]
 
 const pageTitle = computed(() => {
+  if (route.path.startsWith('/settings')) return '设置'
   if (route.name === 'memos') return memoTitle(route.query)
   const checkin = checkinItems.value.find(item => route.path === item.path)
   if (checkin) return checkin.label
@@ -260,8 +285,10 @@ const pageTitle = computed(() => {
 
 watch([pageTitle, () => route.fullPath], ([title]) => { document.title = `${title} · 个人工作台` }, { immediate: true })
 
+async function handleThemeToggle(){try{await toggleTheme()}catch(error){ElMessage.error(apiError(error).message)}}
+
 const themeIcon = computed(() => (session.theme === 'dark' ? Moon : Sunny))
-const scrollable = computed(() => ['images', 'visualizations', 'settings', 'settings-trash', 'tables', 'notes', 'memos'].includes(String(route.name)))
+const scrollable = computed(() => ['images', 'visualizations', 'settings', 'settings-trash', 'settings-section', 'virtual-new', 'virtual-edit', 'data', 'tables', 'notes', 'memos'].includes(String(route.name)))
 
 function isGroupActive(group: { key: string }) {
   if (group.key === 'checkin') return route.path.startsWith('/checkins')
@@ -305,6 +332,7 @@ function setCollapsed(value: boolean) {
 }
 
 function onResize() {
+  cancelSidebarResize();viewportWidth.value=window.innerWidth
   if (isNarrow.value !== (window.innerWidth < 1280)) closeNavPopovers()
   isNarrow.value = window.innerWidth < 1280
 }
@@ -407,6 +435,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  cancelSidebarResize()
   window.removeEventListener('wb:memos-changed', loadMemoCategories)
   window.removeEventListener('focus', loadMemoCategories)
   window.removeEventListener('wb:todos-changed', loadTodoLists)
@@ -421,6 +450,8 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.layout{position:relative}.sidebar-resizer{position:absolute;left:calc(var(--sidebar-width) - 3px);top:0;bottom:0;width:6px;z-index:30;cursor:col-resize;touch-action:none;outline:none}.sidebar-resizer:hover,.sidebar-resizer:focus-visible,.resizing-sidebar .sidebar-resizer{background:var(--wb-primary);opacity:.55}.resizing-sidebar,.resizing-sidebar :deep(*){cursor:col-resize!important;user-select:none!important}
+
 .checkin-nav-row { display: flex; align-items: center; min-width: 0; }
 .checkin-nav-row.active { background: var(--wb-nav-active); border-radius: 5px; }
 .checkin-nav-row .collapsed-item { flex: 1; min-width: 0; padding-right: 4px; }

@@ -203,69 +203,16 @@
       </template>
     </el-dialog>
 
-    <!-- 服务设置 -->
-    <el-drawer v-model="settingsOpen" title="翻译服务设置" size="560px">
-      <el-alert
-        v-if="!credentialKeyReady"
-        type="warning"
-        :closable="false"
-        show-icon
-        title="系统还没配置加密主密钥（WB_ENCRYPTION_KEY）"
-        style="margin-bottom: 12px"
-      >
-        需要在服务器的 .env 里设置 WB_ENCRYPTION_KEY，重启后就能保存和使用翻译密钥。
-      </el-alert>
-
-      <div v-for="conn in connections" :key="conn.provider" class="conn-block">
-        <div class="conn-head">
-          <b>{{ conn.name }}</b>
-          <el-tag v-if="conn.enabled" size="small" type="success" effect="plain">已启用</el-tag>
-          <el-tag v-else size="small" type="info" effect="plain">已停用</el-tag>
-          <span v-if="conn.last_test_message" class="text-12" :class="conn.last_test_ok ? 'ok' : 'danger'">
-            {{ conn.last_test_message }}
-          </span>
-          <div class="spacer" />
-          <el-switch
-            :model-value="conn.enabled"
-            :disabled="!conn.configured"
-            @change="(value: boolean) => toggleProvider(conn, value)"
-          />
-        </div>
-
-        <div class="conn-fields">
-          <el-input
-            v-for="field in fieldsOf(conn.provider)"
-            :key="field.key"
-            v-model="configDraft[conn.provider][field.key]"
-            :placeholder="`${field.label}${conn.masked[field.key] ? '（已保存：' + conn.masked[field.key] + '）' : ''}`"
-            show-password
-            type="password"
-            style="margin-bottom: 6px"
-          />
-          <el-input
-            v-if="conn.provider === 'deepseek'"
-            v-model="modelDraft[conn.provider]"
-            placeholder="模型名，例如 deepseek-chat"
-            style="margin-bottom: 6px"
-          />
-          <div class="toolbar-actions">
-            <el-button size="small" type="primary" :disabled="!credentialKeyReady" :loading="savingProvider === conn.provider" @click="saveProvider(conn)">
-              保存
-            </el-button>
-            <el-button size="small" :disabled="!conn.configured || !credentialKeyReady" @click="testProvider(conn)">连接测试</el-button>
-            <el-button size="small" :disabled="!conn.configured || !credentialKeyReady" @click="clearProvider(conn)">清除密钥</el-button>
-          </div>
-          <div class="text-12 muted" style="margin-top: 4px">
-            {{ providerHint(conn) }}
-          </div>
-        </div>
-      </div>
+    <el-drawer v-model="settingsOpen" title="翻译服务设置" size="min(650px,100vw)" :before-close="closeServiceSettings">
+      <TranslationSettings v-if="settingsOpen" ref="serviceSettings" @updated="loadConnections" />
     </el-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import {onBeforeRouteLeave} from 'vue-router'
+import TranslationSettings from '@/components/TranslationSettings.vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   CopyDocument,
@@ -282,7 +229,6 @@ import {
 import { apiError, copyText, http } from '@/api/client'
 
 const connections = ref<any[]>([])
-const credentialKeyReady = ref(true)
 const languages = ref<{ code: string; name: string }[]>([])
 const provider = ref('baidu')
 const sourceLang = ref('auto')
@@ -291,9 +237,6 @@ const sourceText = ref('')
 const result = ref<any>(null)
 const translating = ref(false)
 const settingsOpen = ref(false)
-const configDraft = reactive<Record<string, Record<string, string>>>({ baidu: {}, youdao: {}, deepseek: {} })
-const modelDraft = reactive<Record<string, string>>({})
-const savingProvider = ref('')
 const savingConfig = ref(false)
 
 const favorites = ref<any[]>([])
@@ -391,28 +334,6 @@ const counterText = computed(() => {
   return `${used.value} / ${limitInfo.value.value} ${unit}`
 })
 
-const providerFields: Record<string, { key: string; label: string }[]> = {
-  baidu: [
-    { key: 'app_id', label: 'APP ID' },
-    { key: 'secret', label: '应用密钥' },
-  ],
-  youdao: [
-    { key: 'app_key', label: '应用 ID' },
-    { key: 'secret', label: '应用密钥' },
-  ],
-  deepseek: [{ key: 'api_key', label: 'API Key' }],
-}
-
-function fieldsOf(name: string) {
-  return providerFields[name] || []
-}
-
-function providerHint(conn: any) {
-  const limit = conn.limits
-  const unit = limit.unit === 'byte' ? '字节' : '字符'
-  return `一次最多 ${limit.value} ${unit}；超时：连接 10 秒 / 整体 60 秒。点「连接测试」是真的发一次请求，可能消耗额度。`
-}
-
 function langText(code: string) {
   if (code === 'auto') return '自动检测'
   return langNames.value[code] || code
@@ -426,12 +347,7 @@ async function loadConnections() {
   try {
     const { data } = await http.get('/translation-connections')
     connections.value = data.items
-    credentialKeyReady.value = data.credential_key_ready
     languages.value = data.languages || []
-    for (const conn of data.items) {
-      if (!configDraft[conn.provider]) configDraft[conn.provider] = {}
-      modelDraft[conn.provider] = conn.model || ''
-    }
     if (!connections.value.find((c: any) => c.provider === provider.value && c.enabled)) {
       const firstEnabled = connections.value.find((c: any) => c.enabled)
       if (firstEnabled) provider.value = firstEnabled.provider
@@ -642,60 +558,9 @@ async function copyDetail(which: 'source' | 'target') {
   ok ? ElMessage.success(which === 'source' ? '已复制原文' : '已复制译文') : ElMessage.warning('浏览器不让自动复制，请手动选中')
 }
 
-async function saveProvider(conn: any) {
-  const config: Record<string, string> = {}
-  for (const field of fieldsOf(conn.provider)) {
-    const value = (configDraft[conn.provider][field.key] || '').trim()
-    if (value) config[field.key] = value
-  }
-  if (!Object.keys(config).length && !conn.configured) {
-    ElMessage.warning('请填写该服务需要的密钥')
-    return
-  }
-  savingProvider.value = conn.provider
-  try {
-    await http.put(`/translation-connections/${conn.provider}`, {
-      config: Object.keys(config).length ? config : undefined,
-      model: conn.provider === 'deepseek' ? modelDraft[conn.provider] || 'deepseek-chat' : undefined,
-    })
-    configDraft[conn.provider] = {}
-    ElMessage.success('已保存')
-    await loadConnections()
-  } catch (error) {
-    ElMessage.error(apiError(error).message)
-  } finally {
-    savingProvider.value = ''
-  }
-}
-
-async function toggleProvider(conn: any, value: boolean) {
-  try {
-    await http.put(`/translation-connections/${conn.provider}`, { enabled: value })
-    await loadConnections()
-  } catch (error) {
-    ElMessage.error(apiError(error).message)
-  }
-}
-
-async function testProvider(conn: any) {
-  try {
-    const { data } = await http.post(`/translation-connections/${conn.provider}/test`)
-    data.ok ? ElMessage.success(data.message) : ElMessage.error(data.message)
-    await loadConnections()
-  } catch (error) {
-    ElMessage.error(apiError(error).message)
-  }
-}
-
-async function clearProvider(conn: any) {
-  try {
-    await http.delete(`/translation-connections/${conn.provider}`)
-    ElMessage.success('已清除密钥')
-    await loadConnections()
-  } catch (error) {
-    ElMessage.error(apiError(error).message)
-  }
-}
+const serviceSettings=ref<InstanceType<typeof TranslationSettings>>()
+onBeforeRouteLeave(async()=>!settingsOpen.value||!serviceSettings.value||await serviceSettings.value.confirmDiscard())
+async function closeServiceSettings(done:()=>void){if(await serviceSettings.value?.confirmDiscard())done()}
 
 onMounted(async () => {
   if (bottomRef.value) {

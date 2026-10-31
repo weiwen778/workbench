@@ -128,12 +128,12 @@ def create_record(table_id: int, payload: tables.RecordIn, _token=write_tables, 
 
 @router.get('/records/{record_id}')
 def get_record(record_id: int, _token=read_tables, db: Session = Depends(get_db)):
-    return tables.record_payload(_record(db, record_id))
+    return tables.record_payload(_record(db, record_id),db)
 
 
 @router.patch('/records/{record_id}')
 def update_record(record_id: int, payload: RecordPatch, _token=write_tables, db: Session = Depends(get_db)):
-    record = _record(db, record_id, lock=True)
+    record = _record(db, record_id, lock=False)
     _version(record, payload.version)
     merged = {**record.data, **payload.data}
     return tables.update_record(record_id, tables.RecordIn(data=merged, version=payload.version), db)

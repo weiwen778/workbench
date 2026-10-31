@@ -2,7 +2,6 @@
   <div class="page">
     <div class="page-toolbar dashboard-toolbar">
       <el-button v-if="current" text @click="router.push('/visualizations')">全部看板</el-button>
-      <div class="title-15">{{ current?.name || '数据可视化' }}</div>
       <div class="spacer" />
       <div class="toolbar-actions">
         <el-button v-if="current" :icon="Refresh" :loading="refreshing" @click="fetchData">刷新数据</el-button>
@@ -97,7 +96,7 @@
         </el-form-item>
         <el-form-item label="来源表格" required>
           <el-select v-model="form.table_id" filterable placeholder="选择要关联的表格" aria-label="来源表格" @change="chooseTable">
-            <el-option v-for="table in tables" :key="table.id" :label="table.name" :value="table.id" />
+            <el-option v-for="table in tables" :key="table.id" :label="table.name+(table.kind==='virtual'?' · 虚拟表':'')" :value="table.id" />
           </el-select>
           <div v-if="!tables.length" class="text-12 muted">还没有表格，<el-link type="primary" @click="editorOpen = false; router.push('/data')">先去创建或导入</el-link>。</div>
         </el-form-item>
@@ -154,7 +153,7 @@ import { apiError, http } from '@/api/client'
 import DashboardChart from '@/components/DashboardChart.vue'
 import { aggregationLabels, chartLabels, type DashboardBoard, type DashboardWidget, type DashboardResult } from '@/dashboard'
 
-interface TableInfo { id: number; name: string }
+interface TableInfo { id: number; name: string; kind?: string }
 interface FieldInfo { key: string; name: string; type: string }
 const router = useRouter()
 const route = useRoute()
@@ -181,7 +180,7 @@ function emptyWidget(): DashboardWidget {
     aggregation: 'count', value_field: null, group_field: null, date_field: null, date_bucket: 'day', sort: 'value_desc', limit: 10, decimals: 0, unit: '', wide: false }
 }
 const form = reactive<DashboardWidget>(emptyWidget())
-const numericFields = computed(() => fields.value.filter(f => f.type === 'number'))
+const numericFields = computed(() => fields.value.filter(f => ['number','formula','rollup'].includes(f.type)))
 const dimensionFields = computed(() => fields.value.filter(f => ['short_text', 'select', 'checkbox', 'date'].includes(f.type)))
 const dateFields = computed(() => fields.value.filter(f => f.type === 'date'))
 const selectedGroup = computed(() => fields.value.find(f => f.key === form.group_field))

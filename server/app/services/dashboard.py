@@ -65,7 +65,7 @@ def validate_source(db, widget: Widget, source_cache=None):
         table, fields = cached
     if widget.aggregation != 'count':
         field = fields.get(widget.value_field)
-        if field is None or field.type != 'number':
+        if field is None or field.type not in {'number','formula','rollup'}:
             raise ApiError('DASHBOARD_FIELD_INVALID', '统计列不存在或不再是数字列，请重新配置', 422)
     if widget.kind != 'metric':
         field = fields.get(widget.group_field)
@@ -162,7 +162,28 @@ def aggregate(db, widgets: list[Widget], dates: DateRange):
                 w.date_field if dates.start_date or dates.end_date else None,
             ) if key})
             source_filter = (DataRecord.table_id == table_id, DataRecord.deleted_at.is_(None))
-            if keys:
+            from .table_expressions import COMPUTED, MAX_ROWS as COMPUTED_LIMIT
+            all_fields=configs[0][2]
+            if configs[0][1].kind=='virtual':
+                from .virtual_tables import resolve_table
+                try:
+                    virtual=resolve_table(db,table_id)
+                    values=[r['data'] for r in virtual.rows]
+                    for w,_,_ in configs:
+                        used={w.value_field,w.group_field,w.date_field}-{None}
+                        if any(used.intersection(r['computed_errors']) for r in virtual.rows):failed[w.id]='虚拟表统计字段存在公式错误，请先修复规则'
+                except ApiError as exc:
+                    values=[];failed={w.id:exc.message for w,_,_ in configs}
+                rows=None
+            elif keys and any(all_fields[k].type in COMPUTED for k in keys):
+                from .table_calculated_query import project
+                raw_records=list(db.scalars(select(DataRecord).where(*source_filter).order_by(DataRecord.id).limit(COMPUTED_LIMIT+1)))
+                if len(raw_records)>COMPUTED_LIMIT:
+                    failed={w.id:'计算列统计最多 10000 行，请拆分数据后再统计' for w,_,_ in configs}
+                    rows,values=None,[]
+                else:
+                    rows=None;values=[r.data for r in project(db,raw_records,all_fields)]
+            elif keys:
                 # JSON columns are decoded once per row. Extracting each key
                 # separately made PostgreSQL repeatedly parse textual JSON and
                 # was slower on the representative multi-card dashboard.

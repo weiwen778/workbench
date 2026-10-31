@@ -241,6 +241,8 @@ class DataTable(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     note: Mapped[str | None] = mapped_column(String(2000))
+    kind: Mapped[str] = mapped_column(String(16), default="physical", server_default="physical")
+    virtual_config: Mapped[dict | None] = mapped_column(JSON)
     schema_version: Mapped[int] = mapped_column(Integer, default=1)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
@@ -258,13 +260,14 @@ class DataField(Base):
     required: Mapped[bool] = mapped_column(Boolean, default=False)
     default_value: Mapped[dict | list | str | int | float | bool | None] = mapped_column(JSON)
     options: Mapped[list | None] = mapped_column(JSON)
+    config: Mapped[dict | None] = mapped_column(JSON)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class DataRecord(Base):
     __tablename__ = "data_records"
-    __table_args__ = (Index("ix_records_table_live_id", "table_id", "deleted_at", "id"),)
+    __table_args__ = (Index("ix_records_table_live_id", "table_id", "deleted_at", "id"), {"sqlite_autoincrement": True})
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     table_id: Mapped[int] = mapped_column(ForeignKey("data_tables.id", ondelete="CASCADE"), index=True)
@@ -447,3 +450,56 @@ class TrashEntry(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     restored_at: Mapped[datetime | None] = mapped_column(DateTime)
     purged_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class TableView(Base, TimestampMixin):
+    __tablename__ = 'table_views'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    table_id: Mapped[int] = mapped_column(ForeignKey('data_tables.id', ondelete='CASCADE'), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    kind: Mapped[str] = mapped_column(String(20), default='grid')
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+
+class TableChange(Base):
+    __tablename__ = 'table_changes'
+    __table_args__ = (UniqueConstraint('table_id','user_id','request_id',name='uq_table_change_request'),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    table_id: Mapped[int] = mapped_column(ForeignKey('data_tables.id', ondelete='CASCADE'), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    request_id: Mapped[str] = mapped_column(String(64))
+    digest: Mapped[str] = mapped_column(String(64))
+    label: Mapped[str] = mapped_column(String(100))
+    schema_version: Mapped[int] = mapped_column(Integer)
+    changes: Mapped[list] = mapped_column(JSON)
+    reverts_id: Mapped[int | None] = mapped_column(Integer)
+    undone_by: Mapped[int | None] = mapped_column(Integer)
+    source: Mapped[str] = mapped_column(String(100), default='用户')
+    action: Mapped[str] = mapped_column(String(12), default='edit')
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+class TableWorkbook(Base, TimestampMixin):
+    __tablename__ = 'table_workbooks'
+    __table_args__ = (UniqueConstraint('table_id','user_id',name='uq_table_workbook_owner'),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    table_id: Mapped[int] = mapped_column(ForeignKey('data_tables.id', ondelete='CASCADE'), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class Bookmark(Base, TimestampMixin):
+    __tablename__ = "bookmarks"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    icon_url: Mapped[str] = mapped_column(String(2048), nullable=False, default="")
+    url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    category: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    description: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+
+
+class BookmarkCategory(Base):
+    __tablename__ = "bookmark_categories"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)

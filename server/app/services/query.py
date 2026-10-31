@@ -9,7 +9,7 @@ from sqlalchemy import Numeric, and_, cast, column, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..errors import ApiError
-from ..models import DataField, DataRecord
+from ..models import DataField, DataRecord, DataTable
 
 MAX_FILTERS = 10
 MAX_SORTS = 3
@@ -123,9 +123,17 @@ def build_order(db: Session, fields: dict[str, DataField], sorts: list[dict]) ->
 
 
 def paginate(db: Session, table_id: int, filters: list[dict], sorts: list[dict], page: int, page_size: int):
+    table=db.get(DataTable,table_id)
+    if table and table.kind=='virtual':
+        from .virtual_tables import paginate_virtual
+        return paginate_virtual(db,table_id,filters,sorts,page,page_size)
     fields = {
         f.key: f for f in db.scalars(select(DataField).where(DataField.table_id == table_id)).all()
     }
+    from .table_expressions import COMPUTED
+    if any(fields.get(item.get('field') or item.get('key')) is not None and fields[item.get('field') or item.get('key')].type in COMPUTED for item in [*filters,*sorts]):
+        from .table_calculated_query import calculated_paginate
+        return calculated_paginate(db,table_id,fields,filters,sorts,page,page_size)
     conditions = build_conditions(db, fields, filters)
     base = select(DataRecord).where(DataRecord.table_id == table_id, DataRecord.deleted_at.is_(None))
     if conditions:
@@ -133,4 +141,5 @@ def paginate(db: Session, table_id: int, filters: list[dict], sorts: list[dict],
     total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
     stmt = base.order_by(*build_order(db, fields, sorts)).offset((page - 1) * page_size).limit(page_size)
     rows = db.scalars(stmt).all()
-    return total, list(rows), fields
+    from .table_calculated_query import project
+    return total, project(db, list(rows), fields), fields

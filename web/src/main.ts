@@ -10,7 +10,9 @@ import './styles/motion.css'
 import App from './App.vue'
 import router from './router'
 
+import {initMotion} from '@/stores/motion'
+initMotion()
 const app = createApp(App)
 app.use(router)
 app.directive('loading', ElLoading.directive)
-app.mount('#app')
+router.isReady().then(() => app.mount('#app'))

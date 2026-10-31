@@ -3,7 +3,7 @@
     <!-- 列表 -->
     <div class="note-list-pane">
       <div class="list-toolbar">
-        <div class="note-category-heading"><strong class="ellipsis-1" :title="currentFolderLabel">{{ currentFolderLabel }}</strong>
+        <div v-if="selectedFolder" class="note-category-heading">
           <el-dropdown v-if="selectedFolder" trigger="click" @command="folderCommand">
             <el-button text size="small" :icon="MoreFilled" aria-label="文件夹操作" />
             <template #dropdown><el-dropdown-menu><el-dropdown-item command="rename">重命名文件夹</el-dropdown-item><el-dropdown-item command="delete">删除文件夹</el-dropdown-item></el-dropdown-menu></template>

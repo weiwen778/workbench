@@ -3,7 +3,6 @@
     <!-- 任务区 -->
     <div class="task-pane">
       <div class="page-toolbar">
-        <div class="title-15">{{ currentList?.name || '待办' }}</div>
         <el-dropdown v-if="currentList" trigger="click" @command="(command: string) => listCommand(command, currentList)">
           <el-button text :icon="MoreFilled" aria-label="清单操作" />
           <template #dropdown><el-dropdown-menu><el-dropdown-item command="rename">重命名清单</el-dropdown-item><el-dropdown-item command="delete">删除清单</el-dropdown-item></el-dropdown-menu></template>
