@@ -40,7 +40,7 @@
           :key="group.key"
           placement="right-start"
           trigger="click"
-          transition="none"
+          transition="wb-popover"
           :visible="openPopover === group.key"
           @update:visible="(visible: boolean) => updateNavPopover(group.key, visible)"
           :width="210"
@@ -145,7 +145,9 @@
         <span v-if="collapsed || isNarrow" class="text-12 muted">{{ session.user?.username }}</span>
       </div>
       <div class="wb-content" :class="{ scroll: scrollable }">
-        <router-view :key="route.fullPath" />
+        <div :key="route.path" class="wb-route-frame">
+          <router-view :key="route.fullPath" />
+        </div>
       </div>
     </div>
 

@@ -1,5 +1,5 @@
 <template>
-  <div class="todos-layout">
+  <div ref="todoRoot" class="todos-layout">
     <!-- 任务区 -->
     <div class="task-pane">
       <div class="page-toolbar">
@@ -58,7 +58,8 @@
       <div class="scroll-area" v-loading="loading">
         <div v-if="!currentList" class="empty-hint"><div>{{ missingList ? '清单不存在或已删除，请从左侧选择其他清单' : '从左侧选择清单，或新建一个清单开始记录' }}</div><el-button style="margin-top: 12px" @click="createList">新建清单</el-button></div>
         <template v-else>
-          <div v-for="(item, index) in pending" :key="item.id" class="task-block">
+          <TransitionGroup name="wb-task" tag="div" class="task-list">
+          <div v-for="(item, index) in pending" :key="item.id" class="task-block" :class="{ 'is-completing': completingIds.has(item.id) }" :aria-busy="togglingIds.has(item.id)">
             <div class="task-row" :class="{ overdue: item.overdue }">
               <el-tooltip
                 :disabled="item.can_toggle"
@@ -67,8 +68,10 @@
               >
                 <span>
                   <el-checkbox
-                    :model-value="item.completed"
-                    :disabled="!item.can_toggle"
+                    :key="checkboxVersions[item.id] || 0"
+                    :data-todo-id="item.id"
+                    :model-value="item.completed || completingIds.has(item.id)"
+                    :disabled="!item.can_toggle || togglingIds.has(item.id)"
                     size="large"
                     @change="toggle(item)"
                   />
@@ -77,7 +80,7 @@
 
               <div class="task-main">
                 <div class="task-title">
-                  <span>{{ item.title }}</span>
+                  <span class="todo-label">{{ item.title }}</span>
                   <span v-if="item.subtask_total" class="text-12 muted">
                     子任务 {{ item.subtask_done }}/{{ item.subtask_total }}
                   </span>
@@ -93,9 +96,9 @@
 
                 <!-- 子任务 -->
                 <div v-if="item.children.length || subOpen[item.id]" class="subtasks">
-                  <div v-for="child in item.children" :key="child.id" class="subtask-row">
-                    <el-checkbox :model-value="child.completed" size="small" @change="toggleChild(child)" />
-                    <span :class="{ done: child.completed }">{{ child.title }}</span>
+                  <div v-for="child in item.children" :key="child.id" class="subtask-row" :class="{ 'is-completing': completingIds.has(child.id) }">
+                    <el-checkbox :key="checkboxVersions[child.id] || 0" :data-todo-id="child.id" :model-value="child.completed || completingIds.has(child.id)" :disabled="togglingIds.has(child.id)" size="small" @change="toggleChild(child)" />
+                    <span class="todo-label" :class="{ done: child.completed }">{{ child.title }}</span>
                     <div class="spacer" />
                     <el-button text size="small" :icon="Delete" title="删除子任务" @click="removeTodo(child)" />
                   </div>
@@ -179,6 +182,8 @@
             </div>
           </div>
 
+          </TransitionGroup>
+
           <div v-if="!pending.length && !completed.length" class="empty-hint">
             这个清单还没有待办，在上面输入标题回车即可添加
           </div>
@@ -192,8 +197,10 @@
             <div v-show="completedOpen">
               <div v-for="item in completed" :key="item.id" class="task-row completed">
                 <el-checkbox
+                  :key="checkboxVersions[item.id] || 0"
+                  :data-todo-id="item.id"
                   :model-value="true"
-                  :disabled="!item.can_toggle"
+                  :disabled="!item.can_toggle || togglingIds.has(item.id)"
                   size="large"
                   @change="toggle(item)"
                 />
@@ -203,9 +210,9 @@
                     <span v-if="item.completed_at">完成于 {{ formatTime(item.completed_at) }}</span>
                   </div>
                   <div v-if="item.children.length" class="subtasks">
-                    <div v-for="child in item.children" :key="child.id" class="subtask-row">
-                      <el-checkbox :model-value="child.completed" size="small" @change="toggleChild(child)" />
-                      <span :class="{ done: child.completed }">{{ child.title }}</span>
+                    <div v-for="child in item.children" :key="child.id" class="subtask-row" :class="{ 'is-completing': completingIds.has(child.id) }">
+                      <el-checkbox :key="checkboxVersions[child.id] || 0" :data-todo-id="child.id" :model-value="child.completed || completingIds.has(child.id)" :disabled="togglingIds.has(child.id)" size="small" @change="toggleChild(child)" />
+                      <span class="todo-label" :class="{ done: child.completed }">{{ child.title }}</span>
                     </div>
                   </div>
                 </div>
@@ -222,7 +229,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -250,6 +257,25 @@ const sortMode = ref<'auto' | 'manual'>('auto')
 const loading = ref(false)
 const adding = ref(false)
 const completedOpen = ref(true)
+const todoRoot = ref<HTMLElement>()
+const checkboxVersions = reactive<Record<number, number>>({})
+const togglingIds = reactive(new Set<number>())
+const completingIds = reactive(new Set<number>())
+// Feedback follows a successful write. Pending timers are cancelled on navigation.
+let viewActive = true
+const completionTimers = new Map<number, () => void>()
+function completionFeedback() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return Promise.resolve()
+  return new Promise<void>(resolve => {
+    const finish = () => { window.clearTimeout(timer); completionTimers.delete(timer); resolve() }
+    const timer = window.setTimeout(finish, 180)
+    completionTimers.set(timer, finish)
+  })
+}
+onUnmounted(() => {
+  viewActive = false
+  for (const finish of completionTimers.values()) finish()
+})
 
 const newTitle = ref('')
 const newNote = ref('')
@@ -393,28 +419,38 @@ async function addSubtask(parent: any) {
 }
 
 async function toggle(item: any) {
-  try {
-    if (item.completed) {
-      await http.post(`/todos/${item.id}/cancel`)
-    } else {
-      await http.post(`/todos/${item.id}/complete`)
-    }
-    await load()
-  } catch (error) {
-    ElMessage.error(apiError(error).message)
-  }
+  if (!item.can_toggle || togglingIds.has(item.id)) return
+  await toggleCompletion(item)
 }
 
 async function toggleChild(child: any) {
+  if (togglingIds.has(child.id)) return
+  await toggleCompletion(child)
+}
+
+async function toggleCompletion(item: any) {
+  togglingIds.add(item.id)
   try {
-    if (child.completed) {
-      await http.post(`/todos/${child.id}/cancel`)
-    } else {
-      await http.post(`/todos/${child.id}/complete`)
+    await http.post(`/todos/${item.id}/${item.completed ? 'cancel' : 'complete'}`)
+    if (!viewActive) return
+    if (!item.completed) {
+      completingIds.add(item.id)
+      await completionFeedback()
     }
-    await load()
+    if (viewActive) await load()
   } catch (error) {
-    ElMessage.error(apiError(error).message)
+    if (viewActive) {
+      // Native checkbox input may have changed even while the prop stayed false.
+      // Remount only the failed control to restore its confirmed value and focus.
+      const restoreFocus = document.activeElement?.closest(`[data-todo-id="${item.id}"]`)
+      checkboxVersions[item.id] = (checkboxVersions[item.id] || 0) + 1
+      await nextTick()
+      if (restoreFocus) todoRoot.value?.querySelector<HTMLInputElement>(`[data-todo-id="${item.id}"] input`)?.focus({ preventScroll: true })
+      ElMessage.error(apiError(error).message)
+    }
+  } finally {
+    togglingIds.delete(item.id)
+    completingIds.delete(item.id)
   }
 }
 

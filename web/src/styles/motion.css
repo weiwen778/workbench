@@ -1,0 +1,109 @@
+/* Shared motion: keep editing, tables and image canvases free of continuous effects. */
+:root {
+  --wb-motion-fast: 120ms;
+  --wb-motion-duration: 160ms;
+  --wb-motion-dialog: 180ms;
+  --wb-motion-ease: cubic-bezier(.2, .7, .3, 1);
+  --el-transition-duration: var(--wb-motion-duration);
+  --el-transition-duration-fast: var(--wb-motion-fast);
+}
+
+.wb-route-frame {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  animation: wb-page-in var(--wb-motion-duration) var(--wb-motion-ease);
+}
+@keyframes wb-page-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Fractional rows adapt to any number of children, without max-height guesses. */
+.wb-nav-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition: grid-template-rows var(--wb-motion-duration) var(--wb-motion-ease),
+    opacity var(--wb-motion-fast) ease,
+    visibility 0s var(--wb-motion-duration);
+}
+.wb-nav-collapse.open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+.wb-nav-collapse > .wb-nav-sub { min-height: 0; overflow: hidden; }
+
+:is(.el-button, .wb-nav-item, .icon-btn) {
+  transition: background-color var(--wb-motion-fast) ease,
+    border-color var(--wb-motion-fast) ease, color var(--wb-motion-fast) ease,
+    box-shadow var(--wb-motion-fast) ease, transform var(--wb-motion-fast) ease;
+}
+:is(.el-button, .icon-btn):active:not(:disabled):not(.is-disabled):not(.is-loading) {
+  transform: translateY(1px);
+}
+
+/* Popper owns positioning transforms: only animate opacity on its outer node. */
+.wb-popover-enter-active { transition: opacity var(--wb-motion-duration) ease; }
+.wb-popover-leave-active { transition: opacity var(--wb-motion-fast) ease; }
+.wb-popover-enter-from, .wb-popover-leave-to { opacity: 0; }
+.el-dropdown-menu { animation: wb-menu-in var(--wb-motion-duration) var(--wb-motion-ease); }
+@keyframes wb-menu-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Animate the panel rather than its fixed full-screen positioning wrapper. */
+.dialog-fade-enter-active .el-overlay-dialog,
+.dialog-fade-leave-active .el-overlay-dialog,
+.fade-in-linear-enter-active .el-overlay-message-box,
+.fade-in-linear-leave-active .el-overlay-message-box { animation: none; }
+.dialog-fade-enter-active .el-dialog,
+.fade-in-linear-enter-active .el-message-box {
+  animation: wb-dialog-in var(--wb-motion-dialog) var(--wb-motion-ease);
+}
+.dialog-fade-leave-active .el-dialog,
+.fade-in-linear-leave-active .el-message-box {
+  animation: wb-dialog-in var(--wb-motion-fast) ease reverse;
+}
+@keyframes wb-dialog-in {
+  from { opacity: 0; transform: translateY(4px) scale(.99); }
+  to { opacity: 1; transform: none; }
+}
+
+.task-list { position: relative; display: flow-root; }
+.wb-task-enter-active, .wb-task-leave-active {
+  transition: opacity var(--wb-motion-duration) ease, transform var(--wb-motion-duration) var(--wb-motion-ease);
+}
+.wb-task-enter-from, .wb-task-leave-to { opacity: 0; transform: translateY(-4px); }
+.wb-task-leave-active { position: absolute; left: 0; right: 0; pointer-events: none; }
+.wb-task-move { transition: transform var(--wb-motion-duration) var(--wb-motion-ease); }
+.todo-label {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-position: 0 55%;
+  background-repeat: no-repeat;
+  background-size: 0% 1px;
+  transition: background-size var(--wb-motion-duration) ease, color var(--wb-motion-duration) ease;
+}
+.is-completing > .task-row > .task-main > .task-title > .todo-label,
+.subtask-row.is-completing > .todo-label {
+  color: var(--wb-text-tertiary);
+  background-size: 100% 1px;
+}
+
+/* Keep progress indicators running; disable decorative motion only. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --wb-motion-fast: 0s;
+    --wb-motion-duration: 0s;
+    --wb-motion-dialog: 0s;
+  }
+  .wb-route-frame, .el-dropdown-menu,
+  .dialog-fade-enter-active .el-dialog, .dialog-fade-leave-active .el-dialog,
+  .fade-in-linear-enter-active .el-message-box, .fade-in-linear-leave-active .el-message-box { animation: none; }
+  .wb-task-enter-from, .wb-task-leave-to { transform: none; }
+  :is(.el-button, .icon-btn):active:not(:disabled):not(.is-disabled):not(.is-loading) { transform: none; }
+}
