@@ -1,15 +1,15 @@
 <template>
   <div class="page">
-    <div class="page-toolbar">
-      <el-tooltip v-if="table?.note" :content="table.note" placement="bottom">
+    <Teleport :to="toolbarTarget || 'body'" :disabled="!toolbarTarget">
+    <div v-show="toolbarActive !== false" class="page-toolbar" :class="{compact:embedded}">
+      <el-tooltip v-if="table?.note && !embedded" :content="table.note" placement="bottom">
         <el-icon class="muted"><InfoFilled /></el-icon>
       </el-tooltip>
-      <span class="text-12 muted">共 {{ total }} 行</span>
+      <span v-if="!embedded" class="text-12 muted">共 {{ total }} 行</span>
       <div class="spacer" />
       <div class="toolbar-actions">
         <slot name="header-actions" />
-        <el-button text :icon="DashboardIcon" @click="router.push({ path: '/visualizations', query: { table: tableId } })">可视化</el-button>
-        <el-button text :icon="Refresh" @click="reload">刷新</el-button>
+        <el-button text :type="filtersOpen?'primary':undefined" @click="filtersOpen=!filtersOpen">筛选{{ filters.length?`(${filters.length})`:'' }}</el-button>
         <el-popover placement="bottom-end" :width="360" trigger="click">
           <template #reference>
             <el-button text :icon="Sort">
@@ -33,15 +33,15 @@
             <el-button size="small" type="primary" @click="applySorts">应用</el-button>
           </div>
         </el-popover>
-        <el-button text :icon="Setting" @click="fieldsOpen = true">列设置</el-button>
-        <el-button text :icon="Download" @click="exportOpen = true">导出</el-button>
-        <el-button text :icon="Upload" @click="importOpen = true">批量导入</el-button>
+        <el-dropdown trigger="click" @command="tableCommand"><el-button text>更多操作 ⌄</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="refresh">刷新</el-dropdown-item><el-dropdown-item command="fields">列设置</el-dropdown-item><el-dropdown-item command="export" divided>导出</el-dropdown-item><el-dropdown-item command="import">批量导入</el-dropdown-item><el-dropdown-item command="visualize" divided>用于数据可视化</el-dropdown-item></el-dropdown-menu></template></el-dropdown>
         <el-button class="btn-tonal" :icon="Plus" :disabled="!fields.length" @click="openCreate">添加一行</el-button>
       </div>
     </div>
 
+    </Teleport>
+
     <!-- 筛选条 -->
-    <div class="filter-bar">
+    <div v-if="!embedded || filtersOpen" class="filter-bar">
       <div v-for="(filter, index) in filters" :key="index" class="filter-item">
         <el-select v-model="filter.field" placeholder="列" style="width: 130px" @change="onFilterFieldChange(filter)">
           <el-option v-for="f in sortableFields" :key="f.key" :label="f.name" :value="f.key" />
@@ -113,6 +113,7 @@
             v-loading="loading"
             size="small"
             height="100%"
+            ref="elementTable"
             style="width: 100%"
             @selection-change="onSelectionChange"
             @row-click="openEdit"
@@ -210,7 +211,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Close, DashboardIcon, Download, InfoFilled, Plus, Refresh, Setting, Sort, Upload } from '@/icons'
@@ -220,6 +221,10 @@ import AttachmentPreview from '@/components/AttachmentPreview.vue'
 import FieldManager from '@/components/FieldManager.vue'
 import ImportWizard from '@/components/ImportWizard.vue'
 
+const props=defineProps<{embedded?:boolean;toolbarTarget?:string;toolbarActive?:boolean}>()
+const filtersOpen=ref(false),elementTable=ref<any>()
+watch(()=>props.toolbarActive,async value=>{if(value){await nextTick();elementTable.value?.doLayout()}})
+function tableCommand(command:string){if(command==='refresh')void reload();else if(command==='fields')fieldsOpen.value=true;else if(command==='export')exportOpen.value=true;else if(command==='import')importOpen.value=true;else if(command==='visualize')router.push({path:'/visualizations',query:{table:tableId}})}
 const route = useRoute()
 const router = useRouter()
 const previewOpen = ref(false)
@@ -542,4 +547,8 @@ onMounted(async () => {
   flex: 1;
   min-height: 0;
 }
+</style>
+
+<style scoped>
+.page-toolbar.compact{border:0;padding:0;min-height:0;height:32px;flex-wrap:nowrap;flex-shrink:0;gap:8px}.compact .toolbar-actions{flex-wrap:nowrap;gap:6px}.compact :deep(.el-button){margin-left:0;padding:5px 8px;font-size:12px;height:28px}.compact>.spacer{display:none}.filter-bar{border-radius:0;border-width:0 0 1px;min-height:0;padding:8px 12px}.page>.page-body{padding:0;overflow:hidden;display:flex;flex-direction:column;min-height:0}.pager{padding:6px 12px;border-top:1px solid var(--wb-border);flex-shrink:0;min-height:36px;box-sizing:border-box}.table-scroll{overflow:hidden}@media(max-width:700px){.pager{padding:5px 8px;overflow-x:auto}.pager :deep(.el-pagination){flex-shrink:0}.compact .toolbar-actions{gap:2px}}
 </style>
