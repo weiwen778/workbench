@@ -9,7 +9,7 @@
     <el-dropdown trigger="click" @command="moreCommand"><el-button text size="small" :disabled="loading||!ready">更多 ⌄</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="save">立即保存 · Ctrl / ⌘ + S</el-dropdown-item><el-dropdown-item command="save-as">另存为… · F12</el-dropdown-item><el-dropdown-item command="print">打印当前工作表 · Ctrl / ⌘ + P</el-dropdown-item><el-dropdown-item command="find" divided>查找 · Ctrl / ⌘ + F</el-dropdown-item><el-dropdown-item command="replace">替换 · Ctrl / ⌘ + H</el-dropdown-item><el-dropdown-item command="link">插入超链接 · Ctrl / ⌘ + K</el-dropdown-item><el-dropdown-item command="reload" divided>重新载入</el-dropdown-item><el-dropdown-item command="close">关闭工作簿</el-dropdown-item><el-dropdown-item command="source" divided>复制原表快照</el-dropdown-item><el-dropdown-item command="help" divided>使用说明</el-dropdown-item></el-dropdown-menu></template></el-dropdown>
    </div>
   </Teleport>
-  <div v-if="loading" class="empty-hint">正在打开电子表格…</div><div ref="host" class="univer-host" :class="{ready:!loading}" />
+  <div v-if="loading" class="empty-hint">正在打开电子表格…</div><div ref="host" tabindex="-1" class="univer-host" :class="{ready:!loading}" />
   <input ref="excelInput" type="file" accept=".xlsx" hidden @change="importExcel"/>
   <input ref="jsonInput" type="file" accept=".json,application/json" hidden @change="importJSON"/>
   <el-dialog v-model="recoveryOpen" title="发现本机未保存的工作簿" width="480px" :close-on-click-modal="false" :close-on-press-escape="false" :show-close="false"><p>上次未成功保存的内容仍在本机。请选择要继续编辑的版本，服务器内容暂不修改。</p><template #footer><el-button @click="resolveRecovery(false)">使用服务器版本</el-button><el-button type="primary" @click="resolveRecovery(true)">恢复本机内容</el-button></template></el-dialog>
@@ -18,9 +18,10 @@
 <script setup lang="ts">
 import { randomId } from '@/utils/random-id'
 
-import {onMounted,onUnmounted,ref,watch} from 'vue'
+import {nextTick,onMounted,onUnmounted,ref,watch} from 'vue'
 import Decimal from 'decimal.js'
 import {ElMessage,ElMessageBox} from 'element-plus'
+import {IUniverInstanceService} from '@univerjs/core'
 import {createUniver,LocaleType,mergeLocales} from '@univerjs/presets'
 import {UniverSheetsCorePreset} from '@univerjs/preset-sheets-core'
 import CoreLocale from '@univerjs/preset-sheets-core/locales/zh-CN'
@@ -32,7 +33,7 @@ import {UniverSheetsConditionalFormattingPreset} from '@univerjs/preset-sheets-c
 import ConditionalLocale from '@univerjs/preset-sheets-conditional-formatting/locales/zh-CN'
 import {UniverSheetsDataValidationPreset} from '@univerjs/preset-sheets-data-validation'
 import ValidationLocale from '@univerjs/preset-sheets-data-validation/locales/zh-CN'
-import {UniverSheetsFindReplacePreset} from '@univerjs/preset-sheets-find-replace'
+import {SheetsFindReplaceController,UniverSheetsFindReplacePreset} from '@univerjs/preset-sheets-find-replace'
 import FindLocale from '@univerjs/preset-sheets-find-replace/locales/zh-CN'
 import {OpenFindDialogOperation,OpenReplaceDialogOperation} from '@univerjs/find-replace'
 import {UniverSheetsHyperLinkPreset,InsertHyperLinkOperation} from '@univerjs/preset-sheets-hyper-link'
@@ -59,7 +60,13 @@ function importCommand(command:string){if(command==='excel')excelInput.value?.cl
 function exportCommand(command:string){if(command==='excel')void exportExcel();else if(command==='csv')exportCSV();else exportJSON()}
 function moreCommand(command:string){if(command==='save')void commitAndSave();else if(command==='save-as')void saveAsWorkbook();else if(command==='print')void printWorkbook();else if(['find','replace','link'].includes(command))void editorCommand(command);else if(command==='close')void closeWorkbook();else if(command==='reload')void reloadServer();else if(command==='source')void copySource();else void ElMessageBox.alert('Ctrl / ⌘ + S 保存；Ctrl + Z / Y 撤销和重做；Ctrl + A / C / X / V 使用编辑器原生选择和剪贴板；Ctrl / ⌘ + F / H / K 查找、替换和超链接。F12 另存为 Excel，Ctrl / ⌘ + P 打印当前工作表。浏览器可能保留 F12、Ctrl + W 等按键，届时使用“更多”菜单中的另存为或关闭工作簿。','工作簿快捷键',{confirmButtonText:'知道了'})}
 async function finishCellEdit(){return !workbook?.isCellEditing?.()||await workbook.endEditingAsync(true)}
-async function editorCommand(command:string){try{if(!await finishCellEdit())return;await api.executeCommand(command==='find'?OpenFindDialogOperation.id:command==='replace'?OpenReplaceDialogOperation.id:InsertHyperLinkOperation.id)}catch(e:any){ElMessage.error(e.message||'操作失败')}}
+function focusWorkbook(){if(univer&&workbook&&props.toolbarActive!==false){host.value?.focus({preventScroll:true});univer.__getInjector().get(IUniverInstanceService).focusUnit(workbook.getId())}}
+async function editorCommand(command:string){try{if(!await finishCellEdit())return;
+ // The preset normally creates its provider at the delayed Steady lifecycle.
+ // Initialize that singleton on demand so the very first shortcut also works.
+ if(command==='find'||command==='replace')univer.__getInjector().get(SheetsFindReplaceController)
+ focusWorkbook();await api.executeCommand(command==='find'?OpenFindDialogOperation.id:command==='replace'?OpenReplaceDialogOperation.id:InsertHyperLinkOperation.id)
+ }catch(e:any){ElMessage.error(e.message||'操作失败')}}
 async function closeWorkbook(){if(await commitAndSave())emit('close')}
 async function saveAsWorkbook(){try{if(!await finishCellEdit())return;const {value}=await ElMessageBox.prompt('下载为独立的 Excel 文件，工作台内容保留。','另存为',{inputValue:props.name,inputPlaceholder:'文件名',inputValidator:(v:string)=>!!v.trim()&&!/[\\/:*?"<>|\x00-\x1f]/.test(v)||'请输入有效的文件名',confirmButtonText:'下载 Excel',cancelButtonText:'取消'});await exportExcel(value.trim().replace(/\.xlsx$/i,'')+'.xlsx')}catch(e:any){if(e!=='cancel'&&e!=='close')ElMessage.error(e.message||'另存为失败')}}
 let printFrame:HTMLIFrameElement|null=null
@@ -93,7 +100,7 @@ async function save():Promise<boolean>{window.clearTimeout(timer);if(!workbook)r
  job=(async()=>{try{try{await recoveryStore({snapshot:data,version,savedAt:Date.now()})}catch{}const response=await http.put(`/tables/${props.tableId}/workbook`,{version,snapshot:data});version=response.data.version;lastHash=hash;failure.value='';if(revision===at){dirty.value=false;emit('dirty',false);try{await recoveryStore(undefined,true)}catch{}}return true}catch(e:any){failure.value=apiError(e).message;dirty.value=true;emit('dirty',true);return false}finally{saving.value=false;job=null}})()
  const result=await job;if(result&&revision!==at&&active)return save();return result
 }
-async function replace(data:any){listener?.dispose();if(workbook)api.disposeUnit(workbook.getId());workbook=api.createWorkbook(data);ready.value=true;listener=workbook.onCommandExecuted(()=>changed())}
+async function replace(data:any){listener?.dispose();if(workbook)api.disposeUnit(workbook.getId());workbook=api.createWorkbook(data);ready.value=true;focusWorkbook();listener=workbook.onCommandExecuted(()=>changed())}
 async function copySource(){try{await ElMessageBox.confirm('用原表当前数据替换工作簿？工作簿内已有内容将被替换，原表保持不变。','复制原表快照',{confirmButtonText:'替换',cancelButtonText:'取消'});const data=seed();await replace(data);changed();await save()}catch(e:any){if(e!=='cancel'&&e!=='close')ElMessage.error(e.message||apiError(e).message)}}
 function exportJSON(){download(JSON.stringify(snapshot()),`${props.name}.workbook.json`)}
 function exportCSV(){if(!workbook)return;const s=snapshot(),sheet=s.sheets[s.sheetOrder[0]],data=sheet.cellData||{},ri=Object.keys(data).map(Number);const maxRow=Math.max(0,...ri),maxCol=Math.max(0,...Object.values(data).flatMap((r:any)=>Object.keys(r).map(Number)));if((maxRow+1)*(maxCol+1)>1000000){ElMessage.error('CSV 导出范围超过 100 万格，请缩小数据范围或导出 Excel / 备份');return}const values=Array.from({length:maxRow+1},(_,r)=>Array.from({length:maxCol+1},(_,c)=>data[r]?.[c]?.v??''));const csv=values.map(row=>row.map(csvCell).join(',')).join('\r\n');download('\ufeff'+csv,`${props.name}.csv`,'text/csv;charset=utf-8')}
@@ -110,9 +117,10 @@ onMounted(async()=>{window.addEventListener('keydown',onWorkbookShortcut,true);t
  const instance=createUniver({locale:LocaleType.ZH_CN,locales:{[LocaleType.ZH_CN]:mergeLocales(CoreLocale,FilterLocale,SortLocale,ConditionalLocale,ValidationLocale,FindLocale,HyperLinkLocale)},presets:[UniverSheetsCorePreset({container:host.value!,disableAutoFocus:true}),UniverSheetsFilterPreset(),UniverSheetsSortPreset(),UniverSheetsConditionalFormattingPreset(),UniverSheetsDataValidationPreset(),UniverSheetsFindReplacePreset(),UniverSheetsHyperLinkPreset()]})
  univer=instance.univer;api=instance.univerAPI;api.toggleDarkMode(session.theme==='dark')
  if(!initial){try{initial=seed()}catch{const id='sheet1';initial={id:randomId(),name:props.name,sheetOrder:[id],sheets:{[id]:{id,name:'Sheet1',rowCount:1000,columnCount:26,cellData:{}}}}}}
- await replace(initial);lastHash=response.data.snapshot?JSON.stringify(response.data.snapshot):'';loading.value=false
+ await replace(initial);lastHash=response.data.snapshot?JSON.stringify(response.data.snapshot):'';loading.value=false;await nextTick();focusWorkbook()
  if(JSON.stringify(initial)!==lastHash)changed();window.addEventListener('beforeunload',beforeUnload)
  }catch(e:any){failure.value=e.message||apiError(e).message;loading.value=false}})
+watch(()=>props.toolbarActive,async value=>{if(value!==false){await nextTick();focusWorkbook()}else if(univer&&workbook){const units=univer.__getInjector().get(IUniverInstanceService);if(units.getFocusedUnit()?.getUnitId()===workbook.getId())units.focusUnit(null)}})
 watch(()=>session.theme,value=>api?.toggleDarkMode(value==='dark'))
 onUnmounted(()=>{printFrame?.remove();printFrame=null;window.removeEventListener('keydown',onWorkbookShortcut,true);active=false;window.clearTimeout(timer);window.removeEventListener('beforeunload',beforeUnload);listener?.dispose();univer?.dispose();recoveryResolve?.(null)})
 defineExpose({flush:commitAndSave,dirty,snapshot})
