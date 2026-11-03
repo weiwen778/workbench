@@ -120,7 +120,7 @@ docker compose up -d --build
 
 同机试运行时可设置 `WB_BIND_ADDRESS=127.0.0.1`、`WB_HTTP_PORT=18744`、`WB_API_PORT=18081`、`WB_DB_PORT=55434`，避开已有服务。正式入口使用 18743；只开放 Web 端口。
 
-国内服务器下载 Python 依赖较慢时，可运行 `docker compose build --build-arg PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple api`，随后再启动 Compose。
+国内服务器下载 Python 依赖较慢时，可运行 `docker compose build --build-arg APT_MIRROR=mirrors.aliyun.com --build-arg PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple api`，随后再启动 Compose。
 
 备份：`bash deploy/backup.sh /私有备份目录`（数据库 + 附件 + 配置）。备份期间短暂停止 API 保持数据和附件一致，退出时自动恢复运行。恢复：`bash deploy/restore.sh /完整备份目录`，按提示输入数据库名；恢复会替换当前数据库及附件，应先在隔离环境演练。主密钥必须与备份保持一致。备份包含敏感配置，禁止上传到 Git。
 
