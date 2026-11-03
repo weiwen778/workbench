@@ -219,6 +219,7 @@ class TodoList(Base, TimestampMixin):
 
 class Todo(Base, TimestampMixin):
     __tablename__ = "todos"
+    __table_args__=(Index("ix_todos_list_parent_completed","list_id","parent_id","completed_at","sort_index","id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     list_id: Mapped[int] = mapped_column(ForeignKey("todo_lists.id", ondelete="CASCADE"), index=True)
@@ -342,7 +343,7 @@ class NoteTag(Base):
 
 class Note(Base, TimestampMixin):
     __tablename__ = "notes"
-    __table_args__ = (Index("ix_notes_folder_live_updated", "folder_id", "deleted_at", "updated_at"),)
+    __table_args__ = (Index("ix_notes_folder_live_updated", "folder_id", "deleted_at", "updated_at"),Index("ix_notes_live_updated","deleted_at","updated_at","id"))
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     folder_id: Mapped[int | None] = mapped_column(ForeignKey("note_folders.id", ondelete="SET NULL"))
@@ -375,8 +376,16 @@ class NoteRevision(Base):
 # ---------------------------------------------------------------- 便签
 
 
+class MemoCategory(Base):
+    __tablename__ = "memo_categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+
+
 class Memo(Base, TimestampMixin):
     __tablename__ = "memos"
+    __table_args__=(Index("ix_memos_live_updated","deleted_at","updated_at","id"),Index("ix_memos_category_live_updated","category","deleted_at","updated_at","id"))
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     title: Mapped[str] = mapped_column(String(200), default="")
@@ -503,3 +512,58 @@ class BookmarkCategory(Base):
     __tablename__ = "bookmark_categories"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
+
+
+class AgentChange(Base, TimestampMixin):
+    __tablename__ = "agent_changes"
+    __table_args__ = (UniqueConstraint('token_id', 'request_key', name='uq_agent_change_request'),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    token_id: Mapped[int] = mapped_column(ForeignKey('agent_tokens.id', ondelete='CASCADE'), index=True)
+    request_key: Mapped[str | None] = mapped_column(String(128))
+    title: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(16), default='pending', index=True)
+    operations_cipher: Mapped[str] = mapped_column(Text)
+    payload_hash: Mapped[str] = mapped_column(String(64))
+    fingerprints: Mapped[dict] = mapped_column(JSON, default=dict)
+    preview: Mapped[list] = mapped_column(JSON, default=list)
+    results: Mapped[list | None] = mapped_column(JSON)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    reviewed_by: Mapped[int | None] = mapped_column(ForeignKey('users.id'))
+    error: Mapped[str | None] = mapped_column(String(1000))
+
+
+class BackgroundJob(Base, TimestampMixin):
+    __tablename__ = 'background_jobs'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
+    kind: Mapped[str] = mapped_column(String(24))
+    title: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(24),default='queued',index=True)
+    progress: Mapped[int] = mapped_column(Integer,default=0)
+    processed: Mapped[int] = mapped_column(Integer,default=0)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean,default=False)
+    request_key: Mapped[str | None] = mapped_column(String(128))
+    payload: Mapped[dict] = mapped_column(JSON,default=dict)
+    result: Mapped[dict | None] = mapped_column(JSON)
+    error: Mapped[str | None] = mapped_column(String(1000))
+    __table_args__ = (UniqueConstraint('user_id','request_key',name='uq_job_request'),)
+
+
+class OperationLog(Base):
+    __tablename__ = 'operation_logs'
+    id: Mapped[int] = mapped_column(Integer,primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id'),index=True)
+    actor: Mapped[str] = mapped_column(String(120))
+    method: Mapped[str] = mapped_column(String(16))
+    path: Mapped[str] = mapped_column(String(1000))
+    status: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime,default=utcnow,index=True)
+
+class AgentReviewNote(Base):
+    __tablename__='agent_review_notes'
+    change_id: Mapped[int] = mapped_column(ForeignKey('agent_changes.id',ondelete='CASCADE'),primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id'))
+    note: Mapped[str] = mapped_column(String(1000))
+    created_at: Mapped[datetime] = mapped_column(DateTime,default=utcnow)

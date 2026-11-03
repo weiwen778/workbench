@@ -6,8 +6,8 @@
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <div class="toolbar-actions" style="margin-bottom: 10px">
-      <el-button class="btn-tonal" :icon="Plus" @click="openAdd">添加一列</el-button>
-      <span class="text-12 muted">共 {{ fields.length }} / 50 列</span>
+      <el-button class="btn-tonal" :icon="Plus" :disabled="fields.length >= 200" @click="openAdd">添加一列</el-button>
+      <span class="text-12 muted">共 {{ fields.length }} / 200 列</span>
     </div>
 
     <el-table :data="fields" size="small">

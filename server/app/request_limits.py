@@ -16,6 +16,9 @@ class RequestConcurrencyLimit:
         self._heavy_slots = WeakKeyDictionary()
 
     async def __call__(self, scope, receive, send):
+        from .agent_runtime import execution
+        if execution.get() is not None:
+            return await self.app(scope, receive, send)
         if scope['type'] == 'lifespan':
             loop = asyncio.get_running_loop()
             try:

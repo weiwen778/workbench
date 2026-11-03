@@ -1,139 +1,193 @@
-"""A deliberately small integration API; browser routes remain cookie-only."""
-from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+"""Full business API for Agents: reads are immediate, all mutations are reviewed drafts."""
+import hashlib
+import json
+from pathlib import Path
+import re
+import uuid
 
-from ..agent_access import get_agent_token, require_scope
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import JSONResponse, Response, FileResponse
+from pydantic import BaseModel, Field, ConfigDict
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
+
+from ..agent_access import get_agent_token
+from ..agent_runtime import AgentSession
 from ..agent_guide import GUIDE
+from ..config import settings
 from ..db import get_db
 from ..errors import ApiError
-from ..models import AgentToken, DataRecord, Todo
-from . import tables, todos
+from ..models import AgentActivity, AgentChange, AgentToken, Todo, DataRecord
+from ..services import agent_staging as staging
+from ..services.encryption import encrypt_config
 from .agent_tokens import token_payload
+from . import tables, todos
 
-router = APIRouter(prefix='/agent', tags=['Agent'])
-read_todos = Depends(require_scope('todos:read'))
-write_todos = Depends(require_scope('todos:write'))
-read_tables = Depends(require_scope('tables:read'))
-write_tables = Depends(require_scope('tables:write'))
+router=APIRouter(prefix='/agent',tags=['Agent'])
 
+class Operation(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    method: str
+    path: str = Field(max_length=1000)
+    body: object = None
+    ref: str | None = Field(default=None,pattern=r'^[A-Za-z][A-Za-z0-9_]{0,40}$')
 
-class TodoPatch(todos.TodoPatch):
-    version: int = Field(ge=1)
-
-
-class CompletionIn(BaseModel):
-    completed: bool
-
-
-class RecordPatch(BaseModel):
-    version: int = Field(ge=1)
-    data: dict
-
-
-def _todo(db, todo_id, lock=False):
-    stmt = select(Todo).where(Todo.id == todo_id)
-    todo = db.scalar(stmt.with_for_update() if lock else stmt)
-    if todo is None:
-        raise ApiError('NOT_FOUND', '待办不存在', 404)
-    return todo
-
-
-def _record(db, record_id, lock=False):
-    stmt = select(DataRecord).where(DataRecord.id == record_id, DataRecord.deleted_at.is_(None))
-    record = db.scalar(stmt.with_for_update() if lock else stmt)
-    if record is None:
-        raise ApiError('NOT_FOUND', '数据不存在', 404)
-    tables._get_table(db, record.table_id)
-    return record
-
-
-def _version(row, expected):
-    if row.version != expected:
-        raise ApiError('VERSION_CONFLICT', '内容已被修改，请重新读取后核对再提交', 409,
-                       {'current_version': row.version})
-
+class ChangeIn(BaseModel):
+    title: str = Field(default='Agent 批量变更',min_length=1,max_length=200)
+    operations: list[Operation] = Field(min_length=1,max_length=100)
+    request_key: str | None = Field(default=None,max_length=128)
 
 @router.get('/me')
-def me(token: AgentToken = Depends(get_agent_token)):
-    return token_payload(token)
-
+def me(token:AgentToken=Depends(get_agent_token)):
+    return {**token_payload(token),'write_mode':'staged','requires_user_merge':True}
 
 @router.get('/guide')
 def guide(_token=Depends(get_agent_token)):
-    return {'guide': GUIDE}
+    return {'guide':GUIDE}
+
+@router.get('/capabilities')
+def capabilities(request:Request,token:AgentToken=Depends(get_agent_token)):
+    routes=[]
+    for candidate,methods in request.app.openapi()['paths'].items():
+        if candidate.startswith('/api/v1/'):
+            path=candidate[7:]
+            if path.startswith('/{resource}/categories/'):
+                for resource in ('memos','bookmarks'):
+                    routes.append({'path':path.replace('{resource}',resource),'methods':sorted(method.upper() for method in methods if method in {'get','post','put','patch','delete'})})
+            if path.strip('/').split('/')[0] in staging.ROOTS:
+                routes.append({'path':path,'methods':sorted(method.upper() for method in methods if method in {'get','post','put','patch','delete'})})
+    return {'write_mode':'staged','review':'用户在设置 → Agent 暂存区合并','scopes':token.scopes,'routes':routes,
+        'reserved':['账号登录','令牌管理','暂存审批'],'batch_endpoint':'/agent/changes','max_operations_per_change':100,
+        'references':'同批操作可用 {{前一步ref.id}} 或 {{前一步ref.fields.0.key}} 引用创建结果。预览中的 ID 不是正式 ID。'}
 
 
-@router.get('/todo-lists')
-def todo_lists(_token=read_todos, db: Session = Depends(get_db)):
-    return todos.list_lists(db)
+def own(db,token,change_id):
+    change=db.scalar(select(AgentChange).where(AgentChange.id==change_id,AgentChange.token_id==token.id,AgentChange.user_id==token.user_id))
+    if change is None: raise ApiError('NOT_FOUND','暂存不存在',404)
+    return change
+
+@router.get('/changes')
+def own_changes(token=Depends(get_agent_token),db=Depends(get_db)):
+    rows=db.scalars(select(AgentChange).where(AgentChange.token_id==token.id).order_by(AgentChange.id.desc()).limit(100)).all()
+    return {'items':[{k:v for k,v in staging.change_payload(row,token.name).items() if k not in {'preview','results'}} for row in rows]}
+
+@router.get('/changes/{change_id}')
+def own_change(change_id:int,token=Depends(get_agent_token),db=Depends(get_db)):
+    return staging.change_payload(own(db,token,change_id),token.name)
+
+@router.get('/changes/{change_id}/files/{index}')
+def own_file(change_id:int,index:int,token=Depends(get_agent_token),db=Depends(get_db)):
+    change=own(db,token,change_id)
+    if change.status!='applied' or index<0 or index>=len(change.results or []): raise ApiError('NOT_FOUND','合并结果不存在',404)
+    path=settings.storage_dir/'agent-results'/f'{change.id}-{index}.bin'
+    if not path.is_file(): raise ApiError('NOT_FOUND','文件结果不存在',404)
+    result=change.results[index]
+    return FileResponse(path,media_type=result.get('content_type','application/octet-stream'),filename=result.get('filename','result.bin'))
 
 
-@router.post('/todo-lists', status_code=201)
-def create_list(payload: todos.ListIn, _token=write_todos, db: Session = Depends(get_db)):
-    return todos.create_list(payload, db)
+async def submit(request,token,db,title,operations,key=None):
+    if len(json.dumps(operations,ensure_ascii=False).encode())>staging.MAX_BYTES: raise ApiError('CHANGE_TOO_LARGE','单份暂存内容最多 20 MB',413)
+    refs=set()
+    for op in operations:
+        if op['method'].upper() not in {'POST','PUT','PATCH','DELETE'}: raise ApiError('INVALID_CHANGE_METHOD','暂存只接受新增、修改、删除操作',422)
+        op['path']=staging.canonical(op['path']);staging.authorize(token,op['path'],True,op['method'].upper())
+        if op.get('ref'):
+            if op['ref'] in refs: raise ApiError('DUPLICATE_REFERENCE','同批操作的 ref 不能重复',422)
+            refs.add(op['ref'])
+    logical_operations=[{**op, 'upload':{k:v for k,v in op['upload'].items() if k!='path'}} if op.get('upload') else op for op in operations]
+    digest=hashlib.sha256(json.dumps(logical_operations,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+    if key:
+        if len(key)>128: raise ApiError('INVALID_REQUEST_KEY','幂等键最多 128 个字符',422)
+        previous=db.scalar(select(AgentChange).where(AgentChange.token_id==token.id,AgentChange.request_key==key))
+        if previous:
+            if previous.payload_hash!=digest: raise ApiError('REQUEST_KEY_REUSED','该幂等键已用于另一份内容',409)
+            return staging.change_payload(previous,token.name)
+    pending=db.scalar(select(func.count()).select_from(AgentChange).where(AgentChange.user_id==token.user_id,AgentChange.status=='pending')) or 0
+    if pending>=2000: raise ApiError('PENDING_LIMIT','待审核暂存已达 2000 份，请先处理',409)
+    # Release the request connection before the isolated preview needs one.
+    db.expunge(token);db.rollback()
+    fingerprints,previews=await staging.preview(request.app,token.user_id,'Agent 预览: '+token.name,operations,db.get_bind())
+    change=AgentChange(user_id=token.user_id,token_id=token.id,request_key=key,title=title,
+        operations_cipher=encrypt_config({'operations':operations}),payload_hash=digest,
+        fingerprints=fingerprints,preview=previews,status='pending')
+    db.add(change)
+    try:
+        db.flush()
+        db.add(AgentActivity(token_id=token.id,method='POST',path=f'/api/v1/agent/changes/{change.id}'))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        previous=db.scalar(select(AgentChange).where(AgentChange.token_id==token.id,AgentChange.request_key==key)) if key else None
+        if previous and previous.payload_hash==digest:return staging.change_payload(previous,token.name)
+        raise ApiError('CHANGE_CONFLICT','暂存提交冲突，请用同一幂等键查询后重试',409)
+    return staging.change_payload(change,token.name)
 
+@router.post('/changes',status_code=202)
+async def create_change(payload:ChangeIn,request:Request,token=Depends(get_agent_token),db=Depends(get_db)):
+    return await submit(request,token,db,payload.title,[op.model_dump(exclude_none=True) for op in payload.operations],payload.request_key or request.headers.get('Idempotency-Key'))
 
-@router.get('/todos')
-def list_todos(list_id: int, _token=read_todos, db: Session = Depends(get_db)):
-    return todos.list_todos(list_id=list_id, sort=None, db=db)
-
-
+# These two convenient read endpoints existed before staging; retain their contracts.
 @router.get('/todos/{todo_id}')
-def get_todo(todo_id: int, _token=read_todos, db: Session = Depends(get_db)):
-    todo = _todo(db, todo_id)
-    children = list(db.scalars(select(Todo).where(Todo.parent_id == todo.id).order_by(Todo.sort_index, Todo.id)))
-    return todos.serialize(todo, children)
-
-
-@router.post('/todos', status_code=201)
-def create_todo(payload: todos.TodoIn, _token=write_todos, db: Session = Depends(get_db)):
-    return todos.create_todo(payload, db)
-
-
-@router.patch('/todos/{todo_id}')
-def update_todo(todo_id: int, payload: TodoPatch, _token=write_todos, db: Session = Depends(get_db)):
-    todo = _todo(db, todo_id, lock=True)
-    _version(todo, payload.version)
-    return todos.update_todo(todo_id, todos.TodoPatch(**payload.model_dump(exclude={'version'})), db)
-
-
-@router.put('/todos/{todo_id}/completion')
-def completion(todo_id: int, payload: CompletionIn, _token=write_todos, db: Session = Depends(get_db)):
-    _todo(db, todo_id, lock=True)
-    return todos.complete_todo(todo_id, db) if payload.completed else todos.cancel_todo(todo_id, db)
-
-
-@router.get('/tables')
-def list_tables(_token=read_tables, db: Session = Depends(get_db)):
-    return tables.list_tables(db=db)
-
-
-@router.get('/tables/{table_id}')
-def get_table(table_id: int, _token=read_tables, db: Session = Depends(get_db)):
-    return tables.get_table(table_id, db)
-
-
-@router.get('/tables/{table_id}/records')
-def list_records(table_id: int, page: int = Query(default=1, ge=1),
-                 page_size: int = Query(default=50), _token=read_tables, db: Session = Depends(get_db)):
-    return tables.list_records(table_id, page=page, page_size=page_size, filters=None, sorts=None, db=db)
-
-
-@router.post('/tables/{table_id}/records', status_code=201)
-def create_record(table_id: int, payload: tables.RecordIn, _token=write_tables, db: Session = Depends(get_db)):
-    return tables.create_record(table_id, payload, db)
-
+def one_todo(todo_id:int,token=Depends(get_agent_token),db=Depends(get_db)):
+    staging.authorize(token,'/todos')
+    todo=db.get(Todo,todo_id)
+    if todo is None:raise ApiError('NOT_FOUND','待办不存在',404)
+    children=db.scalars(select(Todo).where(Todo.parent_id==todo.id).order_by(Todo.sort_index,Todo.id)).all()
+    return todos.serialize(todo,list(children))
 
 @router.get('/records/{record_id}')
-def get_record(record_id: int, _token=read_tables, db: Session = Depends(get_db)):
-    return tables.record_payload(_record(db, record_id),db)
+def one_record(record_id:int,token=Depends(get_agent_token),db=Depends(get_db)):
+    staging.authorize(token,'/records')
+    record=db.get(DataRecord,record_id)
+    if record is None or record.deleted_at is not None:raise ApiError('NOT_FOUND','表格记录不存在',404)
+    tables._get_table(db,record.table_id)
+    return tables.record_payload(record,db)
+
+@router.api_route('/{path:path}',methods=['GET','POST','PUT','PATCH','DELETE'],include_in_schema=False)
+async def business(path:str,request:Request,token=Depends(get_agent_token),db=Depends(get_db)):
+    target=staging.canonical('/'+path+('?'+request.url.query if request.url.query else ''))
+    readonly=request.method=='GET' or (request.method=='POST' and path=='dashboards/preview')
+    staging.authorize(token,target,not readonly,request.method)
+    body=None;upload=None;form=None
+    content_type=request.headers.get('content-type','')
+    if request.method!='GET':
+        if content_type.startswith('multipart/form-data'):
+            data=await request.form()
+            file=data.get('file')
+            if file is None or not hasattr(file,'read'):raise ApiError('FILE_REQUIRED','请选择文件',422)
+            raw=await file.read(settings.max_upload_bytes+1)
+            if not raw or len(raw)>settings.max_upload_bytes:raise ApiError('FILE_TOO_LARGE','文件为空或超过上传限制',413)
+            directory=settings.storage_dir/'agent-staging';directory.mkdir(parents=True,exist_ok=True)
+            destination=directory/(uuid.uuid4().hex+'.bin');destination.write_bytes(raw);destination.chmod(0o600)
+            upload={'path':str(destination.resolve()),'name':Path(file.filename or 'file').name,'content_type':file.content_type or 'application/octet-stream','size':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
+            form={k:str(v) for k,v in data.items() if k!='file'}
+        else:
+            raw=bytearray()
+            async for chunk in request.stream():
+                raw.extend(chunk)
+                if len(raw)>staging.MAX_BYTES:raise ApiError('CHANGE_TOO_LARGE','请求内容最多 20 MB',413)
+            if raw:
+                try:body=json.loads(raw)
+                except ValueError:raise ApiError('INVALID_JSON','请求不是有效 JSON',422)
+    operation={'method':request.method,'path':target,'body':body}
+    if upload:operation.update(upload=upload,form=form)
+    if readonly:
+        staging.route_for(request.app,request.method,target)
+        with AgentSession(bind=db.get_bind(),autoflush=False,expire_on_commit=False) as sandbox:
+            try:response=await staging.dispatch(request.app,sandbox,token.user_id,'Agent: '+token.name,operation)
+            finally:sandbox.rollback()
+        headers={k:v for k,v in response.headers.items() if k.lower() in {'content-type','content-disposition'}}
+        return Response(response.content,status_code=response.status_code,headers=headers)
+    try:
+        result=await submit(request,token,db,request.method+' '+url_path(target),[operation],request.headers.get('Idempotency-Key'))
+        if upload:
+            stored=staging.decode_operations(db.get(AgentChange,result['id']))
+            if stored[0].get('upload',{}).get('path')!=upload['path']: staging.cleanup_uploads([operation])
+        return JSONResponse(result,status_code=202)
+    except BaseException:
+        if upload:Path(upload['path']).unlink(missing_ok=True)
+        raise
 
 
-@router.patch('/records/{record_id}')
-def update_record(record_id: int, payload: RecordPatch, _token=write_tables, db: Session = Depends(get_db)):
-    record = _record(db, record_id, lock=False)
-    _version(record, payload.version)
-    merged = {**record.data, **payload.data}
-    return tables.update_record(record_id, tables.RecordIn(data=merged, version=payload.version), db)
+def url_path(path):
+    return path.split('?')[0][:180]

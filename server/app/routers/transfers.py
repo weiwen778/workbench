@@ -12,6 +12,8 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import FileResponse
 from openpyxl import Workbook, load_workbook
+from openpyxl.cell import WriteOnlyCell
+from ..table_limits import MAX_FIELDS
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -28,7 +30,7 @@ from ..utils import iso_z, stringify_decimal
 router = APIRouter(tags=["transfer"], dependencies=[Depends(get_current_user)])
 
 MAX_ROWS = 10_000
-MAX_COLS = 50
+MAX_COLS = MAX_FIELDS
 SUPPORTED_EXTS = {".xlsx", ".xlsm", ".xls", ".csv", ".json"}
 JSON_LIST_KEYS = ("data", "rows", "items", "list", "records", "values")
 TRUE_WORDS = {"true", "是", "1", "yes", "y", "对"}
@@ -524,6 +526,8 @@ def update_draft(job_id: int, payload: MappingIn, db: Session = Depends(get_db))
                 raise ApiError("FIELD_NAME_DUPLICATED", f"已有同名字段「{name}」，请换个名字", 409)
             used_names.add(name)
         fields += new_def
+    if len(fields) > MAX_FIELDS:
+        raise ApiError("TOO_MANY_FIELDS", f"每张表格最多 {MAX_FIELDS} 列", 422)
     job.errors = _validate_rows(job, fields)
     job.status = "ready" if not job.errors else "needs_fix"
     job.updated_at = utcnow()
@@ -568,6 +572,8 @@ def confirm_import(job_id: int, db: Session = Depends(get_db)):
             used_names.add(name)
         fields_def = existing_def + new_def
 
+    if len(fields_def) > MAX_FIELDS:
+        raise ApiError("TOO_MANY_FIELDS", f"每张表格最多 {MAX_FIELDS} 列", 422)
     errors = _validate_rows(job, fields_def)
     if errors:
         job.errors = errors
@@ -581,7 +587,8 @@ def confirm_import(job_id: int, db: Session = Depends(get_db)):
     rows = data.get("rows") or []
 
     prepared: list[dict] = []
-    for row in rows:
+    for row_index,row in enumerate(rows,1):
+        if row_index%500==0 and db.info.get("job_progress"):db.info["job_progress"](row_index)
         record: dict = {}
         for col_str, field_key in mapping.items():
             if not field_key:
@@ -612,7 +619,8 @@ def confirm_import(job_id: int, db: Session = Depends(get_db)):
                 db.add(field)
                 db.flush()
                 key_map[fd["key"]] = field.key
-            for record in prepared:
+            for row_index,record in enumerate(prepared,1):
+                if row_index%500==0 and db.bind.dialect.name!="sqlite" and db.info.get("job_progress"):db.info["job_progress"](len(prepared)+row_index)
                 db.add(DataRecord(table_id=table.id, data={key_map[k]: v for k, v in record.items()}))
             job.table_id = table.id
         else:
@@ -635,18 +643,22 @@ def confirm_import(job_id: int, db: Session = Depends(get_db)):
                 db.add(field)
                 db.flush()
                 created[fd["key"]] = field.key
-            for record in prepared:
+            for row_index,record in enumerate(prepared,1):
+                if row_index%500==0 and db.bind.dialect.name!="sqlite" and db.info.get("job_progress"):db.info["job_progress"](len(prepared)+row_index)
                 mapped = {created.get(key, key): value for key, value in record.items()}
                 db.add(DataRecord(table_id=table.id, data=mapped))
             if new_def:
                 table.schema_version += 1
         db.flush()
+        if db.info.get("job_cancel_check"):db.info["job_cancel_check"]()
         job.status = "success"
         job.errors = []
         job.result = {"imported": len(prepared), "table_id": table.id, "table_name": table.name}
         job.updated_at = utcnow()
         db.commit()
-    except Exception:
+    except Exception as error:
+        from ..services.jobs import Cancelled
+        if isinstance(error,Cancelled):db.rollback();raise
         db.rollback()
         job = _job(db, job_id)
         job.status = "failed"
@@ -695,86 +707,103 @@ def export_table(table_id: int, payload: ExportIn, db: Session = Depends(get_db)
         raise ApiError("INVALID_SCOPE", "导出范围不合法", 422)
 
     from ..services.table_expressions import COMPUTED
-    if table.kind=='virtual' or any(f.type in COMPUTED for f in fields):
-        computed_total,all_rows,_=paginate(db,table_id,parse_filters(payload.filters) if payload.scope=='filtered' else [],payload.sorts if payload.scope=='filtered' else [],1,10001)
-        if computed_total>10000:raise ApiError('ANALYSIS_LIMIT','计算列导出最多 10000 行，请缩小筛选范围',422)
-    else:
-        if payload.scope == "filtered":
-            total, rows, _ = paginate(db, table_id, parse_filters(payload.filters), payload.sorts, 1, 100)
-            # 导出全部匹配数据，不只当前页
-            from ..services.query import build_conditions, build_order
+    from ..services.table_calculated_query import project
+    from ..services.query import build_conditions, build_order
 
-            fields_map = {f.key: f for f in fields}
-            stmt = select(DataRecord).where(
-                DataRecord.table_id == table_id, DataRecord.deleted_at.is_(None)
-            )
-            conditions = build_conditions(db, fields_map, payload.filters)
-            if conditions:
-                stmt = stmt.where(*conditions)
-            all_rows = list(db.scalars(stmt.order_by(*build_order(db, fields_map, payload.sorts))).all())
-        else:
-            all_rows = list(
-                db.scalars(
-                    select(DataRecord)
-                    .where(DataRecord.table_id == table_id, DataRecord.deleted_at.is_(None))
-                    .order_by(DataRecord.id)
-                ).all()
-            )
+    fields_map = {f.key: f for f in fields}
+    filters = parse_filters(payload.filters) if payload.scope == "filtered" else []
+    sorts = payload.sorts if payload.scope == "filtered" else []
+    uses_computed_query = any(
+        fields_map.get(item.get("field") or item.get("key")) is not None
+        and fields_map[item.get("field") or item.get("key")].type in COMPUTED
+        for item in [*filters, *sorts]
+    )
 
+    def export_rows():
+        # Computed filtering/sorting still uses the shared bounded query engine.
+        if table.kind == "virtual" or uses_computed_query:
+            _, rows, _ = paginate(db, table_id, filters, sorts, 1, 1_048_575)
+            yield from rows
+            return
+        stmt = select(DataRecord).where(
+            DataRecord.table_id == table_id, DataRecord.deleted_at.is_(None)
+        )
+        conditions = build_conditions(db, fields_map, filters)
+        if conditions:
+            stmt = stmt.where(*conditions)
+        order = build_order(db, fields_map, sorts) if payload.scope == "filtered" else [DataRecord.id]
+        # Keep ordinary and formula exports bounded in memory, independent of row count.
+        result = db.scalars(stmt.order_by(*order).execution_options(yield_per=500))
+        try:
+            for batch in result.partitions(500):
+                yield from project(db, batch, fields_map)
+        finally:
+            result.close()
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = re.sub(r"[\[\]\*\?:/\\]", "_", table.name)[:31] or "数据"
-    ws.append([f.name for f in fields])
-    for cell in ws[1]:
-        cell.data_type = "s"
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet(re.sub(r"[\[\]\*\?:/\\]", "_", table.name)[:31] or "数据")
+
+    def text_cell(value):
+        cell = WriteOnlyCell(ws, value=value)
+        if isinstance(value, str):
+            cell.data_type = "s"  # Preserve text starting with '=' instead of executing it.
+        return cell
+
+    ws.append([text_cell(f.name) for f in fields])
     option_names = {
-        f.key: {o["id"]: o["name"] for o in (f.options or [])} for f in fields if f.type in {"select", "multiselect"}
+        f.key: {o["id"]: o["name"] for o in (f.options or [])}
+        for f in fields if f.type in {"select", "multiselect"}
     }
-    for record in all_rows:
-        row = []
-        for field in fields:
-            value = (record.data or {}).get(field.key)
-            if getattr(record, 'computed_errors', {}).get(field.key):
-                row.append('#ERROR · '+record.computed_errors[field.key])
-            elif field.type == "checkbox":
-                row.append("" if value is None else "是" if value else "否")
-            elif field.type in {"select", "multiselect"}:
-                names = option_names.get(field.key, {})
-                if isinstance(value, list):
-                    row.append("、".join(names.get(v, v) for v in value))
-                else:
-                    row.append(names.get(value, value) if value else "")
-            elif field.type == "attachment" and value:
-                attached = db.get(FileObject, value)
-                row.append(attached.original_name if attached else "附件已不可用")
-            elif isinstance(value, (int, float)):
-                row.append(value)
-            else:
-                row.append("" if value is None else str(value))
-        ws.append(row)
-        for index, field in enumerate(fields, start=1):
-            cell = ws.cell(row=ws.max_row, column=index)
-            # User text must remain text, including strings starting with '='.
-            if isinstance(cell.value, str):
-                cell.data_type = "s"
-            file_id = (record.data or {}).get(field.key)
-            if field.type == "attachment" and file_id:
-                cell.hyperlink = f"{settings.public_base_url.rstrip('/')}/api/v1/files/{file_id}/download"
-                cell.style = "Hyperlink"
-
     export_dir = settings.storage_dir / "exports"
     export_dir.mkdir(parents=True, exist_ok=True)
     storage_key = f"export_{table_id}_{utcnow().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}.xlsx"
-    buffer = io.BytesIO()
-    wb.save(buffer)
-    (export_dir / storage_key).write_bytes(buffer.getvalue())
+    path = export_dir / storage_key
+    row_count = 0
+    try:
+        for record in export_rows():
+            if row_count >= 1_048_575:
+                raise ApiError("EXPORT_TOO_LARGE", "超过 Excel 单工作表行数上限，请筛选后分批导出", 422)
+            row = []
+            for field in fields:
+                value = (record.data or {}).get(field.key)
+                file_id = None
+                if getattr(record, "computed_errors", {}).get(field.key):
+                    value = "#ERROR · " + record.computed_errors[field.key]
+                elif field.type == "checkbox":
+                    value = "" if value is None else "是" if value else "否"
+                elif field.type in {"select", "multiselect"}:
+                    names = option_names.get(field.key, {})
+                    value = "、".join(names.get(v, v) for v in value) if isinstance(value, list) else names.get(value, value) if value else ""
+                elif field.type == "attachment" and value:
+                    file_id = value
+                    attached = db.get(FileObject, file_id)
+                    value = attached.original_name if attached else "附件已不可用"
+                elif not isinstance(value, (int, float)):
+                    value = "" if value is None else str(value)
+                cell = text_cell(value)
+                if file_id:
+                    cell.hyperlink = f"{settings.public_base_url.rstrip('/')}/api/v1/files/{file_id}/download"
+                    cell.style = "Hyperlink"
+                row.append(cell)
+            ws.append(row)
+            row_count += 1
+            if row_count%500==0 and db.info.get("job_progress"):db.info["job_progress"](row_count)
+        if db.info.get("job_progress"):db.info["job_progress"](row_count)
+        wb.save(path)
+        file_size = path.stat().st_size
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
+    finally:
+        if not ws.closed:
+            ws.close()
+        wb.close()
 
     file_obj = FileObject(
         storage_key=storage_key,
         original_name=f"{table.name}.xlsx",
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        size=len(buffer.getvalue()),
+        size=file_size,
         status="bound",
     )
     db.add(file_obj)
@@ -783,8 +812,8 @@ def export_table(table_id: int, payload: ExportIn, db: Session = Depends(get_db)
         kind="export",
         table_id=table_id,
         status="success",
-        payload={"scope": payload.scope, "rows": len(all_rows)},
-        result={"rows": len(all_rows), "file_id": file_obj.id},
+        payload={"scope": payload.scope, "rows": row_count},
+        result={"rows": row_count, "file_id": file_obj.id},
         file_id=file_obj.id,
         expires_at=utcnow() + timedelta(hours=settings.staged_ttl_hours),
     )
@@ -793,7 +822,7 @@ def export_table(table_id: int, payload: ExportIn, db: Session = Depends(get_db)
     return {
         **job_payload(job),
         "download_url": f"/api/v1/data-transfer-jobs/{job.id}/download",
-        "rows": len(all_rows),
+        "rows": row_count,
     }
 
 

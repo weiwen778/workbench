@@ -24,12 +24,15 @@
         @new-dashboard="openNewDashboard"
         @new-todo-list="openNewTodoList"
         @new-note-folder="openNewNoteFolder"
+        @new-memo-category="openNewMemoCategory"
         @rename-checkin="renameCheckinItem"
       />
     </el-drawer>
 
+    <el-splitter v-splitter-a11y="{label:'调整侧边栏宽度',value:sidebarWidth,min:180,max:sidebarMax,disabled:isNarrow||collapsed}" class="app-splitter" @resize-start="beginSidebarResize" @resize-end="endSidebarResize" @dblclick="resetSplitBar" @keydown.capture="splitBarKey">
+      <el-splitter-panel @update:size="resizeSidebarPanel" :size="isNarrow ? 0 : collapsed ? 64 : sidebarWidth" :min="isNarrow ? 0 : collapsed ? 64 : 180" :max="isNarrow ? 0 : collapsed ? 64 : sidebarMax" :resizable="!isNarrow && !collapsed">
     <!-- 桌面：图标栏或展开栏 -->
-    <template v-else>
+    <template v-if="!isNarrow">
       <div v-if="collapsed" class="wb-iconbar">
         <img class="compact-brand" src="/favicon.svg?v=20261031-notion" width="28" height="28" alt="个人工作台" />
         <div class="icon-btn" :title="'展开侧栏'" @click="setCollapsed(false)">
@@ -71,6 +74,7 @@
             <template v-if="group.key === 'memos'">
               <button class="wb-nav-item collapsed-item" :class="{ active: isMemoActive(route, null) }" @click="go(memoPath(null))">未分类</button>
               <button v-for="name in memoCategories" :key="name" class="wb-nav-item collapsed-item" :class="{ active: isMemoActive(route, name) }" :title="name" :aria-label="`便利贴分类：${name}`" @click="go(memoPath(name))"><span class="ellipsis-1">{{ name }}</span></button>
+              <button class="wb-nav-item collapsed-item" @click="openNewMemoCategory"><el-icon><Plus /></el-icon><span>新建分类</span></button>
             </template>
             <template v-if="group.key === 'data'">
               <div
@@ -118,18 +122,22 @@
         @new-dashboard="openNewDashboard"
         @new-todo-list="openNewTodoList"
         @new-note-folder="openNewNoteFolder"
+        @new-memo-category="openNewMemoCategory"
         @rename-checkin="renameCheckinItem"
         @collapse="setCollapsed(true)"
       />
-      <div v-if="!collapsed" class="sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="调整侧边栏宽度" :aria-valuemin="180" :aria-valuemax="sidebarMax" :aria-valuenow="sidebarWidth" tabindex="0" title="拖动调整侧栏宽度，双击恢复默认；方向键微调" @pointerdown="startSidebarResize" @keydown="sidebarResizeKey" @dblclick="resetSidebarWidth"/>
 
     </template>
 
+    </el-splitter-panel>
+    <el-splitter-panel :size="Math.max(0,viewportWidth-(isNarrow ? 0 : collapsed ? 64 : sidebarWidth))" :min="0">
     <div class="wb-main">
       <div class="wb-topbar">
         <el-button v-if="isNarrow" text :icon="Menu" aria-label="打开导航" @click="drawerOpen = true" />
         <h1 class="title-15 page-title" :title="pageTitle">{{ pageTitle }}</h1>
         <div class="spacer" />
+        <el-button text aria-label="统一搜索" @click="go('/search')">搜索</el-button>
+        <TaskStatusButton/>
         <el-tooltip content="设置" placement="bottom">
           <el-button
             text
@@ -153,6 +161,8 @@
       </div>
     </div>
 
+    </el-splitter-panel>
+    </el-splitter>
     <!-- 新建表格 -->
     <el-dialog v-model="newTableOpen" title="新建表格" width="520px" :append-to-body="true">
       <el-form label-position="top" :model="newTable">
@@ -174,6 +184,9 @@
 </template>
 
 <script setup lang="ts">
+import TaskStatusButton from '@/components/TaskStatusButton.vue'
+import {onMounted as onToolsMounted,onUnmounted as onToolsUnmounted} from 'vue'
+import {vSplitterA11y} from '@/utils/splitter-a11y'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -214,17 +227,18 @@ const sidebarMax=computed(()=>Math.max(180,Math.min(360,Math.floor(viewportWidth
 function storedSidebarWidth(){try{const n=Number(localStorage.getItem('wb_sidebar_width'));return Number.isFinite(n)&&n>=180&&n<=360?n:192}catch{return 192}}
 const preferredSidebarWidth=ref(storedSidebarWidth())
 const sidebarWidth=computed(()=>Math.round(Math.max(180,Math.min(sidebarMax.value,preferredSidebarWidth.value))))
-let sidebarDrag:{pointer:number;x:number;width:number;preferred:number}|null=null
-function persistSidebarWidth(){try{localStorage.setItem('wb_sidebar_width',String(preferredSidebarWidth.value))}catch{/* Storage may be disabled; resizing still works. */}}
-function startSidebarResize(e:PointerEvent){if(e.button!==0||isNarrow.value||collapsed.value)return;e.preventDefault();sidebarDrag={pointer:e.pointerId,x:e.clientX,width:sidebarWidth.value,preferred:preferredSidebarWidth.value};resizingSidebar.value=true;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);window.addEventListener('pointermove',moveSidebarResize);window.addEventListener('pointerup',finishSidebarResize);window.addEventListener('pointercancel',cancelSidebarResize);window.addEventListener('blur',cancelSidebarResize);window.addEventListener('keydown',escapeSidebarResize)}
-function moveSidebarResize(e:PointerEvent){if(!sidebarDrag||e.pointerId!==sidebarDrag.pointer)return;preferredSidebarWidth.value=Math.max(180,Math.min(sidebarMax.value,sidebarDrag.width+e.clientX-sidebarDrag.x))}
-function clearSidebarResize(){sidebarDrag=null;resizingSidebar.value=false;window.removeEventListener('pointermove',moveSidebarResize);window.removeEventListener('pointerup',finishSidebarResize);window.removeEventListener('pointercancel',cancelSidebarResize);window.removeEventListener('blur',cancelSidebarResize);window.removeEventListener('keydown',escapeSidebarResize)}
-function finishSidebarResize(e:PointerEvent){if(e.pointerId!==sidebarDrag?.pointer)return;clearSidebarResize();persistSidebarWidth()}
-function cancelSidebarResize(){if(sidebarDrag)preferredSidebarWidth.value=sidebarDrag.preferred;clearSidebarResize()}
-function escapeSidebarResize(e:KeyboardEvent){if(e.key==='Escape'){e.preventDefault();cancelSidebarResize()}}
-function resetSidebarWidth(){cancelSidebarResize();preferredSidebarWidth.value=192;persistSidebarWidth()}
-function sidebarResizeKey(e:KeyboardEvent){if(sidebarDrag||!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();preferredSidebarWidth.value=e.key==='Home'?180:e.key==='End'?sidebarMax.value:Math.max(180,Math.min(sidebarMax.value,sidebarWidth.value+(e.key==='ArrowRight'?1:-1)*(e.shiftKey?20:10)));persistSidebarWidth()}
-watch([collapsed,isNarrow],cancelSidebarResize)
+let sidebarStartWidth=192,sidebarCancelled=false
+function beginSidebarResize(){sidebarStartWidth=preferredSidebarWidth.value;sidebarCancelled=false;resizingSidebar.value=true;window.addEventListener('keydown',cancelSidebarWithEscape)}
+function endSidebarResize(){resizingSidebar.value=false;window.removeEventListener('keydown',cancelSidebarWithEscape);if(!sidebarCancelled)persistSidebarWidth()}
+function cancelSidebarWithEscape(e:KeyboardEvent){if(e.key!=='Escape')return;e.preventDefault();sidebarCancelled=true;window.dispatchEvent(new MouseEvent('mouseup'));preferredSidebarWidth.value=sidebarStartWidth;resizingSidebar.value=false}
+function persistSidebarWidth(){try{localStorage.setItem('wb_sidebar_width',String(preferredSidebarWidth.value))}catch{}}
+function resizeSidebarPanel(size:string|number|undefined){if(resizingSidebar.value&&typeof size==='number'&&!isNarrow.value&&!collapsed.value)preferredSidebarWidth.value=Math.max(180,Math.min(sidebarMax.value,size))}
+function resetSplitBar(e:MouseEvent){if((e.target as HTMLElement).closest('.el-splitter-bar')){sidebarCancelled=true;resizingSidebar.value=false;preferredSidebarWidth.value=192;persistSidebarWidth()}}
+function splitBarKey(e:KeyboardEvent){
+ if(!(e.target as HTMLElement).closest('.el-splitter-bar')||isNarrow.value||collapsed.value)return
+ if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return
+ e.preventDefault();preferredSidebarWidth.value=e.key==='Home'?180:e.key==='End'?sidebarMax.value:Math.max(180,Math.min(sidebarMax.value,sidebarWidth.value+(e.key==='ArrowRight'?1:-1)*(e.shiftKey?20:10)));persistSidebarWidth()
+}
 
 const tables = ref<any[]>([])
 const dashboards = ref<any[]>([])
@@ -288,7 +302,7 @@ watch([pageTitle, () => route.fullPath], ([title]) => { document.title = `${titl
 async function handleThemeToggle(){try{await toggleTheme()}catch(error){ElMessage.error(apiError(error).message)}}
 
 const themeIcon = computed(() => (session.theme === 'dark' ? Moon : Sunny))
-const scrollable = computed(() => ['images', 'visualizations', 'settings', 'settings-trash', 'settings-section', 'virtual-new', 'virtual-edit', 'data', 'tables', 'notes', 'memos'].includes(String(route.name)))
+const scrollable = computed(() => ['tasks','search','activity','images', 'visualizations', 'settings', 'settings-trash', 'settings-section', 'data', 'tables', 'notes', 'memos'].includes(String(route.name)))
 
 function isGroupActive(group: { key: string }) {
   if (group.key === 'checkin') return route.path.startsWith('/checkins')
@@ -332,7 +346,7 @@ function setCollapsed(value: boolean) {
 }
 
 function onResize() {
-  cancelSidebarResize();viewportWidth.value=window.innerWidth
+  viewportWidth.value=window.innerWidth
   if (isNarrow.value !== (window.innerWidth < 1280)) closeNavPopovers()
   isNarrow.value = window.innerWidth < 1280
 }
@@ -351,6 +365,26 @@ async function loadDashboards() {
 }
 async function loadTodoLists() {
   try { const { data } = await http.get('/todo-lists'); todoLists.value = data } catch { /* keep navigation available */ }
+}
+async function openNewMemoCategory() {
+  try {
+    const { value } = await ElMessageBox.prompt('分类名称', '新建便利贴分类', {
+      inputPlaceholder: '例如：工作灵感',
+      inputValidator: (value: string) => {
+        const name = value.trim()
+        return !!name && name.length <= 80 && name !== '未分类' || '请输入 1–80 个字的名称，不能使用未分类'
+      },
+      confirmButtonText: '创建', cancelButtonText: '取消',
+    })
+    const { data } = await http.post('/memos/categories', { name: value.trim() })
+    await loadMemoCategories()
+    window.dispatchEvent(new Event('wb:memos-changed'))
+    drawerOpen.value = false
+    go(memoPath(data.name))
+    ElMessage.success('分类已就绪')
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(apiError(error).message)
+  }
 }
 async function loadMemoCategories() {
   try { const { data } = await http.get('/memos/categories'); memoCategories.value = data } catch { /* preserve the previous categories */ }
@@ -435,7 +469,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  cancelSidebarResize()
+  if(resizingSidebar.value)window.dispatchEvent(new MouseEvent('mouseup'))
+  window.removeEventListener('keydown',cancelSidebarWithEscape)
   window.removeEventListener('wb:memos-changed', loadMemoCategories)
   window.removeEventListener('focus', loadMemoCategories)
   window.removeEventListener('wb:todos-changed', loadTodoLists)
@@ -447,10 +482,18 @@ onUnmounted(() => {
   window.removeEventListener('resize', onResize)
   window.removeEventListener('wb:tables-changed', onTablesChanged)
 })
+function searchShortcut(event:KeyboardEvent){if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'&&!event.altKey&&!event.shiftKey&&!event.defaultPrevented){const target=event.target as HTMLElement;if(target?.closest('input,textarea,[contenteditable=true],.univer-host'))return;event.preventDefault();go('/search')}}
+onToolsMounted(()=>window.addEventListener('keydown',searchShortcut))
+onToolsUnmounted(()=>window.removeEventListener('keydown',searchShortcut))
 </script>
 
 <style scoped>
-.layout{position:relative}.sidebar-resizer{position:absolute;left:calc(var(--sidebar-width) - 3px);top:0;bottom:0;width:6px;z-index:30;cursor:col-resize;touch-action:none;outline:none}.sidebar-resizer:hover,.sidebar-resizer:focus-visible,.resizing-sidebar .sidebar-resizer{background:var(--wb-primary);opacity:.55}.resizing-sidebar,.resizing-sidebar :deep(*){cursor:col-resize!important;user-select:none!important}
+.app-splitter { min-width:0; }
+/* No iframe panes here: keep the native handle reachable for double-click reset. */
+.app-splitter :deep(.el-splitter__mask) { pointer-events:none; }
+.app-splitter :deep(.el-splitter-panel) { overflow:hidden; }
+.app-splitter :deep(.el-splitter-bar) { --el-splitter-bar-size: 1px; }
+
 
 .checkin-nav-row { display: flex; align-items: center; min-width: 0; }
 .checkin-nav-row.active { background: var(--wb-nav-active); border-radius: 5px; }

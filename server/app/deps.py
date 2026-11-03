@@ -12,6 +12,15 @@ from .security import hash_token
 
 
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
+    from .agent_runtime import execution
+    context = execution.get()
+    if context is not None:
+        user = db.get(User, context.user_id)
+        if user is None:
+            raise ApiError("UNAUTHENTICATED", "账号不存在", 401)
+        request.state.user = user
+        db.info.update(table_actor_id=user.id, table_actor=context.actor)
+        return user
     token = request.cookies.get(settings.cookie_name)
     if not token:
         raise ApiError("UNAUTHENTICATED", "请先登录", 401)
@@ -28,6 +37,7 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     user = db.get(User, sess.user_id)
     if user is None:
         raise ApiError("UNAUTHENTICATED", "请先登录", 401)
+    request.state.audit_identity=(user.id,user.username)
     request.state.session = sess
     request.state.user = user
     db.info["table_actor_id"]=user.id

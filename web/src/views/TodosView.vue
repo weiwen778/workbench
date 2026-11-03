@@ -57,6 +57,7 @@
       <div class="scroll-area" v-loading="loading">
         <div v-if="!currentList" class="empty-hint"><div>{{ missingList ? '清单不存在或已删除，请从左侧选择其他清单' : '从左侧选择清单，或新建一个清单开始记录' }}</div><el-button style="margin-top: 12px" @click="createList">新建清单</el-button></div>
         <template v-else>
+          <el-pagination v-if="counts.top_pending>50" v-model:current-page="pendingPage" :page-size="50" :total="counts.top_pending" layout="total,prev,pager,next" @current-change="load"/>
           <TransitionGroup name="wb-task" tag="div" class="task-list">
           <div v-for="(item, index) in pending" :key="item.id" class="task-block" :class="{ 'is-completing': completingIds.has(item.id) }" :aria-busy="togglingIds.has(item.id)">
             <div class="task-row" :class="{ overdue: item.overdue }">
@@ -191,9 +192,10 @@
           <div v-if="completed.length" class="completed-block">
             <div class="completed-head" @click="completedOpen = !completedOpen">
               <el-icon><component :is="completedOpen ? ArrowDown : ArrowRight" /></el-icon>
-              <span>已完成 {{ completed.length }}</span>
+              <span>已完成 {{ counts.top_done }}</span>
             </div>
             <div v-show="completedOpen">
+              <el-pagination v-if="counts.top_done>50" v-model:current-page="donePage" :page-size="50" :total="counts.top_done" layout="total,prev,pager,next" @current-change="load"/>
               <div v-for="item in completed" :key="item.id" class="task-row completed">
                 <el-checkbox
                   :key="checkboxVersions[item.id] || 0"
@@ -249,9 +251,11 @@ const route = useRoute(), router = useRouter()
 const currentListId = ref<number | null>(Number(route.params.listId) || null)
 const missingList = ref(false)
 const currentList = computed(() => lists.value.find((l) => l.id === currentListId.value) || null)
+const focusTarget=ref<number|undefined>(route.query.focus?Number(route.query.focus):undefined)
+const pendingPage=ref(1),donePage=ref(1)
 const pending = ref<any[]>([])
 const completed = ref<any[]>([])
-const counts = ref({ nodes_total: 0, nodes_pending: 0, nodes_done: 0 })
+const counts = ref({ nodes_total: 0, nodes_pending: 0, nodes_done: 0,top_pending:0,top_done:0 })
 const sortMode = ref<'auto' | 'manual'>('auto')
 const loading = ref(false)
 const adding = ref(false)
@@ -310,7 +314,9 @@ async function load() {
   if (!currentListId.value) return
   loading.value = true
   try {
-    const { data } = await http.get('/todos', { params: { list_id: currentListId.value } })
+    const { data } = await http.get('/todos', { params: { list_id: currentListId.value,page:pendingPage.value,completed_page:donePage.value,page_size:50,focus:focusTarget.value } })
+    focusTarget.value=undefined
+    pendingPage.value=data.page||1;donePage.value=data.completed_page||1
     pending.value = data.pending
     completed.value = data.completed
     counts.value = data.counts
@@ -362,7 +368,7 @@ async function listCommand(command: string, list: any) {
     try {
       const { data } = await http.get(`/todo-lists/${list.id}/delete-preview`)
       await ElMessageBox.confirm(
-        `清单「${data.list_name}」里有 ${data.top_total} 个待办、${data.subtask_total} 个子任务（含已完成的）。删了就找不回来，回收站也恢复不了。`,
+        `清单「${data.list_name}」里有 ${data.top_total} 个待办、${data.subtask_total} 个子任务（含已完成的）。删除后可在回收站中恢复，保留 30 天。`,
         '删除清单',
         { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
       )
@@ -393,6 +399,7 @@ async function addTodo() {
     newNote.value = ''
     clearNewDue()
     await load()
+    if(route.query.focus){await nextTick();const target=document.querySelector<HTMLElement>(`[data-todo-id="${Number(route.query.focus)}"]`);target?.scrollIntoView({block:'center'});target?.closest('.task-row')?.classList.add('search-focus')}
   } catch (error) {
     ElMessage.error(apiError(error).message)
   } finally {
@@ -412,6 +419,7 @@ async function addSubtask(parent: any) {
     await http.post('/todos', { list_id: currentListId.value, parent_id: parent.id, title })
     subDraft[parent.id] = ''
     await load()
+    if(route.query.focus){await nextTick();const target=document.querySelector<HTMLElement>(`[data-todo-id="${Number(route.query.focus)}"]`);target?.scrollIntoView({block:'center'});target?.closest('.task-row')?.classList.add('search-focus')}
   } catch (error) {
     ElMessage.error(apiError(error).message)
   }
@@ -457,6 +465,7 @@ async function changeSortMode(value: string) {
   try {
     await http.patch(`/todo-lists/${currentListId.value}`, { sort_mode: value })
     await load()
+    if(route.query.focus){await nextTick();const target=document.querySelector<HTMLElement>(`[data-todo-id="${Number(route.query.focus)}"]`);target?.scrollIntoView({block:'center'});target?.closest('.task-row')?.classList.add('search-focus')}
   } catch (error) {
     ElMessage.error(apiError(error).message)
   }
@@ -468,8 +477,9 @@ async function move(index: number, offset: number) {
   if (target < 0 || target >= order.length) return
   ;[order[index], order[target]] = [order[target], order[index]]
   try {
-    await http.post('/todos/reorder', { list_id: currentListId.value, order })
+    await http.post('/todos/reorder', { start_index:(pendingPage.value-1)*50, list_id: currentListId.value, order })
     await load()
+    if(route.query.focus){await nextTick();const target=document.querySelector<HTMLElement>(`[data-todo-id="${Number(route.query.focus)}"]`);target?.scrollIntoView({block:'center'});target?.closest('.task-row')?.classList.add('search-focus')}
   } catch (error) {
     ElMessage.error(apiError(error).message)
   }
@@ -498,6 +508,7 @@ async function saveEdit(item: any) {
     }
     await http.patch(`/todos/${item.id}`, payload)
     await load()
+    if(route.query.focus){await nextTick();const target=document.querySelector<HTMLElement>(`[data-todo-id="${Number(route.query.focus)}"]`);target?.scrollIntoView({block:'center'});target?.closest('.task-row')?.classList.add('search-focus')}
   } catch (error) {
     ElMessage.error(apiError(error).message)
   }
@@ -524,6 +535,7 @@ onMounted(async () => {
     await loadLists()
     if (!route.params.listId && lists.value.length) { await router.replace(`/todos/${lists.value[0].id}`); return }
     await load()
+    if(route.query.focus){await nextTick();const target=document.querySelector<HTMLElement>(`[data-todo-id="${Number(route.query.focus)}"]`);target?.scrollIntoView({block:'center'});target?.closest('.task-row')?.classList.add('search-focus')}
   } catch (error) {
     ElMessage.error(apiError(error).message)
   }
@@ -531,6 +543,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.search-focus{outline:2px solid var(--wb-primary);outline-offset:3px;border-radius:4px}
 .todos-layout {
   display: flex;
   height: 100%;

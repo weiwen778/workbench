@@ -21,7 +21,9 @@ import {ElMessage} from 'element-plus'
 import {http,apiError} from '@/api/client'
 import {session} from '@/stores/session'
 import LegacyTableView from '@/views/LegacyTableView.vue'
-const WorkbookEditor=defineAsyncComponent(()=>import('@/components/WorkbookEditor.vue'))
+import HeavyLoading from '@/components/HeavyLoading.vue'
+import HeavyError from '@/components/HeavyError.vue'
+const WorkbookEditor=defineAsyncComponent({loader:()=>import('@/components/WorkbookEditor.vue'),loadingComponent:HeavyLoading,errorComponent:HeavyError,delay:120,timeout:120000})
 const route=useRoute(),tableId=Number(route.params.tableId),toolbarId=`table-mode-actions-${tableId}`
 const mounted=ref(false),kind=ref('grid'),switching=ref(false),workbookVisited=ref(false),source=ref<any>(null),sourceLoading=ref(false),sourceError=ref(''),workbookRef=ref<any>(),workbookDirty=ref(false)
 const storageKey=`wb-table-view:${session.user?.id}:${tableId}:active`

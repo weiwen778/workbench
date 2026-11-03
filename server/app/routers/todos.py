@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Annotated
+
 from datetime import date, datetime, time
 
 from fastapi import APIRouter, Depends, Query
@@ -47,6 +49,7 @@ class MoveIn(BaseModel):
 
 
 class ReorderIn(BaseModel):
+    start_index: int = Field(default=0,ge=0)
     list_id: int
     order: list[int]
 
@@ -155,26 +158,65 @@ def delete_list(list_id: int, db: Session = Depends(get_db)):
     lst = db.get(TodoList, list_id)
     if not lst:
         raise ApiError("NOT_FOUND", "清单不存在", 404)
+    from ..services.todo_recovery import capture
+    capture(db,lst=lst)
     db.query(Todo).filter(Todo.list_id == list_id, Todo.parent_id.is_not(None)).delete(
         synchronize_session=False
     )
     db.query(Todo).filter(Todo.list_id == list_id).delete(synchronize_session=False)
     db.delete(lst)
-    # 待办与清单不进入 30 天回收站
+    # Preserve a snapshot before removing rows and their list.
     db.commit()
-    return {"ok": True, "recoverable": False}
+    return {"ok": True, "recoverable": True}
 
 
 @router.get("/todos")
 def list_todos(
     list_id: int = Query(...),
     sort: str | None = None,
+    page: Annotated[int | None,Query(ge=1)] = None,
+    completed_page: Annotated[int,Query(ge=1)] = 1,
+    focus:int|None=None,
+    page_size: Annotated[int,Query(ge=1,le=100)] = 50,
     db: Session = Depends(get_db),
 ):
     lst = db.get(TodoList, list_id)
     if not lst:
         raise ApiError("NOT_FOUND", "清单不存在", 404)
     mode = sort or lst.sort_mode
+    if page is not None:
+        base=select(Todo).where(Todo.list_id==list_id,Todo.parent_id.is_(None))
+        pending_query=base.where(Todo.completed_at.is_(None))
+        done_query=base.where(Todo.completed_at.is_not(None))
+        pending_total=db.scalar(select(func.count()).select_from(pending_query.subquery())) or 0
+        done_total=db.scalar(select(func.count()).select_from(done_query.subquery())) or 0
+        order=[Todo.sort_index,Todo.id] if mode=='manual' else [Todo.due_date.is_(None),Todo.due_date,Todo.due_time.is_(None),Todo.due_time,Todo.sort_index,Todo.id]
+        if focus:
+            focused=db.get(Todo,focus)
+            if focused and focused.list_id==list_id:
+                top_id=focused.parent_id or focused.id
+                top=db.get(Todo,top_id)
+                target=done_query if top.completed_at else pending_query
+                ordering=[Todo.completed_at.desc(),Todo.id] if top.completed_at else order
+                ranked=target.with_only_columns(Todo.id,func.row_number().over(order_by=ordering).label('rank')).subquery()
+                rank=db.scalar(select(ranked.c.rank).where(ranked.c.id==top_id))
+                if rank:
+                    if top.completed_at:completed_page=(rank-1)//page_size+1
+                    else:page=(rank-1)//page_size+1
+        page=min(page,max(1,(pending_total+page_size-1)//page_size));completed_page=min(completed_page,max(1,(done_total+page_size-1)//page_size))
+        pending_rows=list(db.scalars(pending_query.order_by(*order).offset((page-1)*page_size).limit(page_size)))
+        done_rows=list(db.scalars(done_query.order_by(Todo.completed_at.desc(),Todo.id).offset((completed_page-1)*page_size).limit(page_size)))
+        children={}
+        ids=[t.id for t in pending_rows+done_rows]
+        if ids:
+            for child in db.scalars(select(Todo).where(Todo.parent_id.in_(ids)).order_by(Todo.sort_index,Todo.id)):
+                children.setdefault(child.parent_id,[]).append(child)
+        total=db.scalar(select(func.count()).select_from(Todo).where(Todo.list_id==list_id)) or 0
+        done_count=db.scalar(select(func.count()).select_from(Todo).where(Todo.list_id==list_id,Todo.completed_at.is_not(None))) or 0
+        return {'list':{'id':lst.id,'name':lst.name,'sort_mode':mode},'pending':[serialize(t,children.get(t.id,[])) for t in pending_rows],
+                'completed':[serialize(t,children.get(t.id,[])) for t in done_rows],
+                'counts':{'nodes_total':total,'nodes_pending':total-done_count,'nodes_done':done_count,'top_pending':pending_total,'top_done':done_total},
+                'lists':_lists_payload(db),'page':page,'completed_page':completed_page,'page_size':page_size}
     todos = db.scalars(select(Todo).where(Todo.list_id == list_id)).all()
     by_parent: dict[int | None, list[Todo]] = {}
     for t in todos:
@@ -355,7 +397,7 @@ def reorder(payload: ReorderIn, db: Session = Depends(get_db)):
     for index, todo_id in enumerate(payload.order):
         todo = db.get(Todo, todo_id)
         if todo and todo.list_id == payload.list_id:
-            todo.sort_index = index + 1
+            todo.sort_index = payload.start_index + index + 1
     lst = db.get(TodoList, payload.list_id)
     if lst:
         lst.sort_mode = "manual"
@@ -368,13 +410,16 @@ def delete_todo(todo_id: int, db: Session = Depends(get_db)):
     todo = db.get(Todo, todo_id)
     if not todo:
         raise ApiError("NOT_FOUND", "待办不存在", 404)
+    from ..services.todo_recovery import capture
+    capture(db,todo=todo)
     parent_id = todo.parent_id
     children = db.scalars(select(Todo).where(Todo.parent_id == todo.id)).all()
     for child in children:
         db.delete(child)
+    db.flush()
     db.delete(todo)
     db.flush()
     # 删除最后一个子任务时父任务保留当时状态，恢复手动完成能力
     _recompute_parent(db, parent_id)
     db.commit()
-    return {"ok": True, "recoverable": False, "deleted_subtasks": len(children)}
+    return {"ok": True, "recoverable": True, "deleted_subtasks": len(children)}

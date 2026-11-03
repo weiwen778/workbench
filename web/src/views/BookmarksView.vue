@@ -1,6 +1,6 @@
 <template>
   <div class="bookmark-page">
-    <div class="tools"><el-input v-model="query" placeholder="搜索网址" clearable class="search"/><span class="count">{{ filtered.length }} 个网址</span><div class="spacer"/><el-tooltip content="检测当前电脑到网站的响应耗时；部分网站无法读取状态" placement="bottom"><el-button text :disabled="!filtered.length || testing" @click="testAll">{{ testing ? '检测中…' : '一键测速' }}</el-button></el-tooltip><el-button text :disabled="!filtered.length" @click="openAll">全部打开</el-button><el-button class="btn-tonal" @click="openForm()">＋ 添加网址</el-button></div>
+    <div class="tools"><el-input v-model="query" placeholder="搜索网址" clearable class="search"/><span class="count">{{ filtered.length }} 个网址</span><div class="spacer"/><CategoryManager resource="bookmarks" @changed="load"/><el-tooltip content="检测当前电脑到网站的响应耗时；部分网站无法读取状态" placement="bottom"><el-button text :disabled="!filtered.length || testing" @click="testAll">{{ testing ? '检测中…' : '一键测速' }}</el-button></el-tooltip><el-button text :disabled="!filtered.length" @click="openAll">全部打开</el-button><el-button class="btn-tonal" @click="openForm()">＋ 添加网址</el-button></div>
     <div v-if="!filtered.length && !loading" class="empty">{{ items.length ? '没有找到匹配的网址' : '暂无网址' }}</div>
     <div class="cards">
       <article v-for="item in filtered" :key="item.id" class="card">
@@ -21,6 +21,7 @@
   </div>
 </template>
 <script setup lang="ts">
+import CategoryManager from '@/components/CategoryManager.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute } from 'vue-router'
@@ -59,7 +60,7 @@ function openAll(){const list=filtered.value;if(list.length>20){ElMessage.warnin
 async function probe(item:Item){const started=performance.now();try{const r=await fetch(item.url,{mode:'no-cors',cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(8000)});const ms=Math.round(performance.now()-started);results[item.id]=r.type==='opaque'?`收到响应 ${ms} ms · 状态不可读取`:`HTTP ${r.status} · ${ms} ms`}catch{results[item.id]='检测失败或受浏览器限制'} }
 async function testOne(item:Item){testing.value=true;results[item.id]='检测中…';try{await probe(item)}finally{testing.value=false}}
 async function testAll(){testing.value=true;const list=[...filtered.value];list.forEach(i=>results[i.id]='等待检测');let index=0;try{await Promise.all(Array.from({length:Math.min(5,list.length)},async()=>{while(index<list.length){const i=list[index++];results[i.id]='检测中…';await probe(i)}}));ElMessage.info(`已完成 ${list.length} 个网址的检测`)}finally{testing.value=false}}
-onMounted(load)
+onMounted(async()=>{await load();if(route.query.focus){const item=items.value.find((i:any)=>i.id===Number(route.query.focus));if(item)openForm(item)}})
 </script>
 <style scoped>
 .bookmark-page{width:100%;height:100%;overflow:auto;box-sizing:border-box}

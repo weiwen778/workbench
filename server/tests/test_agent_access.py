@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
@@ -22,6 +23,16 @@ def agent(auth):
     with TestClient(app) as client:
         client.headers['Authorization'] = 'Bearer ' + token['token']
         yield client
+
+
+def merge_as_user(auth,response):
+    """Compatibility checks explicitly review each write before inspecting business results."""
+    if response.status_code!=202:
+        return response
+    change=response.json()
+    merged=auth.post(f"/api/v1/agent-changes/{change['id']}/merge",json={'version':change['version']})
+    assert merged.status_code==200,merged.text
+    return httpx.Response(201 if response.request.method=='POST' else 200,json=merged.json()['results'][0])
 
 
 def test_token_secret_only_once_and_stored_hashed(auth, db):
@@ -82,36 +93,36 @@ def test_token_input_validation(auth, patch):
 
 
 def test_todo_writeback_completion_and_conflicts(agent, auth):
-    lst = agent.post('/api/v1/agent/todo-lists', json={'name': 'Agent 执行'}).json()
-    response = agent.post('/api/v1/agent/todos', json={'list_id': lst['id'], 'title': '生成日报'})
+    lst = merge_as_user(auth,agent.post('/api/v1/agent/todo-lists', json={'name': 'Agent 执行'})).json()
+    response = merge_as_user(auth,agent.post('/api/v1/agent/todos', json={'list_id': lst['id'], 'title': '生成日报'}))
     assert response.status_code == 201, response.text
     todo = response.json()
     path = f"/api/v1/agent/todos/{todo['id']}"
     assert agent.get(path).json()['title'] == '生成日报'
-    patched = agent.patch(path, json={'version': todo['version'], 'note': '日报已生成，链接：https://example.com/report'})
+    patched = merge_as_user(auth,agent.patch(path, json={'version': todo['version'], 'note': '日报已生成，链接：https://example.com/report'}))
     assert patched.status_code == 200
     assert agent.patch(path, json={'version': todo['version'], 'note': '覆盖他人的改动'}).status_code == 409
     assert agent.patch(path, json={'note': '无版本'}).status_code == 422
-    complete = agent.put(path + '/completion', json={'completed': True})
+    complete = merge_as_user(auth,agent.put(path + '/completion', json={'completed': True}))
     assert complete.json()['completed'] is True
-    repeat = agent.put(path + '/completion', json={'completed': True})
+    repeat = merge_as_user(auth,agent.put(path + '/completion', json={'completed': True}))
     assert repeat.json()['version'] == complete.json()['version']
-    assert agent.put(path + '/completion', json={'completed': False}).json()['completed'] is False
+    assert merge_as_user(auth,agent.put(path + '/completion', json={'completed': False})).json()['completed'] is False
     assert agent.get('/api/v1/agent/todos', params={'list_id': lst['id']}).status_code == 200
     browser_view = auth.get('/api/v1/todos', params={'list_id': lst['id']}).json()
     assert browser_view['pending'][0]['note'].startswith('日报已生成')
     activities = auth.get('/api/v1/agent-activity').json()['items']
-    # create list, create todo, patch, three completion requests; conflict and validation are absent.
-    assert len(activities) == 6
+    # Six submitted changes and six explicit user merges; failed proposals leave no successful activity.
+    assert len(activities) == 12
     assert all(a['agent_name'] == '运营 Agent' for a in activities)
 
 
-def test_parent_completion_rules_are_preserved(agent):
-    lst = agent.post('/api/v1/agent/todo-lists', json={'name': '子任务'}).json()
-    parent = agent.post('/api/v1/agent/todos', json={'list_id': lst['id'], 'title': '父任务'}).json()
-    child = agent.post('/api/v1/agent/todos', json={'list_id': lst['id'], 'parent_id': parent['id'], 'title': '子任务'}).json()
+def test_parent_completion_rules_are_preserved(agent,auth):
+    lst = merge_as_user(auth,agent.post('/api/v1/agent/todo-lists', json={'name': '子任务'})).json()
+    parent = merge_as_user(auth,agent.post('/api/v1/agent/todos', json={'list_id': lst['id'], 'title': '父任务'})).json()
+    child = merge_as_user(auth,agent.post('/api/v1/agent/todos', json={'list_id': lst['id'], 'parent_id': parent['id'], 'title': '子任务'})).json()
     assert agent.put(f"/api/v1/agent/todos/{parent['id']}/completion", json={'completed': True}).status_code == 409
-    agent.put(f"/api/v1/agent/todos/{child['id']}/completion", json={'completed': True})
+    merge_as_user(auth,agent.put(f"/api/v1/agent/todos/{child['id']}/completion", json={'completed': True}))
     assert agent.get(f"/api/v1/agent/todos/{parent['id']}").json()['completed'] is True
 
 
@@ -124,11 +135,11 @@ def test_record_patch_keeps_other_fields_and_checks_version(agent, auth):
     table_path = f"/api/v1/agent/tables/{table['id']}"
     assert agent.get('/api/v1/agent/tables').status_code == 200
     assert agent.get(table_path).json()['fields'][0]['key'] == task
-    response = agent.post(table_path + '/records', json={'data': {task: '整理报表', status: 'pending'}})
+    response = merge_as_user(auth,agent.post(table_path + '/records', json={'data': {task: '整理报表', status: 'pending'}}))
     assert response.status_code == 201, response.text
     record = response.json()
     path = f"/api/v1/agent/records/{record['id']}"
-    changed = agent.patch(path, json={'version': record['version'], 'data': {status: 'done'}})
+    changed = merge_as_user(auth,agent.patch(path, json={'version': record['version'], 'data': {status: 'done'}}))
     assert changed.status_code == 200, changed.text
     assert changed.json()['data'] == {task: '整理报表', status: 'done'}
     assert agent.get(path).json()['version'] == record['version'] + 1
@@ -140,9 +151,9 @@ def test_record_patch_keeps_other_fields_and_checks_version(agent, auth):
 
 
 def test_no_delete_schema_or_other_module_access(agent, auth, db):
-    assert agent.delete('/api/v1/agent/todos/1').status_code == 405
-    assert agent.delete('/api/v1/agent/records/1').status_code == 405
-    assert agent.post('/api/v1/agent/tables', json={'name': '不允许'}).status_code == 405
+    assert agent.delete('/api/v1/agent/todos/1').status_code == 403
+    assert agent.delete('/api/v1/agent/records/1').status_code == 403
+    assert agent.post('/api/v1/agent/tables', json={'name': '不允许'}).status_code == 403
     assert agent.get('/api/v1/translation-connections').status_code == 401
     assert db.scalar(select(func.count()).select_from(AgentActivity)) == 0
     assert 'Bearer' in auth.get('/api/v1/agent-guide').json()['guide']
@@ -153,5 +164,5 @@ def test_bearer_with_cookie_still_requires_valid_agent_token_and_keeps_browser_c
     token = issue(auth)
     auth.headers['Authorization'] = 'Bearer ' + token['token']
     auth.headers.pop('X-CSRF-Token')
-    assert auth.post('/api/v1/agent/todo-lists', json={'name': 'Bearer无需CSRF'}).status_code == 201
+    assert auth.post('/api/v1/agent/todo-lists', json={'name': 'Bearer无需CSRF'}).status_code == 202
     assert auth.post('/api/v1/todo-lists', json={'name': '仍然需要CSRF'}).status_code == 403

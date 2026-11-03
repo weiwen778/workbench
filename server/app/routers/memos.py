@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_current_user
 from ..errors import ApiError
-from ..models import Memo, utcnow
+from ..models import Memo, MemoCategory, utcnow
+from sqlalchemy.exc import IntegrityError
 from ..services.trash import push
 from ..utils import iso_z
 
@@ -58,9 +61,11 @@ def _clean_category(value: str | None) -> str | None:
 def list_memos(
     category: str | None = Query(default=None),
     q: str | None = Query(default=None),
+    page: Annotated[int | None,Query(ge=1)] = None,
+    page_size: Annotated[int,Query(ge=1,le=100)] = 50,
     db: Session = Depends(get_db),
 ):
-    stmt = select(Memo).where(Memo.deleted_at.is_(None)).order_by(Memo.updated_at.desc())
+    stmt = select(Memo).where(Memo.deleted_at.is_(None)).order_by(Memo.updated_at.desc(),Memo.id.desc())
     if category == "__uncategorized__":
         stmt = stmt.where((Memo.category.is_(None)) | (Memo.category == ""))
     elif category:
@@ -68,7 +73,12 @@ def list_memos(
     if q:
         like = f"%{q.strip()}%"
         stmt = stmt.where((Memo.title.like(like)) | (Memo.content.like(like)))
-    return [payload(m) for m in db.scalars(stmt).all()]
+    total=db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) if page is not None else None
+    if page is not None:
+        page=min(page,max(1,(total+page_size-1)//page_size))
+        stmt=stmt.offset((page-1)*page_size).limit(page_size)
+    items=[payload(m) for m in db.scalars(stmt).all()]
+    return {'items':items,'total':total,'page':page,'page_size':page_size} if page is not None else items
 
 
 @router.get("/memos/categories")
@@ -78,7 +88,34 @@ def categories(db: Session = Depends(get_db)):
         .where(Memo.deleted_at.is_(None), Memo.category.is_not(None), Memo.category != "")
         .distinct()
     ).all()
-    return sorted({r for r in rows if r})
+    return sorted({r for r in rows if r} | set(db.scalars(select(MemoCategory.name)).all()))
+
+
+class CategoryIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+@router.post("/memos/categories")
+def create_category(data: CategoryIn, db: Session = Depends(get_db)):
+    name = data.name.strip()
+    if not name or name == "未分类":
+        raise ApiError("INVALID_CATEGORY", "请输入 1–80 个字的分类名称，不能使用未分类", 422)
+    if db.scalar(select(MemoCategory.id).where(MemoCategory.name == name)) is None:
+        db.add(MemoCategory(name=name))
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            if db.scalar(select(MemoCategory.id).where(MemoCategory.name == name)) is None:
+                raise
+    return {"name": name}
+
+
+@router.get('/memos/{memo_id}')
+def one_memo(memo_id:int,db:Session=Depends(get_db)):
+    memo=db.get(Memo,memo_id)
+    if not memo or memo.deleted_at:raise ApiError('NOT_FOUND','便利贴不存在',404)
+    return payload(memo)
 
 
 @router.post("/memos", status_code=201)

@@ -88,6 +88,7 @@
 
     <el-dialog v-model="editorOpen" :title="editingId ? '编辑图表' : '添加图表'" width="min(800px, 95vw)" :close-on-click-modal="false" @closed="editorClosed">
       <el-form label-position="top" class="widget-form">
+        <div class="chart-guide">例如：想看每天的销售额、成本和利润，就选折线图，横轴选“日期”，对比数字勾选这三列，计算方式选“加起来”。三条线使用同一套纵轴刻度。</div>
         <el-form-item label="图表标题"><el-input v-model="form.title" maxlength="100" placeholder="例如：本月销售额、各店铺销售对比" /></el-form-item>
         <el-form-item label="展示方式">
           <el-radio-group v-model="form.kind" @change="kindChanged">
@@ -102,36 +103,38 @@
         </el-form-item>
         <el-alert v-if="fieldError" :title="fieldError" type="error" :closable="false" />
         <div v-loading="fieldsLoading" class="form-grid">
-          <el-form-item label="汇总方式">
-            <el-select v-model="form.aggregation" aria-label="汇总方式" @change="aggregationChanged">
+          <el-form-item label="同一天或同一类的数据怎么算？">
+            <el-select v-model="form.aggregation" aria-label="同一天或同一类的数据怎么算？" @change="aggregationChanged">
               <el-option v-for="(label, value) in aggregationLabels" :key="value" :label="label" :value="value" :disabled="form.kind === 'pie' && !['count', 'sum'].includes(value)" />
             </el-select>
           </el-form-item>
-          <el-form-item v-if="form.aggregation !== 'count'" label="统计哪一列" required>
-            <el-select v-model="form.value_field" placeholder="选择数字列" aria-label="统计列"><el-option v-for="field in numericFields" :key="field.key" :label="field.name" :value="field.key" /></el-select>
-            <div v-if="!numericFields.length && form.table_id" class="text-12 muted">这张表没有数字列，可使用“记录数”统计。</div>
+          <el-form-item v-if="form.aggregation !== 'count'" :label="['bar','line'].includes(form.kind) ? '纵轴：要对比哪些数字？（可多选）' : '要看哪个数字？'" required>
+            <el-select v-if="['bar','line'].includes(form.kind)" v-model="form.value_fields" multiple :multiple-limit="8" placeholder="例如：销售额、成本、利润" aria-label="对比指标" @change="form.value_field = form.value_fields?.[0] || null"><el-option v-for="field in numericFields" :key="field.key" :label="field.name" :value="field.key" /></el-select>
+            <el-select v-else v-model="form.value_field" placeholder="选择数字列" aria-label="统计列"><el-option v-for="field in numericFields" :key="field.key" :label="field.name" :value="field.key" /></el-select>
+            <div class="text-12 secondary">最多对比 8 列，使用同一个纵轴；请选择单位一致的数字，如都是“元”。</div>
+            <div v-if="!numericFields.length && form.table_id" class="text-12 muted">这张表没有数字列，可选择“数一数有多少条记录”。</div>
           </el-form-item>
-          <el-form-item v-if="form.kind !== 'metric'" label="按哪一列分组" required>
-            <el-select v-model="form.group_field" placeholder="例如：店铺、状态、日期" aria-label="分组列" @change="groupChanged">
+          <el-form-item v-if="form.kind !== 'metric'" :label="form.kind === 'pie' ? '按什么分类看占比？' : '横轴：按什么对比？'" required>
+            <el-select v-model="form.group_field" placeholder="例如：店铺、状态、日期" aria-label="横轴" @change="groupChanged">
               <el-option v-for="field in dimensionFields" :key="field.key" :label="field.name" :value="field.key" />
             </el-select>
           </el-form-item>
-          <el-form-item v-if="selectedGroup?.type === 'date' && form.kind !== 'metric'" label="日期分组粒度">
-            <el-select v-model="form.date_bucket" aria-label="日期分组粒度"><el-option label="按天" value="day" /><el-option label="按周（周一开始）" value="week" /><el-option label="按月" value="month" /></el-select>
+          <el-form-item v-if="selectedGroup?.type === 'date' && form.kind !== 'metric'" label="日期按天、周还是月显示？">
+            <el-select v-model="form.date_bucket" aria-label="日期按天、周还是月显示？"><el-option label="按天" value="day" /><el-option label="按周（周一开始）" value="week" /><el-option label="按月" value="month" /></el-select>
           </el-form-item>
-          <el-form-item label="时间筛选使用哪一列">
+          <el-form-item label="顶部的日期筛选用哪一列？">
             <el-select v-model="form.date_field" clearable placeholder="不参与页面时间筛选" aria-label="时间筛选列" @clear="form.date_field = null">
               <el-option v-for="field in dateFields" :key="field.key" :label="field.name" :value="field.key" />
             </el-select>
           </el-form-item>
           <el-form-item label="数值单位"><el-input v-model="form.unit" maxlength="12" placeholder="例如：元、单、件（不自动换算）" /></el-form-item>
           <el-form-item label="最多保留小数位"><el-input-number v-model="form.decimals" :min="0" :max="6" /></el-form-item>
-          <el-form-item v-if="form.kind !== 'metric'" label="展示分组数"><el-input-number v-model="form.limit" :min="1" :max="30" /></el-form-item>
-          <el-form-item v-if="form.kind !== 'metric' && !(form.kind === 'line' && selectedGroup?.type === 'date')" label="分组排序">
-            <el-select v-model="form.sort"><el-option label="数值从大到小" value="value_desc" /><el-option label="分组名称升序" value="label_asc" /></el-select>
+          <el-form-item v-if="form.kind !== 'metric'" label="最多显示多少个横轴项目？"><el-input-number v-model="form.limit" :min="1" :max="30" /></el-form-item>
+          <el-form-item v-if="form.kind !== 'metric' && !(form.kind === 'line' && selectedGroup?.type === 'date')" label="横轴项目怎么排列？">
+            <el-select v-model="form.sort"><el-option label="按第一个指标，从大到小" value="value_desc" /><el-option label="按名称或日期顺序" value="label_asc" /></el-select>
           </el-form-item>
         </div>
-        <div class="form-options"><el-checkbox v-model="form.wide">整行展示</el-checkbox><span class="text-12 muted">日期折线按时间顺序展示；饼图支持记录数和求和。</span></div>
+        <div class="form-options"><el-checkbox v-model="form.wide">图表占满一行</el-checkbox><span class="text-12 muted">日期折线按时间先后显示；多条线或多组柱子用不同颜色区分。</span></div>
         <el-alert v-if="previewError" :title="previewError" type="error" :closable="false" />
         <div v-if="previewResult" class="preview-box"><div class="text-12 muted">数据预览 · 使用当前页面的时间范围</div><DashboardChart :widget="form" :result="previewResult" /></div>
       </el-form>
@@ -177,7 +180,7 @@ const previewResult = ref<DashboardResult | null>(null), previewing = ref(false)
 let fieldRequestId = 0, previewRequestId = 0
 function emptyWidget(): DashboardWidget {
   return { id: `w_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`, title: '', kind: 'metric', table_id: 0,
-    aggregation: 'count', value_field: null, group_field: null, date_field: null, date_bucket: 'day', sort: 'value_desc', limit: 10, decimals: 0, unit: '', wide: false }
+    aggregation: 'count', value_field: null, value_fields: [], group_field: null, date_field: null, date_bucket: 'day', sort: 'value_desc', limit: 10, decimals: 0, unit: '', wide: false }
 }
 const form = reactive<DashboardWidget>(emptyWidget())
 const numericFields = computed(() => fields.value.filter(f => ['number','formula','rollup'].includes(f.type)))
@@ -267,7 +270,8 @@ async function removeBoard() {
 }
 async function openEditor(widget?: DashboardWidget) {
   editingId.value = widget?.id || ''
-  Object.assign(form, widget ? JSON.parse(JSON.stringify(widget)) : emptyWidget())
+  Object.assign(form, emptyWidget(), widget ? JSON.parse(JSON.stringify(widget)) : {})
+  if (!form.value_fields?.length && form.value_field) form.value_fields = [form.value_field]
   fields.value = []; fieldError.value = ''; previewError.value = ''; previewResult.value = null
   editorOpen.value = true
   if (form.table_id) await loadFields(form.table_id)
@@ -286,14 +290,19 @@ async function loadFields(id: number) {
 }
 async function chooseTable(id: number) {
   fields.value = []
-  form.value_field = null; form.group_field = null; form.date_field = null
+  form.value_fields = []; form.value_field = null; form.group_field = null; form.date_field = null
   await loadFields(id)
   if (form.table_id !== id || fieldError.value) return
   form.value_field = numericFields.value[0]?.key || null
+  form.value_fields = form.value_field ? [form.value_field] : []
+  if (['bar','line'].includes(form.kind) && form.aggregation === 'count' && numericFields.value.length) form.aggregation = 'sum'
   form.group_field = dimensionFields.value[0]?.key || null
   form.date_field = dateFields.value[0]?.key || null
 }
 function kindChanged() {
+  if (['bar','line'].includes(form.kind) && form.aggregation === 'count' && numericFields.value.length) form.aggregation = 'sum'
+  if (!['bar','line'].includes(form.kind)) form.value_fields = []
+  else if (!form.value_fields?.length && form.value_field) form.value_fields = [form.value_field]
   if (form.kind === 'pie' && !['count', 'sum'].includes(form.aggregation)) form.aggregation = 'count'
   groupChanged()
 }
@@ -303,7 +312,8 @@ function groupChanged() {
 }
 function draft(): DashboardWidget {
   return { ...form, title: form.title.trim() || `${fields.value.find(f => f.key === form.value_field)?.name || tableName(form.table_id)} · ${aggregationLabels[form.aggregation]}`,
-    date_field: form.date_field || null, value_field: form.value_field || null, group_field: form.group_field || null }
+    value_fields: ['bar','line'].includes(form.kind) && form.aggregation !== 'count' ? form.value_fields || [] : [],
+    date_field: form.date_field || null, value_field: ['bar','line'].includes(form.kind) && form.aggregation !== 'count' ? form.value_fields?.[0] || null : form.value_field || null, group_field: form.group_field || null }
 }
 async function preview() {
   const sequence = ++previewRequestId
@@ -376,6 +386,7 @@ onBeforeUnmount(() => { ++requestId; ++previewRequestId; ++fieldRequestId; clear
 .dashboard-empty p { font-size: 13px; margin: 0; line-height: 1.8; }
 .empty-title { font-size: 18px; color: var(--wb-text); }
 .board-bottom { margin-top: 10px; }
+.chart-guide { padding: 12px; margin-bottom: 16px; border-radius: 6px; background: var(--wb-surface-subtle); color: var(--wb-text-secondary); font-size: 13px; line-height: 1.7; }
 .widget-form :deep(.el-select) { width: 100%; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
 .form-options { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }

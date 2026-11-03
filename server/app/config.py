@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     # 翻译凭据加密主密钥（Fernet key）。缺失时禁止保存/读取/测试受保护凭据。
     encryption_key: str | None = None
 
+    backup_dir: Path = Path('../.backups')
+    backup_enabled: bool = True
+    backup_interval_hours: int = Field(default=24,ge=1,le=720)
+    backup_keep: int = Field(default=7,ge=1,le=365)
+
     timezone: str = "Asia/Shanghai"
     public_base_url: str = ""
     cookie_secure: bool = False

@@ -19,7 +19,7 @@ from ..utils import iso_z
 
 router = APIRouter(tags=["tables"], dependencies=[Depends(get_current_user)])
 
-MAX_FIELDS = 50
+from ..table_limits import MAX_FIELDS
 MAX_OPTIONS = 100
 
 
@@ -162,7 +162,7 @@ def _new_option_id(index: int) -> str:
 def list_tables(db: Session = Depends(get_db)):
     tables = db.scalars(
         select(DataTable)
-        .where(DataTable.deleted_at.is_(None))
+        .where(DataTable.deleted_at.is_(None), DataTable.kind != "virtual")
         .order_by(DataTable.sort_order, DataTable.id)
     ).all()
     counts = dict(
@@ -237,6 +237,8 @@ def create_table(payload: TableIn, db: Session = Depends(get_db)):
 @router.get("/tables/{table_id}")
 def get_table(table_id: int, db: Session = Depends(get_db)):
     table = _get_table(db, table_id)
+    if table.kind == "virtual":
+        raise ApiError("NOT_FOUND", "此表格功能已下线", 404)
     count = (
         db.scalar(
             select(func.count(DataRecord.id)).where(

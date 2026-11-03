@@ -5,7 +5,7 @@ from typing import Literal
 import uuid
 
 from pydantic import BaseModel, Field, field_validator, model_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, select, case, cast, Numeric
 
 from ..errors import ApiError
 from ..models import DataField, DataRecord, DataTable
@@ -22,6 +22,7 @@ class Widget(BaseModel):
     table_id: int = Field(gt=0)
     aggregation: Literal['count', 'sum', 'avg', 'min', 'max'] = 'count'
     value_field: str | None = Field(default=None, max_length=100)
+    value_fields: list[str] = Field(default_factory=list, max_length=8)
     group_field: str | None = Field(default=None, max_length=100)
     date_field: str | None = Field(default=None, max_length=100)
     date_bucket: Literal['day', 'week', 'month'] = 'day'
@@ -30,6 +31,18 @@ class Widget(BaseModel):
     decimals: int = Field(default=2, ge=0, le=6)
     unit: str = Field(default='', max_length=12)
     wide: bool = False
+
+    @model_validator(mode='after')
+    def valid_series(self):
+        if len(set(self.value_fields)) != len(self.value_fields):
+            raise ValueError('同一个数字列不能重复选择')
+        if self.value_fields:
+            if self.kind not in {'bar', 'line'} or self.aggregation == 'count':
+                raise ValueError('多指标对比请使用柱状图或折线图，并选择数字的计算方式')
+            if any(not key or len(key) > 100 for key in self.value_fields):
+                raise ValueError('请选择有效的数字列')
+            self.value_field = self.value_fields[0]
+        return self
 
     @field_validator('title')
     @classmethod
@@ -64,9 +77,10 @@ def validate_source(db, widget: Widget, source_cache=None):
     else:
         table, fields = cached
     if widget.aggregation != 'count':
-        field = fields.get(widget.value_field)
-        if field is None or field.type not in {'number','formula','rollup'}:
-            raise ApiError('DASHBOARD_FIELD_INVALID', '统计列不存在或不再是数字列，请重新配置', 422)
+        for key in widget.value_fields or [widget.value_field]:
+            field = fields.get(key)
+            if field is None or field.type not in {'number','formula','rollup'}:
+                raise ApiError('DASHBOARD_FIELD_INVALID', '统计列（要对比的数字）不存在或类型已改变，请重新选择', 422)
     if widget.kind != 'metric':
         field = fields.get(widget.group_field)
         if field is None or field.type not in DIMENSION_TYPES:
@@ -139,7 +153,36 @@ class Accumulator:
         return {'avg': lambda: self.total / self.n, 'min': lambda: self.low, 'max': lambda: self.high}[aggregation]()
 
 
-def aggregate(db, widgets: list[Widget], dates: DateRange):
+def _database_metrics(db,configs,dates):
+    # Use exact PostgreSQL NUMERIC aggregates for plain metric cards. Date,
+    # calculated and grouped charts retain the common validated scan path.
+    if db.bind.dialect.name!='postgresql' or configs[0][1].kind!='physical' or any(w.kind!='metric' or (w.date_field and (dates.start_date or dates.end_date)) or (w.aggregation!='count' and fields[w.value_field].type!='number') for w,_,fields in configs):return None
+    table=configs[0][1];expressions=[func.count(DataRecord.id)];positions={}
+    for w,_,_ in configs:
+        if w.aggregation=='count':continue
+        text=func.trim(DataRecord.data[w.value_field].as_string())
+        valid=text.op('~')(r'^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$')
+        number=case((valid,cast(text,Numeric)),else_=None)
+        positions[w.id]=len(expressions)
+        expressions.extend([func.count(number),func.sum(number),func.min(number),func.max(number)])
+    row=db.execute(select(*expressions).where(DataRecord.table_id==table.id,DataRecord.deleted_at.is_(None))).one()
+    result={};count=row[0]
+    for w,_,_ in configs:
+        if count>MAX_ROWS:
+            result[w.id]={'id':w.id,'status':'error','message':'来源表格超过 100,000 条记录，请拆分数据后再统计'};continue
+        acc=Accumulator();acc.rows=count
+        if w.aggregation=='count':acc.n=count
+        else:
+            offset=positions[w.id];acc.n=row[offset];acc.total=row[offset+1] or Decimal(0);acc.low=row[offset+2];acc.high=row[offset+3]
+        with localcontext() as context:
+            context.prec=50;value=acc.value(w.aggregation)
+        result[w.id]={'id':w.id,'status':'ok','table_name':table.name,'value':str(value) if value is not None else None,
+                      'matched_rows':count,'numeric_rows':acc.n,'ignored_rows':count-acc.n,'groups_total':0,'group_type':None,'points':[],
+                      'date_filter_applied':False,'date_filter_unavailable':bool(not w.date_field and (dates.start_date or dates.end_date))}
+    return result
+
+
+def _aggregate_single(db, widgets: list[Widget], dates: DateRange, all_groups=frozenset()):
     results = {}
     sources = {}
     source_cache = {}
@@ -152,6 +195,8 @@ def aggregate(db, widgets: list[Widget], dates: DateRange):
     with localcontext() as context:
         context.prec = 50
         for table_id, configs in sources.items():
+            sql_result=_database_metrics(db,configs,dates)
+            if sql_result is not None:results.update(sql_result);continue
             totals = {w.id: Accumulator() for w, _, _ in configs}
             groups = {w.id: {} for w, _, _ in configs}
             failed = {}
@@ -227,7 +272,7 @@ def aggregate(db, widgets: list[Widget], dates: DateRange):
                     results[w.id] = {'id': w.id, 'status': 'error', 'message': failed[w.id]}
                     continue
                 total = totals[w.id]
-                points = [(label, acc.value(w.aggregation), acc.rows) for label, acc in groups[w.id].items()]
+                points = [(label, None if w.id in all_groups and w.aggregation != 'count' and not acc.n else acc.value(w.aggregation), acc.rows) for label, acc in groups[w.id].items()]
                 if w.sort == 'label_asc':
                     points.sort(key=lambda p: p[0])
                 else:
@@ -238,6 +283,8 @@ def aggregate(db, widgets: list[Widget], dates: DateRange):
                     shown = points[-w.limit:]
                 else:
                     shown = points[:w.limit]
+                if w.id in all_groups:
+                    shown = points
                 if w.kind == 'pie' and len(points) > w.limit:
                     rest = points[w.limit:]
                     shown.append(('其他（剩余分组）', sum((v for _, v, _ in rest if v is not None), Decimal(0)), sum(n for _, _, n in rest)))
@@ -254,3 +301,51 @@ def aggregate(db, widgets: list[Widget], dates: DateRange):
                     'date_filter_unavailable': bool(not w.date_field and (dates.start_date or dates.end_date)),
                 }
     return [results[w.id] for w in widgets]
+
+
+def aggregate(db, widgets: list[Widget], dates: DateRange):
+    """Compute all series in one source scan, then align them on one shared X axis."""
+    expanded, plans, all_groups = [], {}, set()
+    for widget in widgets:
+        if not widget.value_fields:
+            expanded.append(widget)
+            continue
+        # Validate the complete selection before returning a partial chart.
+        try:
+            _, fields = validate_source(db, widget)
+        except ApiError as exc:
+            plans[widget.id] = {'error': exc.message}
+            continue
+        children = []
+        for key in widget.value_fields:
+            child = widget.model_copy(update={'id': uuid.uuid4().hex, 'value_fields': [], 'value_field': key})
+            expanded.append(child)
+            all_groups.add(child.id)
+            children.append((child.id, key, fields[key].name))
+        plans[widget.id] = {'children': children}
+    calculated = {result['id']: result for result in _aggregate_single(db, expanded, dates, all_groups)}
+    output = []
+    for widget in widgets:
+        if widget.id not in plans:
+            output.append(calculated[widget.id])
+            continue
+        plan = plans[widget.id]
+        if 'error' in plan:
+            output.append({'id': widget.id, 'status': 'error', 'message': plan['error']})
+            continue
+        children = plan['children']
+        failed = next((calculated[id] for id, _, _ in children if calculated[id]['status'] == 'error'), None)
+        if failed:
+            output.append({**failed, 'id': widget.id})
+            continue
+        first = calculated[children[0][0]]
+        points = first['points']
+        shown = points[-widget.limit:] if widget.kind == 'line' and first['group_type'] == 'date' else points[:widget.limit]
+        labels = [point['label'] for point in shown]
+        series = []
+        for id, key, name in children:
+            index = {point['label']: point for point in calculated[id]['points']}
+            series.append({'field': key, 'name': name, 'points': [index[label] for label in labels],
+                'ignored_rows': calculated[id]['ignored_rows']})
+        output.append({**first, 'id': widget.id, 'points': series[0]['points'], 'series': series})
+    return output

@@ -22,7 +22,7 @@ try{
   const table=await api('/tables',{name:'发布验收表-'+label,fields:[{name:'金额',type:'number'},{name:'凭证',type:'attachment'}]})
   await page.goto(base+`/todos/${list.id}`);await page.getByText('发布检查',{exact:true}).waitFor()
   await page.getByRole('button',{name:'设置截止',exact:true}).click();await page.locator('.el-popover:visible .el-date-editor input').first().click();await page.locator('.el-date-picker:visible').waitFor();assert.ok((await page.locator('.el-date-picker:visible').textContent()).includes('年'));await page.keyboard.press('Escape');await page.locator('.wb-topbar').click()
-  await page.goto(base+`/notes/${folder.id}`);const body=page.getByPlaceholder('直接写内容，支持简单排版：# 大标题、- 列表、**加粗**',{exact:true});await body.waitFor();assert.equal(await body.inputValue(),'原始内容');await body.fill('优化后仍能自动保存的内容')
+  await page.goto(base+`/notes/${folder.id}`);const body=page.getByRole('textbox',{name:'笔记正文',exact:true});await body.waitFor();assert.equal(await body.innerText(),'原始内容');await body.fill('优化后仍能自动保存的内容')
   await page.locator('.wb-sidebar').getByRole('button',{name:'翻译',exact:true}).click();await page.waitForURL('**/translate');assert.equal((await api('/notes/'+note.id,undefined,'GET')).content,'优化后仍能自动保存的内容')
   await page.getByRole('button',{name:'服务设置',exact:true}).click();await page.getByText('翻译服务设置',{exact:true}).waitFor();await page.keyboard.press('Escape')
   await page.goto(base+'/memos?category='+encodeURIComponent(label));await page.getByText('测试便利贴-'+label,{exact:true}).waitFor();assert.equal(await page.locator('.page-toolbar .el-select').count(),0)

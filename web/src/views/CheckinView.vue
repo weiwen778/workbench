@@ -75,7 +75,8 @@
                 </el-popover>
               </div>
               <div class="checkin-meta">
-                <span v-if="item.completed_at">完成于 {{ formatTime(item.completed_at) }}</span>
+                <span v-if="busyIds.has(item.id)" class="checkin-progress" role="status">正在更新…</span>
+                <span v-else-if="item.completed_at">完成于 {{ formatTime(item.completed_at) }}</span>
                 <span v-else>本{{ periodUnit }}内完成一次</span>
                 <span v-if="item.note"> · 备注：{{ item.note }}</span>
               </div>
@@ -102,7 +103,7 @@
     </div>
 
     <!-- 店铺 / 社媒账号管理 -->
-    <el-drawer v-model="manageOpen" :title="`${kindLabel}与分类`" size="520px" :append-to-body="true">
+    <el-drawer v-model="manageOpen" :title="`${kindLabel}与分类`" size="min(760px, 100vw)" :append-to-body="true">
       <div class="toolbar-actions" style="margin-bottom: 12px">
         <el-input v-model="newTarget.name" placeholder="名称" style="width: 180px" maxlength="100" />
         <el-input v-model="newTarget.platform" placeholder="平台（可选）" style="width: 140px" maxlength="100" />
@@ -121,10 +122,12 @@
             <span v-else class="text-12 secondary">使用中</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="146">
+        <el-table-column label="操作" width="260">
           <template #default="{ row }">
             <div class="actions-group">
+              <el-button text size="small" @click="editTarget(row)">修改</el-button>
               <el-button text size="small" @click="openTarget(row)">资料与任务</el-button>
+              <el-button text size="small" type="danger" @click="deleteTarget(row)">删除</el-button>
               <el-button
                 v-if="row.status === 'active'"
                 text
@@ -148,14 +151,25 @@
         <el-table-column label="任务数" width="86" align="center">
           <template #default="{ row }">{{ row.rule_count }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="110">
+        <el-table-column label="操作" width="140">
           <template #default="{ row }">
+            <el-button text size="small" @click="renameGroup(row)">重命名</el-button>
             <el-button text size="small" @click="removeGroup(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-drawer>
 
+    <el-dialog v-model="targetEditOpen" :title="`修改${kindLabel}`" width="min(480px, 94vw)" append-to-body>
+      <el-form label-position="top"><el-form-item label="名称" required><el-input v-model="targetEdit.name" maxlength="100" /></el-form-item><el-form-item label="平台"><el-input v-model="targetEdit.platform" maxlength="100" /></el-form-item></el-form>
+      <template #footer><el-button @click="targetEditOpen=false">取消</el-button><el-button type="primary" :loading="targetEditSaving" @click="saveTargetEdit">保存</el-button></template>
+    </el-dialog>
+    <el-dialog v-model="groupDeleteOpen" title="删除分类" width="min(480px, 94vw)" append-to-body>
+      <p>删除「{{ groupToDelete?.name }}」仅移除分类，任务和历史记录保留。</p>
+      <el-form label-position="top"><el-form-item label="将关联任务移至"><el-select v-model="moveGroupTo" clearable placeholder="有任务时必须选择接收分类" style="width:100%"><el-option v-for="g in groupList.filter(g=>g.id!==groupToDelete?.id)" :key="g.id" :label="g.name" :value="g.id" /></el-select></el-form-item></el-form>
+      <p class="text-12 secondary">没有其他分类时，可先取消并添加一个接收分类。</p>
+      <template #footer><el-button @click="groupDeleteOpen=false">取消</el-button><el-button type="danger" :loading="groupDeleting" @click="confirmDeleteGroup">删除分类</el-button></template>
+    </el-dialog>
     <!-- 从 JSON 导入 -->
     <el-dialog v-model="importOpen" :title="`导入${kindLabel}`" width="560px" :append-to-body="true">
       <div class="text-13 secondary" style="margin-bottom: 10px">
@@ -445,20 +459,29 @@ async function createGroup() {
   }
 }
 
-async function removeGroup(row: any) {
-  try {
-    await ElMessageBox.confirm(`删除分类「${row.name}」？分类里还有启用的任务或没做完的工作时，不能删除。`, '删除分类', {
-      type: 'warning',
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-    })
-    await http.delete(`/checkin-groups/${row.id}`)
-    await loadGroups()
-    ElMessage.success('已删除')
-  } catch (error: any) {
-    if (error === 'cancel' || error === 'close') return
-    ElMessage.error(apiError(error).message)
-  }
+const targetEditOpen=ref(false),targetEditSaving=ref(false)
+const targetEdit=reactive({id:0,name:'',platform:''})
+function editTarget(row:any){Object.assign(targetEdit,{id:row.id,name:row.name,platform:row.platform||''});targetEditOpen.value=true}
+async function saveTargetEdit(){
+  if(!targetEdit.name.trim()){ElMessage.warning('请填写名称');return}
+  targetEditSaving.value=true
+  try{await http.patch(`/work-targets/${targetEdit.id}`,{name:targetEdit.name.trim(),platform:targetEdit.platform.trim()});targetEditOpen.value=false;await loadTargets();await load();ElMessage.success('已修改')}
+  catch(e){ElMessage.error(apiError(e).message)}finally{targetEditSaving.value=false}
+}
+async function deleteTarget(row:any){try{
+  await ElMessageBox.confirm(`删除「${row.name}」后将从列表移除并停止打卡，任务和历史记录保留。仅需暂时停用时可使用暂停。`,'删除'+kindLabel.value,{type:'warning',confirmButtonText:'删除',cancelButtonText:'取消'})
+  await http.delete(`/work-targets/${row.id}`);await loadTargets();await load();ElMessage.success('已删除')
+}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(apiError(e).message)}}
+async function renameGroup(row:any){try{
+  const {value}=await ElMessageBox.prompt('分类名称','重命名分类',{inputValue:row.name,inputValidator:(v:string)=>!!v.trim()&&v.trim().length<=100||'请输入 1–100 个字',confirmButtonText:'保存',cancelButtonText:'取消'})
+  await http.patch(`/checkin-groups/${row.id}`,{name:value.trim(),sort_order:row.sort_order});await loadGroups();await load();ElMessage.success('已修改')
+}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(apiError(e).message)}}
+const groupDeleteOpen=ref(false),groupDeleting=ref(false),groupToDelete=ref<any>(null),moveGroupTo=ref<number|null>(null)
+function removeGroup(row:any){groupToDelete.value=row;moveGroupTo.value=null;groupDeleteOpen.value=true}
+async function confirmDeleteGroup(){
+  groupDeleting.value=true
+  try{await http.delete(`/checkin-groups/${groupToDelete.value.id}`,{params:moveGroupTo.value?{move_to:moveGroupTo.value}:{}});groupDeleteOpen.value=false;await loadGroups();await load();ElMessage.success('分类已删除，关联任务已保留')}
+  catch(e){ElMessage.error(apiError(e).message)}finally{groupDeleting.value=false}
 }
 
 function openTarget(row: any) {

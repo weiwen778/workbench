@@ -25,8 +25,8 @@ const routes = [
   { path: '/todos/:listId?', name: 'todos', component: () => import('@/views/TodosView.vue'), meta: { title: '待办' } },
   { path: '/dashboard', redirect: (to: any) => ({ path: '/visualizations', query: to.query }) },
   { path: '/visualizations/:dashboardId?', name: 'visualizations', component: () => import('@/views/DashboardView.vue'), meta: { title: '数据可视化' } },
-  { path: '/data/virtual/new', name: 'virtual-new', component: () => import('@/views/VirtualTableEditorView.vue'), meta: { title: '新建虚拟表' } },
-  { path: '/data/:tableId/virtual/edit', name: 'virtual-edit', component: () => import('@/views/VirtualTableEditorView.vue'), meta: { title: '虚拟表组合规则' } },
+  { path: '/data/virtual/new', redirect: '/data' },
+  { path: '/data/:tableId/virtual/edit', redirect: '/data' },
   { path: '/data', name: 'data', component: () => import('@/views/TablesView.vue'), meta: { title: '表格' } },
   {
     path: '/data/:tableId',
@@ -39,6 +39,7 @@ const routes = [
   { path: '/translate', name: 'translate', component: () => import('@/views/TranslateView.vue'), meta: { title: '翻译' } },
   { path: '/images', name: 'images', component: () => import('@/views/ImageToolsView.vue'), meta: { title: '图片处理' } },
   { path: '/bookmarks', name: 'bookmarks', component: () => import('@/views/BookmarksView.vue'), meta: { title: '网址导航' } },
+  ...['tasks','search','activity'].map(path=>({path:'/'+path,name:path,component:()=>import('@/views/WorkspaceToolsView.vue'),meta:{title:path==='search'?'统一搜索':path==='activity'?'操作记录':'任务中心'}})),
   { path: '/trash', redirect: '/settings/trash' },
   { path: '/settings/trash', name: 'settings-trash', component: () => import('@/views/SettingsView.vue'), meta: { title: '设置 · 回收站' } },
   { path: '/settings/:section(appearance|navigation|account|agents|translation|system)', name: 'settings-section', component: () => import('@/views/SettingsView.vue'), meta: { title: '设置' } },

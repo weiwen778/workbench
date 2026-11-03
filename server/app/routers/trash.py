@@ -28,7 +28,7 @@ from ..utils import iso_z
 
 router = APIRouter(tags=["trash"], dependencies=[Depends(get_current_user)])
 
-KIND_LABEL = {"table": "表格", "record": "表格行", "note": "笔记", "memo": "便利贴"}
+KIND_LABEL = {"table": "表格", "record": "表格行", "note": "笔记", "memo": "便利贴", "todo":"待办", "todo_list":"待办清单"}
 
 
 @router.get("/trash")
@@ -86,7 +86,10 @@ def restore(kind: str, entity_id: int, db: Session = Depends(get_db)):
     entry = _entry(db, kind, entity_id)
     detail: dict = {}
 
-    if kind == "table":
+    if kind in {"todo","todo_list"}:
+        from ..services.todo_recovery import restore_tree
+        detail=restore_tree(db,entry)
+    elif kind == "table":
         table = db.get(DataTable, entity_id)
         if not table:
             raise ApiError("NOT_FOUND", "表格已经不存在", 404)
@@ -172,6 +175,7 @@ def purge(kind: str, entity_id: int, db: Session = Depends(get_db)):
     entry = _entry(db, kind, entity_id)
     _purge_entity(db, kind, entity_id)
     entry.purged_at = utcnow()
+    if kind in {"todo","todo_list"}:entry.snapshot=None
     db.commit()
     return {"ok": True}
 
@@ -193,6 +197,7 @@ def purge_expired(db: Session = Depends(get_db)):
         try:
             _purge_entity(db, entry.kind, entry.entity_id)
             entry.purged_at = now
+            if entry.kind in {"todo","todo_list"}:entry.snapshot=None
             db.commit()
             purged += 1
         except Exception:  # 单条失败不影响其余

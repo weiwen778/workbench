@@ -221,7 +221,8 @@ def test_delete_list_preview_and_cascade(auth):
 
     resp = auth.delete(f"/api/v1/todo-lists/{lst['id']}")
     assert resp.status_code == 200
-    assert resp.json()["recoverable"] is False
+    assert resp.json()["recoverable"] is True
+    assert any(item["kind"]=="todo_list" for item in auth.get("/api/v1/trash").json()["items"])
     assert auth.get(f"/api/v1/todos?list_id={lst['id']}").status_code == 404
     assert auth.get("/api/v1/todo-lists").json() == []
 

@@ -40,6 +40,11 @@ class Base(DeclarativeBase):
 
 
 def get_db() -> Iterator[Session]:
+    from .agent_runtime import execution
+    context = execution.get()
+    if context is not None:
+        yield context.db
+        return
     db = SessionLocal()
     try:
         yield db

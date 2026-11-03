@@ -30,6 +30,8 @@ services:
       WB_ENV: production
       WB_DATABASE_URL: postgresql+psycopg://${WB_DB_USER:-workbench}:${WB_DB_PASSWORD}@db:5432/${WB_DB_NAME:-workbench}
       WB_STORAGE_DIR: /data/storage
+      WB_BACKUP_DIR: /data/backups
+      WB_BACKUP_ENABLED: ${WB_BACKUP_ENABLED:-true}
       WB_ADMIN_USERNAME: ${WB_ADMIN_USERNAME:-admin}
       WB_ADMIN_PASSWORD: ${WB_ADMIN_PASSWORD:?请在 .env 中设置 WB_ADMIN_PASSWORD}
       WB_ENCRYPTION_KEY: ${WB_ENCRYPTION_KEY:?请在 .env 中设置 WB_ENCRYPTION_KEY}
@@ -43,6 +45,7 @@ services:
       TZ: Asia/Shanghai
     volumes:
       - wb_storage:/data/storage
+      - wb_backups:/data/backups
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=4).read()"]
       interval: 15s
@@ -70,3 +73,4 @@ services:
 volumes:
   wb_pgdata:
   wb_storage:
+  wb_backups:

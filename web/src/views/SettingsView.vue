@@ -26,6 +26,7 @@
    <TranslationSettings v-else-if="section==='translation'" ref="translationRef"/>
    <TrashView v-else-if="section==='trash'" class="settings-trash"/>
    <template v-else-if="section==='system'">
+    <BackupPanel/>
     <section class="setting-card"><div class="setting-row"><div class="setting-label"><h3>运行状态</h3><p>检查工作台服务和数据连接是否正常。</p></div><el-button :loading="checkingHealth" @click="checkHealth">重新检查</el-button></div><p v-if="healthError" class="error-text" role="alert">{{ healthError }}</p><dl class="system-facts"><div><dt>工作台服务</dt><dd :class="health.status==='ok'?'success-text':'error-text'">{{ checkingHealth?'检查中…':health.status==='ok'?'运行正常':'连接异常' }}</dd></div><div><dt>数据连接</dt><dd>{{ checkingHealth?'检查中…':health.database==='ok'?'连接正常':'暂时不可用' }}</dd></div><div><dt>服务检查时间</dt><dd>{{ checkedAt?new Date(checkedAt).toLocaleTimeString('zh-CN'):'尚未检查' }}</dd></div><div><dt>工作台时区</dt><dd>北京时间 · Asia/Shanghai</dd></div><div><dt>当前地址</dt><dd class="breakable">{{ origin }}</dd></div></dl></section>
     <section class="setting-card"><div class="setting-label"><h3>数据与隐私</h3><p>笔记、待办、表格等数据保存在当前工作台。图片处理在浏览器本地完成，不上传图片；翻译内容会发送到你启用的翻译服务。</p></div><div class="setting-actions"><el-button @click="navigate('trash')">打开回收站</el-button><el-button @click="navigate('translation')">管理翻译服务</el-button></div></section>
    </template>
@@ -41,12 +42,13 @@ import {http,apiError} from '@/api/client'
 import {session,setTheme,setThemeColor,logout} from '@/stores/session'
 import {DEFAULT_THEME_COLOR} from '@/theme-color'
 import {reduceMotion,setReduceMotion} from '@/stores/motion'
+import BackupPanel from '@/components/BackupPanel.vue'
 import AgentAccess from '@/components/AgentAccess.vue'
 import TranslationSettings from '@/components/TranslationSettings.vue'
 import TrashView from '@/views/TrashView.vue'
 const route=useRoute(),router=useRouter(),search=ref(''),feedback=ref(''),feedbackError=ref(false)
 const groups=[{name:'偏好设置'},{name:'账号与连接'},{name:'数据与维护'}]
-const items=[{key:'appearance',label:'外观与动效',group:'偏好设置',icon:Sunny,description:'调整工作台的主题、强调色和动画体验。',keywords:'主题 深色 浅色 颜色 动画'}, {key:'navigation',label:'导航与命名',group:'偏好设置',icon:Menu,description:'让导航名称更符合你的使用习惯。',keywords:'打卡 店铺 社媒 重命名'}, {key:'account',label:'账号与安全',group:'账号与连接',icon:Setting,description:'管理登录密码和当前设备的登录状态。',keywords:'密码 用户名 退出 登录'}, {key:'agents',label:'Agent 接入',group:'账号与连接',icon:Todo,description:'管理自动化助手的访问权限和写入记录。',keywords:'令牌 API token 自动化 权限'}, {key:'translation',label:'翻译服务',group:'账号与连接',icon:Translate,description:'配置、启用和测试翻译服务，密钥留空时保留原有值。',keywords:'百度 有道 DeepSeek 密钥 模型'}, {key:'trash',label:'回收站',group:'数据与维护',icon:Delete,description:'恢复误删内容，或清理不再需要的数据。',keywords:'删除 恢复 清理 数据'}, {key:'system',label:'系统信息',group:'数据与维护',icon:InfoFilled,description:'查看运行状态、数据连接及工作台的数据处理方式。',keywords:'健康 时区 隐私 状态'}]
+const items=[{key:'appearance',label:'外观与动效',group:'偏好设置',icon:Sunny,description:'调整工作台的主题、强调色和动画体验。',keywords:'主题 深色 浅色 颜色 动画'}, {key:'navigation',label:'导航与命名',group:'偏好设置',icon:Menu,description:'让导航名称更符合你的使用习惯。',keywords:'打卡 店铺 社媒 重命名'}, {key:'account',label:'账号与安全',group:'账号与连接',icon:Setting,description:'管理登录密码和当前设备的登录状态。',keywords:'密码 用户名 退出 登录'}, {key:'agents',label:'Agent 接入',group:'账号与连接',icon:Todo,description:'管理自动化助手的访问权限和写入记录。',keywords:'令牌 API token 自动化 权限'}, {key:'translation',label:'翻译服务',group:'账号与连接',icon:Translate,description:'配置、启用和测试翻译服务，密钥留空时保留原有值。',keywords:'百度 有道 DeepSeek 密钥 模型'}, {key:'trash',label:'回收站',group:'数据与维护',icon:Delete,description:'恢复误删内容，或清理不再需要的数据。',keywords:'删除 恢复 清理 数据'}, {key:'system',label:'系统与备份',group:'数据与维护',icon:InfoFilled,description:'查看运行状态、数据连接及工作台的数据处理方式。',keywords:'健康 时区 隐私 状态 备份 恢复'}]
 const section=computed(()=>route.name==='settings-trash'?'trash':String(route.params.section||'appearance'))
 const current=computed(()=>items.find(i=>i.key===section.value)||items[0])
 const filtered=computed(()=>items.filter(i=>(i.label+i.keywords).toLowerCase().includes(search.value.trim().toLowerCase())))

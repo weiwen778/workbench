@@ -59,6 +59,7 @@ def _load_instances(
         .join(WorkTarget, WorkTarget.id == CheckinInstance.target_id)
         .where(
             WorkTarget.kind == kind,
+            WorkTarget.status != "deleted",
             CheckinInstance.period_type == period,
             CheckinInstance.period_start == start,
             # 归档前遗留的当前周期记录不在“今天要做”的清单里重复出现

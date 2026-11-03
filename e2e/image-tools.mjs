@@ -6,7 +6,9 @@ const require=createRequire(new URL('../web/package.json',import.meta.url))
 const ts=require('typescript')
 const base=process.env.WB_BASE || 'http://127.0.0.1:18746'
 assert.ok(['127.0.0.1','localhost','[::1]'].includes(new URL(base).hostname))
-const engineSource=ts.transpileModule(await fs.readFile(new URL('../web/src/utils/image-tools.ts',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.ES2020}}).outputText
+const esbuild=require('esbuild')
+const engineBundle=await esbuild.build({entryPoints:[new URL('../web/src/utils/image-tools.ts',import.meta.url).pathname],bundle:true,format:'esm',platform:'browser',write:false})
+const engineSource=engineBundle.outputFiles[0].text
 await fs.mkdir('../.run/image-tools-e2e',{recursive:true})
 const browser=await chromium.launch({executablePath:process.env.CHROME_PATH || undefined})
 const context=await browser.newContext({viewport:{width:1600,height:1100},acceptDownloads:true})
@@ -15,7 +17,7 @@ const page=await context.newPage(), errors=[], requests=[]
 await page.route('**/image-engine-test.js',route=>route.fulfill({contentType:'text/javascript',body:engineSource}))
 page.on('pageerror',error=>errors.push(error.message))
 let record=false
-page.on('request',request=>{if(record && /^https?:/.test(request.url()) && !(new URL(request.url()).pathname==='/favicon.svg' && request.method()==='GET')) requests.push({url:request.url(),method:request.method()})})
+page.on('request',request=>{if(record && /^https?:/.test(request.url()) && !((new URL(request.url()).pathname==='/favicon.svg'||new URL(request.url()).pathname.startsWith('/assets/')) && new URL(request.url()).origin===new URL(base).origin && request.method()==='GET')) requests.push({url:request.url(),method:request.method()})})
 async function exportImage(name,button=page.locator('.studio-toolbar').getByRole('button',{name:'导出当前图片',exact:true})){
   const done=page.waitForEvent('download');await button.click();const download=await done;await download.saveAs(`../.run/image-tools-e2e/${name}`);return fs.readFile(`../.run/image-tools-e2e/${name}`)
 }

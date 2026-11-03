@@ -1,5 +1,4 @@
 from __future__ import annotations
-from .routers import virtual_tables
 
 import logging
 import asyncio
@@ -32,12 +31,19 @@ def create_app() -> FastAPI:
         init_db()
         bootstrap()
         task = None
+        worker = None
         if settings.env == "production":
             from .maintenance import maintenance_loop
             task = asyncio.create_task(maintenance_loop())
+        if settings.env!='test':
+            from .services.jobs import worker_loop
+            worker=asyncio.create_task(worker_loop())
         try:
             yield
         finally:
+            if worker is not None:
+                worker.cancel()
+                with suppress(asyncio.CancelledError): await worker
             if task is not None:
                 task.cancel()
                 with suppress(asyncio.CancelledError):
@@ -96,6 +102,26 @@ def create_app() -> FastAPI:
             )
         return response
 
+    @app.middleware('http')
+    async def _audit(request:Request,call_next):
+        from .agent_runtime import execution
+        internal=execution.get() is not None
+        response=await call_next(request)
+        identity=getattr(request.state,'audit_identity',None)
+        if not internal and identity and request.method in {'POST','PUT','PATCH','DELETE'} and response.status_code<400 and not request.url.path.startswith('/api/v1/auth/'):
+            from starlette.background import BackgroundTasks
+            uid,actor=identity;method=request.method;path=request.url.path[:1000];status=response.status_code
+            def save_audit():
+                try:
+                    from .models import OperationLog
+                    with SessionLocal() as audit_db:
+                        audit_db.add(OperationLog(user_id=uid,actor=actor,method=method,path=path,status=status));audit_db.commit()
+                except Exception:logger.exception('Could not save operation log')
+            background=BackgroundTasks()
+            if response.background:background.add_task(response.background)
+            background.add_task(save_audit);response.background=background
+        return response
+
     from .request_limits import RequestConcurrencyLimit
     app.add_middleware(RequestConcurrencyLimit, limit=settings.request_concurrency, timeout=settings.request_queue_timeout)
 
@@ -123,9 +149,13 @@ def create_app() -> FastAPI:
     )
 
     api = "/api/v1"
+    from .routers import category_management
+    app.include_router(category_management.router, prefix=api)
     app.include_router(health.router, prefix=api)
     app.include_router(auth.router, prefix=api)
     app.include_router(agent.router, prefix=api)
+    from .routers import agent_changes
+    app.include_router(agent_changes.router, prefix=api)
     app.include_router(agent_tokens.router, prefix=api)
     app.include_router(dashboards.router, prefix=api)
     app.include_router(preferences.router, prefix=api)
@@ -134,7 +164,6 @@ def create_app() -> FastAPI:
     app.include_router(checkin_import.router, prefix=api)
     app.include_router(todos.router, prefix=api)
     app.include_router(tables.router, prefix=api)
-    app.include_router(virtual_tables.router, prefix=api)
     app.include_router(table_workspaces.router, prefix=api)
     app.include_router(workbook_files.router, prefix=api)
     app.include_router(transfers.router, prefix=api)
@@ -144,6 +173,9 @@ def create_app() -> FastAPI:
     app.include_router(bookmarks.router, prefix=api)
     app.include_router(translate.router, prefix=api)
     app.include_router(trash.router, prefix=api)
+
+    from .routers import workspace_tools
+    app.include_router(workspace_tools.router,prefix=api)
 
     _mount_spa(app)
     return app
@@ -180,7 +212,8 @@ def _mount_spa(app: FastAPI) -> None:
     if not dist.exists():
         return
     if (dist / "assets").exists():
-        app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
+        from .static_assets import PrecompressedAssets
+        app.mount("/assets", PrecompressedAssets(directory=dist / "assets"), name="assets")
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def _spa(full_path: str):
@@ -190,8 +223,8 @@ def _mount_spa(app: FastAPI) -> None:
         if not candidate.is_relative_to(dist.resolve()):
             return JSONResponse(status_code=404, content=error_payload("NOT_FOUND", "文件不存在"))
         if full_path and candidate.is_file():
-            return FileResponse(candidate)
-        return FileResponse(dist / "index.html")
+            return FileResponse(candidate,headers={"Cache-Control":"no-store"} if candidate.name=="index.html" else None)
+        return FileResponse(dist / "index.html",headers={"Cache-Control":"no-store"})
 
 
 app = create_app()

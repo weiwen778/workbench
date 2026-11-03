@@ -2,7 +2,7 @@
   <div class="wb-sidebar" :style="{ width: (width??192)+'px' }">
     <div class="brand"><img src="/favicon.svg?v=20261031-notion" width="24" height="24" alt="" /><span class="ellipsis-1">个人工作台</span><div class="spacer" /><el-button v-if="collapsible" text :icon="Fold" size="small" title="收起侧栏" @click="$emit('collapse')" /></div>
     <div class="wb-nav">
-      <button class="wb-nav-item nav-button" :aria-expanded="expandedKey === 'checkin'" @click="toggle('checkin')">
+      <button class="wb-nav-item nav-button" :class="{ active: route.path === '/checkins' || route.path.startsWith('/checkins/') }" :aria-expanded="expandedKey === 'checkin'" @click="toggle('checkin')">
         <el-icon><Calendar /></el-icon><span>打卡</span><div class="spacer" /><el-icon class="caret" :class="{ open: expandedKey === 'checkin' }"><ArrowRight /></el-icon>
       </button>
       <div class="wb-nav-collapse" :class="{ open: expandedKey === 'checkin' }" :inert="expandedKey !== 'checkin'" :aria-hidden="expandedKey !== 'checkin'">
@@ -14,7 +14,7 @@
         </div>
       </div>
 
-      <button class="wb-nav-item nav-button" :aria-expanded="expandedKey === 'visualizations'" @click="toggle('visualizations')">
+      <button class="wb-nav-item nav-button" :class="{ active: route.path === '/visualizations' || route.path.startsWith('/visualizations/') }" :aria-expanded="expandedKey === 'visualizations'" @click="toggle('visualizations')">
         <el-icon><DashboardIcon /></el-icon><span>数据可视化</span><div class="spacer" /><el-icon class="caret" :class="{ open: expandedKey === 'visualizations' }"><ArrowRight /></el-icon>
       </button>
       <div class="wb-nav-collapse" :class="{ open: expandedKey === 'visualizations' }" :inert="expandedKey !== 'visualizations'" :aria-hidden="expandedKey !== 'visualizations'">
@@ -28,20 +28,19 @@
         </div>
       </div>
 
-      <button class="wb-nav-item nav-button" :aria-expanded="expandedKey === 'data'" @click="toggle('data')">
+      <button class="wb-nav-item nav-button" :class="{ active: route.path === '/data' || route.path.startsWith('/data/') }" :aria-expanded="expandedKey === 'data'" @click="toggle('data')">
         <el-icon><Collection /></el-icon><span>表格</span><div class="spacer" /><el-icon class="caret" :class="{ open: expandedKey === 'data' }"><ArrowRight /></el-icon>
       </button>
       <div class="wb-nav-collapse" :class="{ open: expandedKey === 'data' }" :inert="expandedKey !== 'data'" :aria-hidden="expandedKey !== 'data'">
         <div class="wb-nav-sub">
           <div v-if="tables.length > 10" class="table-search"><el-input :model-value="tableSearch" size="small" placeholder="搜索表格" clearable @update:model-value="$emit('update:tableSearch', $event)" /></div>
-          <button v-for="table in filteredTables" :key="table.id" class="wb-nav-item nav-button" :class="{ active: String(route.params.tableId) === String(table.id) }" :title="table.name" @click="go(`/data/${table.id}`)"><span class="ellipsis-1">{{ table.name }}</span><span v-if="table.kind==='virtual'" class="text-12 muted" title="虚拟表">虚</span></button>
+          <button v-for="table in filteredTables" :key="table.id" class="wb-nav-item nav-button" :class="{ active: String(route.params.tableId) === String(table.id) }" :title="table.name" @click="go(`/data/${table.id}`)"><span class="ellipsis-1">{{ table.name }}</span></button>
           <div v-if="!filteredTables.length" class="table-empty">{{ tables.length ? '没有匹配的表格' : '还没有表格' }}</div>
           <button class="wb-nav-item nav-button new-item" @click="$emit('new-table')"><el-icon><Plus /></el-icon><span>新建表格</span></button>
-          <button class="wb-nav-item nav-button new-item" @click="go('/data/virtual/new')"><el-icon><Plus /></el-icon><span>新建虚拟表</span></button>
         </div>
       </div>
 
-      <button class="wb-nav-item nav-button" :aria-expanded="expandedKey === 'todos'" @click="toggle('todos')"><el-icon><Todo /></el-icon><span>待办</span><div class="spacer" /><el-icon class="caret" :class="{ open: expandedKey === 'todos' }"><ArrowRight /></el-icon></button>
+      <button class="wb-nav-item nav-button" :class="{ active: route.path === '/todos' || route.path.startsWith('/todos/') }" :aria-expanded="expandedKey === 'todos'" @click="toggle('todos')"><el-icon><Todo /></el-icon><span>待办</span><div class="spacer" /><el-icon class="caret" :class="{ open: expandedKey === 'todos' }"><ArrowRight /></el-icon></button>
       <div class="wb-nav-collapse" :class="{ open: expandedKey === 'todos' }" :inert="expandedKey !== 'todos'" :aria-hidden="expandedKey !== 'todos'">
         <div class="wb-nav-sub" aria-label="待办清单">
           <div v-if="todoLists.length > 10" class="table-search"><el-input v-model="todoSearch" size="small" placeholder="搜索清单" clearable /></div>
@@ -51,7 +50,7 @@
         </div>
       </div>
 
-      <button class="wb-nav-item nav-button" :aria-expanded="expandedKey === 'notes'" @click="toggle('notes')"><el-icon><Document /></el-icon><span>笔记</span><div class="spacer" /><el-icon class="caret" :class="{ open: expandedKey === 'notes' }"><ArrowRight /></el-icon></button>
+      <button class="wb-nav-item nav-button" :class="{ active: route.path === '/notes' || route.path.startsWith('/notes/') }" :aria-expanded="expandedKey === 'notes'" @click="toggle('notes')"><el-icon><Document /></el-icon><span>笔记</span><div class="spacer" /><el-icon class="caret" :class="{ open: expandedKey === 'notes' }"><ArrowRight /></el-icon></button>
       <div class="wb-nav-collapse" :class="{ open: expandedKey === 'notes' }" :inert="expandedKey !== 'notes'" :aria-hidden="expandedKey !== 'notes'">
         <div class="wb-nav-sub" aria-label="笔记文件夹">
           <button class="wb-nav-item nav-button" :class="{ active: route.params.folderKey === 'uncategorized' }" @click="go('/notes/uncategorized')"><span class="ellipsis-1">未分类</span><span class="nav-count">{{ uncategorizedCount }}</span></button>
@@ -61,18 +60,19 @@
         </div>
       </div>
 
-      <button class="wb-nav-item nav-button" :aria-expanded="expandedKey === 'memos'" @click="toggle('memos')"><el-icon><Memo /></el-icon><span>便利贴</span><div class="spacer" /><el-icon class="caret" :class="{ open: expandedKey === 'memos' }"><ArrowRight /></el-icon></button>
+      <button class="wb-nav-item nav-button" :class="{ active: route.path === '/memos' || route.path.startsWith('/memos/') }" :aria-expanded="expandedKey === 'memos'" @click="toggle('memos')"><el-icon><Memo /></el-icon><span>便利贴</span><div class="spacer" /><el-icon class="caret" :class="{ open: expandedKey === 'memos' }"><ArrowRight /></el-icon></button>
       <div class="wb-nav-collapse" :class="{ open: expandedKey === 'memos' }" :inert="expandedKey !== 'memos'" :aria-hidden="expandedKey !== 'memos'">
         <div class="wb-nav-sub" aria-label="便利贴分类">
           <button class="wb-nav-item nav-button" :class="{ active: isMemoActive(route, null) }" @click="go(memoPath(null))">未分类</button>
           <div v-if="memoCategories.length > 10" class="table-search"><el-input v-model="memoSearch" size="small" placeholder="搜索便利贴分类" clearable /></div>
           <button v-for="name in filteredMemoCategories" :key="name" class="wb-nav-item nav-button" :class="{ active: isMemoActive(route, name) }" :title="name" :aria-label="`便利贴分类：${name}`" @click="go(memoPath(name))"><span class="ellipsis-1">{{ name }}</span></button>
           <div v-if="memoSearch && !filteredMemoCategories.length" class="table-empty">没有匹配的分类</div>
+          <button class="wb-nav-item nav-button new-item" @click="$emit('new-memo-category')"><el-icon><Plus /></el-icon><span>新建分类</span></button>
         </div>
       </div>
 
       <button v-for="item in mainItems" :key="item.path" class="wb-nav-item nav-button" :class="{ active: route.path === item.path }" @click="go(item.path)"><el-icon><component :is="item.icon" /></el-icon><span>{{ item.label }}</span></button>
-      <button class="wb-nav-item nav-button" :aria-expanded="expandedKey === 'bookmarks'" @click="toggle('bookmarks')"><el-icon><Link /></el-icon><span>网址导航</span><div class="spacer"/><el-icon class="caret" :class="{open:expandedKey === 'bookmarks'}"><ArrowRight /></el-icon></button>
+      <button class="wb-nav-item nav-button" :class="{ active: route.path === '/bookmarks' || route.path.startsWith('/bookmarks/') }" :aria-expanded="expandedKey === 'bookmarks'" @click="toggle('bookmarks')"><el-icon><Link /></el-icon><span>网址导航</span><div class="spacer"/><el-icon class="caret" :class="{open:expandedKey === 'bookmarks'}"><ArrowRight /></el-icon></button>
       <div class="wb-nav-collapse" :class="{open:expandedKey === 'bookmarks'}" :inert="expandedKey !== 'bookmarks'" :aria-hidden="expandedKey !== 'bookmarks'"><div class="wb-nav-sub" aria-label="网址分类">
         <button class="wb-nav-item nav-button" :class="{active:route.path==='/bookmarks' && route.query.category==='__none'}" @click="go('/bookmarks?category=__none')">未分类</button>
         <button v-for="name in bookmarkCategories" :key="name" class="wb-nav-item nav-button" :class="{active:route.path==='/bookmarks' && route.query.category===name}" :title="name" @click="go('/bookmarks?category='+encodeURIComponent(name))"><span class="ellipsis-1">{{ name }}</span></button>
@@ -91,7 +91,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { http, apiError } from '@/api/client'
 import { isMemoActive, memoPath } from '@/memo-navigation'
 const props = defineProps<{ tables: any[]; dashboards: { id: number; name: string }[]; tableSearch: string; todoLists: any[]; noteFolders: any[]; uncategorizedCount: number; memoCategories: string[]; collapsed?: boolean; collapsible?: boolean; width?: number }>()
-const emit = defineEmits<{ (e: 'update:tableSearch', value: string): void; (e: 'navigate'): void; (e: 'new-table'): void; (e: 'new-dashboard'): void; (e: 'new-todo-list'): void; (e: 'new-note-folder'): void; (e: 'collapse'): void; (e: 'rename-checkin', key: CheckinNavKey): void }>()
+const emit = defineEmits<{ (e: 'update:tableSearch', value: string): void; (e: 'navigate'): void; (e: 'new-table'): void; (e: 'new-dashboard'): void; (e: 'new-todo-list'): void; (e: 'new-note-folder'): void; (e: 'new-memo-category'): void; (e: 'collapse'): void; (e: 'rename-checkin', key: CheckinNavKey): void }>()
 const route = useRoute(), router = useRouter()
 const bookmarkCategories=ref<string[]>([])
 async function loadBookmarkCategories(){try{const {data}=await http.get('/bookmarks/categories');bookmarkCategories.value=data}catch{/* keep current categories */}}
@@ -127,6 +127,17 @@ function go(path: string) { if (route.fullPath !== path) router.push(path); emit
 .nav-button { appearance: none; border: 0; background: transparent; width: 100%; text-align: left; font-family: inherit; }
 .nav-button:hover { background: var(--wb-nav-hover); }
 .nav-button.active { background: var(--wb-nav-active); color: var(--wb-text); }
+/* Keep expanded groups separate from their children and the next module. */
+.wb-nav > .nav-button { margin-top: 2px; }
+.wb-nav > .nav-button:first-child { margin-top: 0; }
+.wb-nav-collapse.open { margin: 4px 0 6px; }
+/* Only the current destination gets the blue rail when its group is open. */
+.nav-button.active[aria-expanded="true"] {
+  font-weight: 400;
+  background: var(--wb-nav-hover);
+  box-shadow: none;
+}
+.nav-button:active { background: var(--wb-pressed); }
 .nav-button:focus-visible { outline: 2px solid var(--wb-primary); outline-offset: -2px; }
 .table-search { padding: 3px 6px 7px; }
 .table-empty { font-size: 12px; color: var(--wb-text-tertiary); padding: 6px 14px 6px 36px; }

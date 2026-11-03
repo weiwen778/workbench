@@ -33,8 +33,8 @@
           </div>
           <div ref="stageRef" class="preview-space" :class="{ drawing: cropMode || drawingMode !== 'none' }">
             <div class="canvas-frame" :style="frameStyle" @pointerdown="startPointer" @pointermove="movePointer" @pointerup="endPointer" @pointercancel="cancelPointer" @lostpointercapture="cancelPointer">
-              <canvas ref="previewCanvas" aria-label="图片处理预览" />
-              <div v-if="cropMode" class="crop-selection" :style="cropStyle"><span>{{ Math.round(geometry.width * options.crop.w) }} × {{ Math.round(geometry.height * options.crop.h) }}</span></div>
+              <canvas v-show="!cropMode" ref="previewCanvas" aria-label="图片处理预览" />
+              <ImageCropper v-if="cropMode && cropPreviewUrl" :src="cropPreviewUrl" :model-value="options.crop" :aspect-ratio="desiredRatio()" @update:model-value="updateCrop" @commit="commit" />
               <svg v-if="draftMark" class="mark-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
                 <polyline v-if="draftMark.kind === 'brush'" :points="draftMark.points.map(p => `${p.x * 1000},${p.y * 1000}`).join(' ')" fill="none" :stroke="draftMark.color" :stroke-width="Math.max(1, draftMark.size * parseFloat(frameStyle.width) / Math.max(1, displayedSize.width))" vector-effect="non-scaling-stroke" stroke-linecap="round" />
                 <rect v-else :x="draftRect.x * 1000" :y="draftRect.y * 1000" :width="draftRect.w * 1000" :height="draftRect.h * 1000" :fill="draftMark.kind === 'mosaic' ? '#78777466' : 'none'" :stroke="draftMark.color" stroke-width="3" />
@@ -131,6 +131,7 @@
 </template>
 
 <script setup lang="ts">
+import ImageCropper from '@/components/ImageCropper.vue'
 import { computed, markRaw, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download, Picture, Plus } from '@/icons'
@@ -158,7 +159,8 @@ const canUndo = computed(() => !!active.value && (active.value.historyIndex > 0 
 const canRedo = computed(() => !!active.value && active.value.historyIndex < active.value.history.length - 1)
 const displayedSize = computed(() => tool.value === 'collage' ? collageSize(checkedAssets.value.length, collage) : showOriginal.value && active.value ? { width: active.value.image.naturalWidth, height: active.value.image.naturalHeight } : cropMode.value ? geometry.value : active.value ? outputSize(active.value.image, options.value) : { width: 0, height: 0 })
 const frameStyle = computed(() => { const ratio = previewSize.width / previewSize.height, width = Math.max(1, Math.min(previewSize.width, stageSize.width - 32, (stageSize.height - 32) * ratio)); return { width: `${width}px`, height: `${width / ratio}px` } })
-const cropStyle = computed(() => ({ left: `${options.value.crop.x * 100}%`, top: `${options.value.crop.y * 100}%`, width: `${options.value.crop.w * 100}%`, height: `${options.value.crop.h * 100}%` }))
+const cropPreviewUrl=ref('')
+function updateCrop(crop:ImageOptions['crop']){options.value.crop=crop;options.value.width=options.value.height=0}
 const draftRect = computed(() => { const p = draftMark.value?.points || [{ x: 0, y: 0 }], a = p[0], b = p[p.length - 1]; return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) } })
 function bytes(value: number) { return value >= 1024 * 1024 ? `${(value / 1024 / 1024).toFixed(2)} MB` : `${(value / 1024).toFixed(1)} KB` }
 function errorMessage(error: unknown) { ElMessage.error(error instanceof Error ? error.message : '图片处理失败，请重试。') }
@@ -226,7 +228,7 @@ function renderPreview() {
       rendered = renderImage(active.value.image, settings, 1400)
     }
     const preview = previewCanvas.value; preview.width = rendered.width; preview.height = rendered.height
-    preview.getContext('2d')?.drawImage(rendered, 0, 0); previewSize.width = rendered.width; previewSize.height = rendered.height; previewError.value = ''; rendered.width = rendered.height = 1
+    preview.getContext('2d')?.drawImage(rendered, 0, 0); previewSize.width = rendered.width; previewSize.height = rendered.height; previewError.value = ''; if(cropMode.value)cropPreviewUrl.value=preview.toDataURL(); rendered.width = rendered.height = 1
   } catch (error) { previewError.value = error instanceof Error ? error.message : '预览失败' }
 }
 function changeTool() { commit(); cropMode.value = false; drawingMode.value = 'none'; showOriginal.value = false }
@@ -249,15 +251,11 @@ function applySizePreset() { if (sizePreset.value === 'original') options.value.
 function setFilter(preset: string) { Object.assign(options.value, { brightness: 100, contrast: 100, saturation: 100, grayscale: 0, sepia: 0, blur: 0 }); if (preset === '黑白') options.value.grayscale = 100; if (preset === '复古') { options.value.sepia = 70; options.value.contrast = 90 } if (preset === '鲜艳') { options.value.saturation = 135; options.value.contrast = 110 } if (preset === '柔和') { options.value.contrast = 85; options.value.brightness = 108; options.value.saturation = 85 } commit() }
 function activateDrawing() { cropMode.value = false; showOriginal.value = false }
 function eventPoint(event: PointerEvent) { const rect = (event.currentTarget as HTMLElement).getBoundingClientRect(); return { x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)) } }
-function startPointer(event: PointerEvent) { if (busy.value || !event.isPrimary || event.button !== 0 || (!cropMode.value && drawingMode.value === 'none')) return; event.preventDefault(); pointerStart = eventPoint(event); pointerId = event.pointerId; (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId); if (drawingMode.value !== 'none') draftMark.value = { kind: drawingMode.value, points: [pointerStart], color: markColor.value, size: markSize.value } }
+function startPointer(event: PointerEvent) { if (busy.value || !event.isPrimary || event.button !== 0 || (cropMode.value || drawingMode.value === 'none')) return; event.preventDefault(); pointerStart = eventPoint(event); pointerId = event.pointerId; (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId); draftMark.value = { kind: drawingMode.value, points: [pointerStart], color: markColor.value, size: markSize.value } }
 function movePointer(event: PointerEvent) {
   if (event.pointerId !== pointerId || !pointerStart) return
   const point = eventPoint(event)
-  if (cropMode.value) {
-    let w = Math.abs(point.x - pointerStart.x), h = Math.abs(point.y - pointerStart.y); const ratio = desiredRatio() * geometry.value.height / geometry.value.width
-    if (ratio) { if (w / Math.max(h, .00001) > ratio) h = w / ratio; else w = h * ratio; const maxW = point.x >= pointerStart.x ? 1 - pointerStart.x : pointerStart.x, maxH = point.y >= pointerStart.y ? 1 - pointerStart.y : pointerStart.y; const fit = Math.min(1, maxW / Math.max(w, .00001), maxH / Math.max(h, .00001)); w *= fit; h *= fit }
-    if (w * geometry.value.width >= 1 && h * geometry.value.height >= 1) { options.value.crop = { x: point.x >= pointerStart.x ? pointerStart.x : pointerStart.x - w, y: point.y >= pointerStart.y ? pointerStart.y : pointerStart.y - h, w, h }; options.value.width = options.value.height = 0 }
-  } else if (draftMark.value) { if (draftMark.value.kind === 'brush') { if (draftMark.value.points.length < 2000) draftMark.value.points.push(point) } else draftMark.value.points = [pointerStart, point] }
+  if (draftMark.value) { if (draftMark.value.kind === 'brush') { if (draftMark.value.points.length < 2000) draftMark.value.points.push(point) } else draftMark.value.points = [pointerStart, point] }
 }
 function endPointer(event: PointerEvent) { if (event.pointerId !== pointerId) return; movePointer(event); if (draftMark.value && active.value) { if (options.value.marks.length < 200) options.value.marks.push(clone(draftMark.value)); else ElMessage.info('最多保留 200 笔标注，请先导出或清理部分标注') } draftMark.value = null; pointerStart = null; pointerId = null; const frame = event.currentTarget as HTMLElement; if (frame.hasPointerCapture(event.pointerId)) frame.releasePointerCapture(event.pointerId); commit() }
 function cancelPointer(event: PointerEvent) { if (pointerId !== event.pointerId) return; pointerId = null; pointerStart = null; draftMark.value = null; commit() }
@@ -299,8 +297,8 @@ onUnmounted(() => { disposed = true; window.removeEventListener('paste', pasteEv
 .canvas-frame { position: relative; flex-shrink: 0; box-shadow: 0 2px 12px #0002; }
 .canvas-frame canvas { display: block; width: 100%; height: 100%; }
 .drawing .canvas-frame { touch-action: none; cursor: crosshair; user-select: none; }
-.crop-selection { position: absolute; pointer-events: none; border: 2px solid #fff; outline: 1px solid #2383e2; box-shadow: 0 0 0 9999px #0007; background-image: linear-gradient(to right, transparent 33%, #fff6 33%, #fff6 33.3%, transparent 33.3%, transparent 66%, #fff6 66%, #fff6 66.3%, transparent 66.3%), linear-gradient(to bottom, transparent 33%, #fff6 33%, #fff6 33.3%, transparent 33.3%, transparent 66%, #fff6 66%, #fff6 66.3%, transparent 66.3%); }
-.crop-selection span { position: absolute; left: 4px; bottom: 4px; background: #0009; color: white; padding: 2px 5px; border-radius: 3px; font-size: 11px; white-space: nowrap; }
+
+
 .mark-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .preview-error { position: absolute; inset: 0; padding: 24px; background: var(--wb-surface); color: var(--el-color-danger); display: flex; align-items: center; justify-content: center; text-align: center; }
 .preview-footer { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 8px 12px; color: var(--wb-text-tertiary); font-size: 11px; border-top: 1px solid var(--wb-border); }

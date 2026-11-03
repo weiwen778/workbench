@@ -5,10 +5,10 @@
   --wb-bg: #ffffff;
   --wb-surface: #ffffff;
   --wb-surface-subtle: #f1f1ef;
-  --wb-text: #37352f;
-  --wb-text-secondary: #787774;
-  --wb-text-tertiary: #9b9a97;
-  --wb-border: #e9e9e7;
+  --wb-text: #292d34;
+  --wb-text-secondary: #5d646f;
+  --wb-text-tertiary: #727985;
+  --wb-border: #d9dde3;
   --wb-primary: #2383e2;
 
   /* 便签六色（浅底 + 深字） */
@@ -25,10 +25,15 @@
   --wb-memo-purple: #f4f0f7;
   --wb-memo-purple-text: #9065b0;
 
-  --wb-sidebar-bg: #f7f7f5;
+  --wb-sidebar-bg: #f2f3f5;
   --wb-code-bg: #f7f6f3;
-  --wb-nav-hover: #efefed;
-  --wb-nav-active: #e8e8e5;
+  --wb-nav-hover: #e6e9ed;
+  --wb-nav-active: #dce8f6;
+
+  --wb-border-strong: #b9c1cc;
+  --wb-pressed: #dce1e8;
+  --wb-focus-ring: color-mix(in srgb, var(--wb-primary) 28%, transparent);
+  --wb-control-shadow: 0 1px 1px rgba(20, 30, 45, 0.08);
 
   /* 长文阅读字体：西文衬线优先，其次苹果、Windows、开源思源宋体 */
   --wb-font-serif: Georgia, "Times New Roman", "Songti SC", "SimSun", "宋体",
@@ -54,7 +59,7 @@
   --el-color-info: #787774;
 
   --el-text-color-primary: var(--wb-text);
-  --el-text-color-regular: var(--wb-text-secondary);
+  --el-text-color-regular: var(--wb-text);
   --el-text-color-secondary: var(--wb-text-tertiary);
   --el-text-color-placeholder: var(--wb-text-tertiary);
 
@@ -83,7 +88,7 @@
   --el-box-shadow-light: 0 1px 2px rgba(16, 24, 40, 0.04);
 
   --el-table-header-bg-color: var(--wb-surface-subtle);
-  --el-table-header-text-color: var(--wb-text-secondary);
+  --el-table-header-text-color: var(--wb-text);
   --el-table-row-hover-bg-color: var(--wb-surface-subtle);
   --el-table-border-color: var(--wb-border);
   --el-table-text-color: var(--wb-text);
@@ -142,7 +147,7 @@ a {
 }
 .el-table th.el-table__cell {
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
 }
 .el-table {
   font-size: 13px;
@@ -287,7 +292,7 @@ a {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  min-height: 120px;
+  min-width: 0;
   border: 1px solid var(--wb-border);
   background: var(--wb-memo-default);
   color: var(--wb-memo-default-text);
@@ -307,7 +312,8 @@ a {
   white-space: pre-wrap;
   word-break: break-word;
   opacity: 0.92;
-  flex: 1;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
 }
 .memo-chip {
   height: 20px;
@@ -698,6 +704,92 @@ html.dark .checkin-row.done .checkin-main {
   text-align: left;
 }
 
+/* 操作反馈：按下立即响应，加载和禁用态不产生可点击的位移。 */
+.el-button {
+  font-weight: 500;
+  transition: background-color 100ms ease, border-color 100ms ease,
+    color 100ms ease, box-shadow 100ms ease, transform 70ms ease;
+}
+.el-button:not(.is-text):not(.is-link):not(.is-disabled):not(.is-loading) {
+  box-shadow: var(--wb-control-shadow);
+}
+.el-button:where(:not([class*="el-button--"])) {
+  --el-button-text-color: var(--wb-text);
+  --el-button-border-color: var(--wb-border-strong);
+}
+.el-button:not(.is-disabled):not(.is-loading):active {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 2px var(--wb-focus-ring);
+}
+.el-button.is-text:not(.is-disabled):not(.is-loading):active,
+.btn-tonal.el-button:not(.is-disabled):not(.is-loading):active {
+  background: var(--el-color-primary-light-7);
+}
+.el-button:focus-visible,
+.wb-iconbar .icon-btn:focus-visible {
+  outline: 2px solid var(--wb-primary);
+  outline-offset: 2px;
+}
+.el-input__wrapper:hover,
+.el-select__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--wb-border-strong) inset;
+}
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 1px var(--wb-primary) inset, 0 0 0 3px var(--wb-focus-ring);
+}
+.wb-nav-item,
+.wb-iconbar .icon-btn {
+  transition: background-color 100ms ease, color 100ms ease, box-shadow 100ms ease;
+}
+.wb-nav-item.active,
+.wb-iconbar .icon-btn.active {
+  box-shadow: inset 3px 0 0 var(--wb-primary);
+}
+.wb-nav-item:active,
+.wb-iconbar .icon-btn:active {
+  background: var(--wb-pressed);
+}
+.wb-topbar {
+  flex-shrink: 0;
+}
+.page-toolbar {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--wb-border);
+}
+.el-table {
+  --el-table-current-row-bg-color: var(--el-color-primary-light-9);
+  --el-table-row-hover-bg-color: var(--el-color-primary-light-9);
+}
+.checkin-row,
+.task-row {
+  transition: background-color 100ms ease;
+}
+.checkin-row:hover,
+.task-row:hover {
+  background: var(--wb-surface-subtle);
+}
+.checkin-row[aria-busy="true"],
+.task-block[aria-busy="true"] > .task-row {
+  background: var(--el-color-primary-light-9);
+  box-shadow: inset 3px 0 0 var(--wb-primary);
+}
+.checkin-progress {
+  color: var(--wb-primary);
+  font-weight: 500;
+}
+.el-checkbox__input:not(.is-disabled):active .el-checkbox__inner {
+  box-shadow: 0 0 0 3px var(--wb-focus-ring);
+}
+@media (prefers-reduced-motion: reduce) {
+  .el-button,
+  .wb-nav-item,
+  .wb-iconbar .icon-btn,
+  .checkin-row,
+  .task-row { transition: none; }
+  .el-button:not(.is-disabled):not(.is-loading):active { transform: none; }
+}
+
 /* 禁用但已勾选的勾选框要看得清（例如有子任务的父任务） */
 .el-checkbox {
   --el-checkbox-disabled-checked-input-fill: var(--el-color-primary);
@@ -716,13 +808,16 @@ html.dark {
   --wb-surface-subtle: #2c2c2c;
   --wb-text: #d4d4d4;
   --wb-text-secondary: #b1b1b1;
-  --wb-text-tertiary: #7f7f7f;
-  --wb-border: #303030;
+  --wb-text-tertiary: #9ba3ad;
+  --wb-border: #41464e;
+  --wb-border-strong: #626b78;
+  --wb-pressed: #3b4656;
+  --wb-control-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
   --wb-primary: #529cca;
   --wb-sidebar-bg: #202020;
   --wb-code-bg: #252525;
   --wb-nav-hover: #2c2c2c;
-  --wb-nav-active: #333333;
+  --wb-nav-active: #293c50;
 
   --el-color-primary: var(--wb-primary);
   --el-color-primary-light-3: rgba(82, 156, 202, 0.55);

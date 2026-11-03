@@ -84,7 +84,12 @@ def board_data(board_id: int, start_date: str | None = Query(default=None), end_
         raise ApiError('INVALID_DATE_RANGE', '请选择合法的起止日期，开始日期不能晚于结束日期', 422)
     board = get_board(db, user, board_id)
     widgets = [Widget.model_validate(w) for w in board.widgets]
-    return {'widgets': aggregate(db, widgets, dates), 'generated_at': iso_z(utcnow()), 'version': board.version}
+    from ..services import dashboard_cache as cache
+    key=cache.get_key(db,board,widgets,dates);result=cache.get(key)
+    if result is not None:return {**result,'cached':True}
+    result={'widgets':aggregate(db,widgets,dates),'generated_at':iso_z(utcnow()),'version':board.version,'cached':False}
+    cache.put(key,result)
+    return result
 
 
 @router.put('/dashboards/{board_id}')
@@ -95,7 +100,7 @@ def update_board(board_id: int, payload: BoardUpdate, user: User = Depends(get_c
     old_widgets = {w['id']: w for w in board.widgets}
     for widget in payload.widgets:
         # Keep unchanged, broken-source cards editable/removable without blocking all other changes.
-        if old_widgets.get(widget.id) != widget.model_dump(mode='json'):
+        if (Widget.model_validate(old_widgets[widget.id]).model_dump(mode='json') if widget.id in old_widgets else None) != widget.model_dump(mode='json'):
             validate_source(db, widget)
     board.name = payload.name
     board.widgets = [w.model_dump(mode='json') for w in payload.widgets]

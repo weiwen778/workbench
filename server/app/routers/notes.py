@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Annotated
+
 import re
 from datetime import timedelta
 
@@ -193,9 +195,11 @@ def list_notes(
     tag_id: int | None = None,
     q: str | None = None,
     summary: bool = False,
+    page: Annotated[int | None,Query(ge=1)] = None,
+    page_size: Annotated[int,Query(ge=1,le=100)] = 50,
     db: Session = Depends(get_db),
 ):
-    stmt = select(Note).where(Note.deleted_at.is_(None)).order_by(Note.updated_at.desc())
+    stmt = select(Note).where(Note.deleted_at.is_(None)).order_by(Note.updated_at.desc(),Note.id.desc())
     if uncategorized:
         stmt = stmt.where(Note.folder_id.is_(None))
     elif folder_id is not None:
@@ -205,6 +209,10 @@ def list_notes(
     if q:
         like = f"%{q.strip()}%"
         stmt = stmt.where(Note.title.like(like) | Note.content.like(like))
+    total=db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) if page is not None else None
+    if page is not None:
+        page=min(page,max(1,(total+page_size-1)//page_size))
+        stmt=stmt.offset((page-1)*page_size).limit(page_size)
     if summary:
         rows = db.execute(stmt.options(defer(Note.content)).add_columns(func.substr(Note.content, 1, 2048))).all()
         notes = [note for note, _ in rows]
@@ -217,7 +225,8 @@ def list_notes(
         for note_id, tag in db.execute(select(NoteTagLink.note_id, NoteTag).join(
                 NoteTag, NoteTag.id == NoteTagLink.tag_id).where(NoteTagLink.note_id.in_([n.id for n in notes])).order_by(NoteTagLink.id)):
             tags.setdefault(note_id, []).append(tag)
-    return [note_payload(n, tags.get(n.id, []), summary=summary, excerpt_content=excerpts.get(n.id, '')) for n in notes]
+    items=[note_payload(n, tags.get(n.id, []), summary=summary, excerpt_content=excerpts.get(n.id, '')) for n in notes]
+    return {'items':items,'total':total,'page':page,'page_size':page_size} if page is not None else items
 
 
 @router.post("/notes", status_code=201)

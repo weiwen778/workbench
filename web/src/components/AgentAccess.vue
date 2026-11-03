@@ -1,16 +1,17 @@
 <template>
+  <AgentChanges />
   <el-card ref="card" shadow="never" class="agent-access-card">
     <div class="heading">
       <div>
         <div v-if="!embedded" class="group-title">Agent 接入</div>
-        <div class="text-13 secondary">为每个 Agent 创建独立令牌，让它读取任务、回写执行结果和修改表格状态。</div>
+        <div class="text-13 secondary">为 Agent 开放全部业务读取和操作能力；新增、修改、删除先暂存，由你审核合并。</div>
       </div>
       <div class="actions">
         <el-button @click="copyGuide">复制接入说明</el-button>
         <el-button type="primary" @click="showCreate = true">创建令牌</el-button>
       </div>
     </div>
-    <div class="text-12 muted tip">权限覆盖所选模块内的全部数据。写入权限包含读取；Agent 不能删除数据或修改表格结构。</div>
+    <div class="text-12 muted tip">全部业务暂存权限支持建表、改字段、笔记、打卡、看板、文件和删除等操作；令牌不能管理令牌或审批暂存。</div>
     <el-alert v-if="insecureRemote" type="warning" :closable="false" show-icon class="transport-tip"
       title="当前通过 HTTP 访问。远程 Agent 的令牌和数据会明文传输，建议配置 HTTPS 或通过 SSH 隧道接入。" />
     <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" />
@@ -29,7 +30,7 @@
       </el-table-column>
     </el-table>
     <div ref="activityHeading" class="activity-heading">
-      <span class="text-13 secondary">最近成功的写入操作（最多 100 条）</span>
+      <span class="text-13 secondary">最近的暂存提交与合并（最多 100 条）</span>
       <el-button text size="small" @click="load">刷新</el-button>
     </div>
     <el-table :data="activity" empty-text="暂无 Agent 写入记录" :max-height="activityMaxHeight">
@@ -45,7 +46,7 @@
       <el-form-item label="Agent 名称"><el-input v-model="form.name" maxlength="100" placeholder="例如：运营助手、报表 Agent" /></el-form-item>
       <el-form-item label="权限">
         <el-checkbox-group v-model="form.scopes">
-          <el-checkbox v-for="(label, scope) in scopeLabels" :key="scope" :value="scope">{{ label }}</el-checkbox>
+          <el-checkbox v-for="(label, scope) in grantLabels" :key="scope" :value="scope">{{ label }}</el-checkbox>
         </el-checkbox-group>
       </el-form-item>
       <el-form-item label="有效期">
@@ -68,6 +69,7 @@
 </template>
 
 <script setup lang="ts">
+import AgentChanges from '@/components/AgentChanges.vue'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiError, copyText, http } from '@/api/client'
@@ -75,7 +77,8 @@ import { apiError, copyText, http } from '@/api/client'
 const props=defineProps<{embedded?:boolean}>()
 interface Token { id: number; name: string; scopes: string[]; status: string; expires_at: string; last_used_at: string | null }
 interface Activity { id: number; agent_name: string; method: string; path: string; created_at: string }
-const scopeLabels: Record<string, string> = { 'todos:read': '读取待办', 'todos:write': '添加和修改待办', 'tables:read': '读取表格', 'tables:write': '添加和修改表格记录' }
+const grantLabels:Record<string,string>={'all:read':'读取全部业务数据','all:stage':'全部业务操作（先暂存，需人工合并）'}
+const scopeLabels: Record<string, string> = { ...grantLabels, 'todos:read': '读取待办', 'todos:write': '添加和修改待办', 'tables:read': '读取表格', 'tables:write': '添加和修改表格记录' }
 const statusLabels: Record<string, string> = { active: '有效', revoked: '已撤销', expired: '已过期' }
 const card=ref<{$el:HTMLElement}>(),activityHeading=ref<HTMLElement>(),activityMaxHeight=ref(260)
 let observer:ResizeObserver|undefined,resizeFrame=0
@@ -98,12 +101,14 @@ const secret = ref('')
 const loadError = ref('')
 const baseUrl = window.location.origin
 const insecureRemote = window.location.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)
-const form = reactive({ name: '', scopes: ['todos:read', 'tables:read'], expires_in_days: 90 })
+const form = reactive({ name: '', scopes: ['all:read', 'all:stage'], expires_in_days: 90 })
 
 function time(value: string | null) {
   return value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '尚未使用'
 }
 function actionLabel(row: Activity) {
+  if(row.method==='MERGE')return '用户审核合并'
+  if(row.path.includes('/agent/changes/'))return 'Agent 提交暂存'
   if (row.path.endsWith('/completion')) return '设置待办完成状态'
   if (row.path.endsWith('/todo-lists')) return '创建待办清单'
   if (row.path.includes('/records')) return row.method === 'POST' ? '添加表格记录' : '修改表格记录'

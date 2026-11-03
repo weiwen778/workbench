@@ -21,7 +21,7 @@ router = APIRouter(tags=['agent-settings'])
 
 class TokenIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
-    scopes: list[Literal['todos:read', 'todos:write', 'tables:read', 'tables:write']] = Field(min_length=1, max_length=4)
+    scopes: list[Literal['all:read', 'all:stage', 'todos:read', 'todos:write', 'tables:read', 'tables:write']] = Field(min_length=1, max_length=6)
     expires_in_days: int = Field(default=90, ge=1, le=365)
 
     @field_validator('name')
@@ -56,6 +56,8 @@ def create_token(payload: TokenIn, user: User = Depends(get_current_user), db: S
     if active >= 100:
         raise ApiError('TOO_MANY_TOKENS', '最多保留 100 个有效令牌，请先撤销不用的令牌', 409)
     scopes = set(payload.scopes)
+    if 'all:stage' in scopes:
+        scopes.add('all:read')
     for module in ('todos', 'tables'):
         if f'{module}:write' in scopes:
             scopes.add(f'{module}:read')
@@ -88,5 +90,5 @@ def list_activity(user: User = Depends(get_current_user), db: Session = Depends(
 
 
 @router.get('/agent-guide')
-def guide(_user: User = Depends(get_current_user)):
+def settings_guide(_user: User = Depends(get_current_user)):
     return {'guide': GUIDE}

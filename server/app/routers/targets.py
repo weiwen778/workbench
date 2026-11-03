@@ -112,7 +112,7 @@ def list_targets(
     include_archived: bool = Query(default=False),
     db: Session = Depends(get_db),
 ):
-    stmt = select(WorkTarget).order_by(WorkTarget.sort_order, WorkTarget.id)
+    stmt = select(WorkTarget).where(WorkTarget.status != "deleted").order_by(WorkTarget.sort_order, WorkTarget.id)
     if kind:
         if kind not in KINDS:
             raise ApiError("INVALID_KIND", "类型只能是 shop 或 social", 422)
@@ -135,6 +135,8 @@ def create_target(payload: TargetIn, db: Session = Depends(get_db)):
     if payload.kind not in KINDS:
         raise ApiError("INVALID_KIND", "类型只能是 shop 或 social", 422)
     name = payload.name.strip()
+    if not name:
+        raise ApiError("INVALID_NAME", "名称不能为空", 422)
     _ensure_name_free(db, payload.kind, name)
     target = WorkTarget(
         kind=payload.kind,
@@ -153,7 +155,7 @@ def create_target(payload: TargetIn, db: Session = Depends(get_db)):
 @router.get("/work-targets/{target_id}")
 def get_target(target_id: int, db: Session = Depends(get_db)):
     target = db.get(WorkTarget, target_id)
-    if not target:
+    if not target or target.status == "deleted":
         raise ApiError("NOT_FOUND", "店铺/账号不存在", 404)
     return target_payload(target)
 
@@ -161,10 +163,12 @@ def get_target(target_id: int, db: Session = Depends(get_db)):
 @router.patch("/work-targets/{target_id}")
 def update_target(target_id: int, payload: TargetPatch, db: Session = Depends(get_db)):
     target = db.get(WorkTarget, target_id)
-    if not target:
+    if not target or target.status == "deleted":
         raise ApiError("NOT_FOUND", "店铺/账号不存在", 404)
     if payload.name is not None:
         name = payload.name.strip()
+        if not name:
+            raise ApiError("INVALID_NAME", "名称不能为空", 422)
         _ensure_name_free(db, target.kind, name, exclude_id=target.id)
         target.name = name
         # 历史实例保留当时的名称，仅更新未完成且未锁定的实例
@@ -187,7 +191,7 @@ def update_target(target_id: int, payload: TargetPatch, db: Session = Depends(ge
 @router.post("/work-targets/{target_id}/archive")
 def archive_target(target_id: int, db: Session = Depends(get_db)):
     target = db.get(WorkTarget, target_id)
-    if not target:
+    if not target or target.status == "deleted":
         raise ApiError("NOT_FOUND", "店铺/账号不存在", 404)
     if target.status == "archived":
         return target_payload(target)
@@ -210,10 +214,26 @@ def archive_target(target_id: int, db: Session = Depends(get_db)):
     return target_payload(target)
 
 
+@router.delete("/work-targets/{target_id}")
+def delete_target(target_id: int, db: Session = Depends(get_db)):
+    target = db.get(WorkTarget, target_id)
+    if not target or target.status == "deleted":
+        raise ApiError("NOT_FOUND", "店铺/账号不存在", 404)
+    target.status = "deleted"
+    target.archived_at = utcnow()
+    target.version += 1
+    for interval in db.scalars(select(ActivityInterval).where(ActivityInterval.target_id == target_id, ActivityInterval.end_at.is_(None))):
+        interval.end_at = utcnow()
+    db.query(CheckinInstance).filter(CheckinInstance.target_id == target_id).update(
+        {CheckinInstance.locked: True, CheckinInstance.lock_reason: "账号已删除"}, synchronize_session=False)
+    db.commit()
+    return {"ok": True}
+
+
 @router.post("/work-targets/{target_id}/restore")
 def restore_target(target_id: int, db: Session = Depends(get_db)):
     target = db.get(WorkTarget, target_id)
-    if not target:
+    if not target or target.status == "deleted":
         raise ApiError("NOT_FOUND", "店铺/账号不存在", 404)
     if target.status == "active":
         return target_payload(target)
@@ -261,6 +281,8 @@ def list_groups(db: Session = Depends(get_db)):
 @router.post("/checkin-groups", status_code=201)
 def create_group(payload: GroupIn, db: Session = Depends(get_db)):
     name = payload.name.strip()
+    if not name:
+        raise ApiError("INVALID_NAME", "分类名称不能为空", 422)
     if db.scalar(select(CheckinGroup).where(CheckinGroup.name == name)):
         raise ApiError("NAME_DUPLICATED", "分类名称已存在", 409, {"field": "name"})
     group = CheckinGroup(name=name, sort_order=payload.sort_order)
@@ -275,6 +297,8 @@ def rename_group(group_id: int, payload: GroupIn, db: Session = Depends(get_db))
     if not group:
         raise ApiError("NOT_FOUND", "分类不存在", 404)
     name = payload.name.strip()
+    if not name:
+        raise ApiError("INVALID_NAME", "分类名称不能为空", 422)
     dup = db.scalar(select(CheckinGroup).where(CheckinGroup.name == name, CheckinGroup.id != group_id))
     if dup:
         raise ApiError("NAME_DUPLICATED", "分类名称已存在", 409, {"field": "name"})
@@ -289,7 +313,7 @@ def rename_group(group_id: int, payload: GroupIn, db: Session = Depends(get_db))
 
 
 @router.delete("/checkin-groups/{group_id}")
-def delete_group(group_id: int, db: Session = Depends(get_db)):
+def delete_group(group_id: int, move_to: int | None = Query(default=None), db: Session = Depends(get_db)):
     group = db.get(CheckinGroup, group_id)
     if not group:
         raise ApiError("NOT_FOUND", "分类不存在", 404)
@@ -305,10 +329,25 @@ def delete_group(group_id: int, db: Session = Depends(get_db)):
             CheckinInstance.locked.is_(False),
         )
     )
-    if active_rules or pending:
+    total_rules = db.scalar(select(func.count(CheckinRule.id)).where(CheckinRule.group_id == group_id)) or 0
+    if move_to is not None:
+        destination = db.get(CheckinGroup, move_to)
+        if not destination or move_to == group_id:
+            raise ApiError("INVALID_GROUP", "请选择另一个有效分类", 422)
+        rules = db.scalars(select(CheckinRule).where(CheckinRule.group_id == group_id)).all()
+        for rule in rules:
+            rule.group_id = move_to
+            rule.version += 1
+            db.query(CheckinRuleVersion).filter(CheckinRuleVersion.rule_id == rule.id, CheckinRuleVersion.effective_to.is_(None)).update({CheckinRuleVersion.effective_to: utcnow()}, synchronize_session=False)
+            db.add(CheckinRuleVersion(rule_id=rule.id, title=rule.title, description=rule.description,
+                group_id=move_to, group_name=destination.name, period=rule.period, change_summary="删除分类后转移任务"))
+        db.query(CheckinInstance).filter(CheckinInstance.group_id == group_id, CheckinInstance.locked.is_(False), CheckinInstance.completed_at.is_(None)).update(
+            {CheckinInstance.group_id: move_to, CheckinInstance.group_name: destination.name}, synchronize_session=False)
+        db.flush()
+    elif total_rules or pending:
         raise ApiError(
             "GROUP_IN_USE",
-            "该分类仍有启用任务或未完成工作，请先调整归属再删除",
+            "该分类仍有关联任务，请选择接收分类后删除",
             409,
             {"active_rules": active_rules or 0, "pending_instances": pending or 0},
         )
@@ -323,7 +362,7 @@ def delete_group(group_id: int, db: Session = Depends(get_db)):
 @router.get("/work-targets/{target_id}/rules")
 def list_rules(target_id: int, include_inactive: bool = Query(default=True), db: Session = Depends(get_db)):
     target = db.get(WorkTarget, target_id)
-    if not target:
+    if not target or target.status == "deleted":
         raise ApiError("NOT_FOUND", "店铺/账号不存在", 404)
     ensure_target_period(db, target, "daily")
     db.commit()
@@ -338,7 +377,7 @@ def list_rules(target_id: int, include_inactive: bool = Query(default=True), db:
 @router.post("/work-targets/{target_id}/rules", status_code=201)
 def create_rule(target_id: int, payload: RuleIn, db: Session = Depends(get_db)):
     target = db.get(WorkTarget, target_id)
-    if not target:
+    if not target or target.status == "deleted":
         raise ApiError("NOT_FOUND", "店铺/账号不存在", 404)
     if target.status != "active":
         raise ApiError("TARGET_ARCHIVED", "已经暂停了，请先恢复", 409)

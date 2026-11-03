@@ -14,7 +14,7 @@
       <el-radio-button value="table">表格</el-radio-button>
       <el-radio-button value="record">表格行</el-radio-button>
       <el-radio-button value="note">笔记</el-radio-button>
-      <el-radio-button value="memo">便利贴</el-radio-button>
+      <el-radio-button value="memo">便利贴</el-radio-button><el-radio-button value="todo">待办</el-radio-button><el-radio-button value="todo_list">待办清单</el-radio-button>
     </el-radio-group>
 
     <div class="page-body">
@@ -42,7 +42,7 @@
       <div v-if="!items.length && !loading" class="empty-hint">
         <div>回收站是空的</div>
         <div class="text-12">
-          表格、表格里的行、笔记、便利贴删除后会在这里保留 30 天；待办、店铺、社媒账号不进回收站
+          表格、表格里的行、笔记、便利贴、待办和待办清单删除后会在这里保留 30 天
         </div>
       </div>
     </div>
@@ -83,6 +83,7 @@ async function restore(row: any) {
     ElMessage.success(data.message || '已恢复')
     await load()
     window.dispatchEvent(new Event('wb:tables-changed'))
+    if (row.kind === 'todo'||row.kind === 'todo_list') window.dispatchEvent(new Event('wb:todos-changed'))
     if (row.kind === 'memo') window.dispatchEvent(new Event('wb:memos-changed'))
   } catch (error: any) {
     const body = error?.response?.data

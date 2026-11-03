@@ -31,3 +31,12 @@ docs/screenshots/
 **/.coverage
 .run/
 web/public/pdfjs/
+
+.backups/
+.restore-drill/
+
+/storage/
+*.wbbackup
+recovery.key
+workbench-recovery.key
+recovered.env

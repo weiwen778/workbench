@@ -10,6 +10,8 @@ from .models import AgentActivity, AgentToken, User, utcnow
 from .security import hash_token
 
 SCOPES = {
+    'all:read': '读取全部业务数据',
+    'all:stage': '全部业务操作（先暂存，需人工合并）',
     'todos:read': '读取待办',
     'todos:write': '添加和修改待办',
     'tables:read': '读取表格',
@@ -19,6 +21,7 @@ bearer = HTTPBearer(auto_error=False, scheme_name='AgentToken', description='设
 
 
 def get_agent_token(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
     db: Session = Depends(get_db),
 ) -> AgentToken:
@@ -29,6 +32,7 @@ def get_agent_token(
         raise ApiError('AGENT_UNAUTHENTICATED', 'Agent 令牌无效、已撤销或已过期', 401)
     if db.get(User, token.user_id) is None:
         raise ApiError('AGENT_UNAUTHENTICATED', '令牌所属账号不存在', 401)
+    request.state.audit_identity=(token.user_id,"Agent: "+token.name)
     token.last_used_at = utcnow()
     db.commit()
     db.info['table_actor_id']=token.user_id

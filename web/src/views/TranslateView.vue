@@ -87,6 +87,8 @@
     </div>
 
     <div ref="bottomRef" class="translate-bottom" :class="{ 'is-resizing': resizing }" :style="{ '--translate-favorites-width': `${favoritesWidth}px` }">
+      <el-splitter v-splitter-a11y="{label:'调整收藏和历史的宽度',value:favoritesWidth,min:MIN_FAVORITES_WIDTH,max:maxFavoritesWidth,disabled:stacked,vertical:stacked}" :layout="stacked ? 'vertical' : 'horizontal'" @resize-start="resizing=true" @resize-end="finishFavoritesResize" @dblclick="resetOnBar" @keydown.capture="resizeOnBarKey">
+      <el-splitter-panel @update:size="resizeFavorites" :size="stacked ? '40%' : favoritesWidth" :min="stacked ? 100 : MIN_FAVORITES_WIDTH" :max="stacked ? undefined : maxFavoritesWidth">
       <!-- 收藏 -->
       <div id="translate-favorites" class="bottom-pane">
         <div class="history-head">
@@ -112,27 +114,8 @@
         </div>
       </div>
 
-      <div
-        class="bottom-divider"
-        role="separator"
-        tabindex="0"
-        aria-label="调整收藏和历史的宽度"
-        aria-orientation="vertical"
-        aria-controls="translate-favorites translate-history"
-        :aria-valuemin="MIN_FAVORITES_WIDTH"
-        :aria-valuemax="Math.round(maxFavoritesWidth)"
-        :aria-valuenow="Math.round(favoritesWidth)"
-        :aria-valuetext="`收藏宽度 ${Math.round(favoritesWidth)} 像素`"
-        title="左右拖动调整宽度，双击恢复默认"
-        @pointerdown="startResize"
-        @pointermove="resizePanels"
-        @pointerup="finishResize"
-        @pointercancel="finishResize"
-        @lostpointercapture="finishResize"
-        @keydown="resizeWithKeyboard"
-        @dblclick="resetWidth"
-      ></div>
-
+      </el-splitter-panel>
+      <el-splitter-panel :min="stacked ? 120 : MIN_HISTORY_WIDTH">
       <!-- 历史 -->
       <div id="translate-history" class="bottom-pane">
         <div class="history-head">
@@ -182,6 +165,8 @@
           @current-change="loadHistory"
         />
       </div>
+      </el-splitter-panel>
+      </el-splitter>
     </div>
 
     <!-- 历史详情 -->
@@ -210,6 +195,7 @@
 </template>
 
 <script setup lang="ts">
+import {vSplitterA11y} from '@/utils/splitter-a11y'
 import {onBeforeRouteLeave} from 'vue-router'
 import TranslationSettings from '@/components/TranslationSettings.vue'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
@@ -268,48 +254,15 @@ const preferredWidth = ref(readWidth())
 const maxFavoritesWidth = computed(() => Math.max(MIN_FAVORITES_WIDTH, bottomWidth.value - DIVIDER_WIDTH - MIN_HISTORY_WIDTH))
 const favoritesWidth = computed(() => Math.min(maxFavoritesWidth.value, Math.max(MIN_FAVORITES_WIDTH, preferredWidth.value)))
 let sizeObserver: ResizeObserver | null = null
-let activePointer: number | null = null
-let dragStartX = 0
-let dragStartWidth = 0
-
-function rememberWidth() {
-  try { localStorage.setItem(WIDTH_STORAGE_KEY, String(preferredWidth.value)) } catch { /* Storage may be unavailable. */ }
-}
-function setWidth(width: number) {
-  preferredWidth.value = Math.min(maxFavoritesWidth.value, Math.max(MIN_FAVORITES_WIDTH, width))
-}
-function startResize(event: PointerEvent) {
-  if (!event.isPrimary || event.button !== 0 || window.innerWidth <= 820) return
-  event.preventDefault()
-  dragStartX = event.clientX
-  dragStartWidth = favoritesWidth.value
-  activePointer = event.pointerId
-  resizing.value = true
-  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
-}
-function resizePanels(event: PointerEvent) {
-  if (activePointer !== event.pointerId) return
-  setWidth(dragStartWidth + event.clientX - dragStartX)
-}
-function finishResize(event: PointerEvent) {
-  if (activePointer !== event.pointerId) return
-  activePointer = null
-  resizing.value = false
-  const handle = event.currentTarget as HTMLElement
-  if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId)
-  rememberWidth()
-}
-function resetWidth() {
-  setWidth(DEFAULT_FAVORITES_WIDTH)
-  rememberWidth()
-}
-function resizeWithKeyboard(event: KeyboardEvent) {
-  const step = event.shiftKey ? 40 : 16
-  const width = { ArrowLeft: favoritesWidth.value - step, ArrowRight: favoritesWidth.value + step, Home: MIN_FAVORITES_WIDTH, End: maxFavoritesWidth.value }[event.key]
-  if (width === undefined) return
-  event.preventDefault()
-  setWidth(width)
-  rememberWidth()
+const stacked=ref(window.innerWidth<=820)
+function rememberWidth(){try{localStorage.setItem(WIDTH_STORAGE_KEY,String(preferredWidth.value))}catch{}}
+function resizeFavorites(size:string|number|undefined){if(resizing.value&&!stacked.value&&typeof size==='number')preferredWidth.value=Math.max(MIN_FAVORITES_WIDTH,Math.min(maxFavoritesWidth.value,size))}
+function finishFavoritesResize(){resizing.value=false;rememberWidth()}
+function resetOnBar(e:MouseEvent){if((e.target as HTMLElement).closest('.el-splitter-bar')){preferredWidth.value=DEFAULT_FAVORITES_WIDTH;rememberWidth()}}
+function resizeOnBarKey(e:KeyboardEvent){
+ if(!(e.target as HTMLElement).closest('.el-splitter-bar')||stacked.value)return
+ const width={ArrowLeft:favoritesWidth.value-16,ArrowRight:favoritesWidth.value+16,Home:MIN_FAVORITES_WIDTH,End:maxFavoritesWidth.value}[e.key]
+ if(width===undefined)return;e.preventDefault();preferredWidth.value=Math.min(maxFavoritesWidth.value,Math.max(MIN_FAVORITES_WIDTH,width));rememberWidth()
 }
 
 let requestSeq = 0
@@ -567,6 +520,7 @@ onMounted(async () => {
     bottomWidth.value = bottomRef.value.clientWidth
     sizeObserver = new ResizeObserver(() => {
       if (bottomRef.value) bottomWidth.value = bottomRef.value.clientWidth
+      stacked.value=window.innerWidth<=820
     })
     sizeObserver.observe(bottomRef.value)
   }
@@ -581,6 +535,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.translate-bottom :deep(.el-splitter__mask) { pointer-events:none; }
 .result-body {
   font-size: 14px;
   line-height: 1.7;
@@ -593,45 +548,25 @@ onUnmounted(() => {
 .translate-bottom {
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-columns: var(--translate-favorites-width, 320px) 9px minmax(0, 1fr);
+  display: flex;
   background: var(--wb-surface);
   border: 1px solid var(--wb-border);
   border-radius: 12px;
   overflow: hidden;
 }
 .bottom-pane {
+  height: 100%;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
   padding: 8px 12px;
 }
-.bottom-divider {
-  position: relative;
-  cursor: col-resize;
-  touch-action: none;
-  user-select: none;
-  outline: none;
-}
-.bottom-divider::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 4px;
-  width: 1px;
-  background: var(--wb-border);
-}
-.bottom-divider:hover::before,
-.bottom-divider:focus-visible::before,
-.is-resizing .bottom-divider::before {
-  left: 3px;
-  width: 3px;
-  background: var(--wb-primary);
-}
-.bottom-divider:focus-visible { background: var(--el-color-primary-light-9); }
-.is-resizing, .is-resizing :deep(*) { cursor: col-resize; user-select: none; }
+
+
+
+
+
 .history-head {
   display: flex;
   align-items: center;
@@ -690,9 +625,9 @@ onUnmounted(() => {
 }
 @media (max-width: 820px) {
   .translate-bottom {
-    grid-template-columns: 1fr;
+    min-height: 360px;
   }
-  .bottom-divider { display: none; }
+
   #translate-history {
     border-left: none;
     border-top: 1px solid var(--wb-border);

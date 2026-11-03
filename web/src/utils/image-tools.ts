@@ -186,31 +186,16 @@ export function download(blob: Blob, name: string) {
   link.href = url; link.download = name; document.body.append(link); link.click(); link.remove()
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
-// ZIP STORE: image blobs are already compressed. UTF-8 names and CRC32 keep the
-// archive compatible with common unzip tools without fetching a third-party runtime.
-const crcTable = Uint32Array.from({ length: 256 }, (_, i) => {
-  let c = i
-  for (let j = 0; j < 8; j++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
-  return c >>> 0
-})
+// Image formats are already compressed; ZIP STORE avoids redundant compression.
 export async function zipImages(files: { name: string; blob: Blob }[]) {
-  const local: BlobPart[] = [], central: BlobPart[] = [], encoder = new TextEncoder()
-  let offset = 0, centralLength = 0
+  const { zip } = await import('fflate')
+  const entries: Record<string, Uint8Array> = Object.create(null)
   for (const file of files) {
-    const bytes = new Uint8Array(await file.blob.arrayBuffer()), name = encoder.encode(file.name)
-    let crc = 0xffffffff
-    for (const byte of bytes) crc = crcTable[(crc ^ byte) & 255] ^ (crc >>> 8)
-    crc = (crc ^ 0xffffffff) >>> 0
-    const header = new Uint8Array(30 + name.length), h = new DataView(header.buffer)
-    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x800, true); h.setUint16(12, 33, true)
-    h.setUint32(14, crc, true); h.setUint32(18, bytes.length, true); h.setUint32(22, bytes.length, true); h.setUint16(26, name.length, true); header.set(name, 30)
-    const entry = new Uint8Array(46 + name.length), e = new DataView(entry.buffer)
-    e.setUint32(0, 0x02014b50, true); e.setUint16(4, 20, true); e.setUint16(6, 20, true); e.setUint16(8, 0x800, true); e.setUint16(14, 33, true)
-    e.setUint32(16, crc, true); e.setUint32(20, bytes.length, true); e.setUint32(24, bytes.length, true); e.setUint16(28, name.length, true); e.setUint32(42, offset, true); entry.set(name, 46)
-    local.push(header, file.blob); central.push(entry); centralLength += entry.length; offset += header.length + bytes.length
-    if (offset + centralLength > 0xffffffff) throw new Error('打包体积过大，请分批导出。')
+    if (Object.prototype.hasOwnProperty.call(entries, file.name)) throw new Error('ZIP 中存在重复文件名，请重命名后重试')
+    entries[file.name] = new Uint8Array(await file.blob.arrayBuffer())
   }
-  const end = new Uint8Array(22), e = new DataView(end.buffer)
-  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, centralLength, true); e.setUint32(16, offset, true)
-  return new Blob([...local, ...central, end], { type: 'application/zip' })
+  return new Promise<Blob>((resolve, reject) => zip(entries, { level: 0 }, (error, bytes) => {
+    if (error) reject(error)
+    else resolve(new Blob([bytes as BlobPart], { type: 'application/zip' }))
+  }))
 }

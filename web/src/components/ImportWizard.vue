@@ -19,7 +19,7 @@
         <div class="upload-hint">
           <el-icon class="upload-icon"><UploadFilled /></el-icon>
           <div>把 Excel、CSV 或 JSON 文件拖到这里，或点一下选择</div>
-          <div class="text-12 muted">支持 .xlsx / .xls / .csv / .json；最多 1 万行、50 列，第一行当标题行</div>
+          <div class="text-12 muted">支持 .xlsx / .xls / .csv / .json；最多 1 万行、200 列，第一行当标题行</div>
         </div>
       </el-upload>
       <div v-if="errorText" class="text-13" style="color: var(--el-color-danger); margin-top: 8px">
@@ -143,6 +143,8 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
+import {useRouter} from 'vue-router'
+const router=useRouter()
 import { ElMessage } from 'element-plus'
 import { UploadFilled } from '@/icons'
 import { apiError, http } from '@/api/client'
@@ -330,16 +332,10 @@ async function confirmImport() {
   confirming.value = true
   try {
     await http.post(`/imports/${job.value.id}/draft`, payload())
-    const { data } = await http.post(`/imports/${job.value.id}/confirm`)
-    if (data.status === 'success') {
-      ElMessage.success(`已导入 ${data.result.imported} 行`)
-      emit('done', data.result.table_id)
-      emit('update:modelValue', false)
-      window.dispatchEvent(new Event('wb:tables-changed'))
-    } else {
-      errors.value = data.errors || []
-      ElMessage.warning('还有需要改的地方')
-    }
+    await http.post(`/imports/${job.value.id}/confirm-tasks`,undefined,{headers:{'Idempotency-Key':crypto.randomUUID()}})
+    ElMessage.success('已提交后台导入，可在任务中心查看进度和结果')
+    emit('update:modelValue', false)
+    await router.push('/tasks')
   } catch (error: any) {
     const body = error?.response?.data
     if (body?.details?.errors) {

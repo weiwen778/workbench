@@ -25,7 +25,7 @@ async function createCategory(kind,name){
   await page.waitForURL(`**/${kind}/${data.id}`)
   return data
 }
-const textarea=page.getByPlaceholder('直接写内容，支持简单排版：# 大标题、- 列表、**加粗**',{exact:true})
+const textarea=page.getByRole('textbox',{name:'笔记正文',exact:true})
 try{
   await page.goto(base+'/login')
   await page.getByPlaceholder('请输入用户名').fill('admin');await page.getByPlaceholder('请输入密码').fill('admin12345')
@@ -46,7 +46,7 @@ try{
   assert.equal(await page.locator('.folder-pane').count(),0)
   await showNavGroup(side,'笔记')
   await side.getByRole('button',{name:'笔记文件夹：经营复盘',exact:true}).click()
-  await textarea.waitFor();assert.ok((await textarea.inputValue()).includes('第一份复盘'))
+  await textarea.waitFor();assert.ok((await textarea.innerText()).includes('第一份复盘'))
   await page.reload();await textarea.waitFor()
   await showNavGroup(side,'笔记')
   assert.ok((await side.getByRole('button',{name:'笔记文件夹：经营复盘',exact:true}).getAttribute('class')).includes('active'))
@@ -58,7 +58,7 @@ try{
   await side.getByRole('button',{name:'笔记文件夹：流程与SOP',exact:true}).click()
   await page.getByText('测试：暂时无法保存',{exact:true}).waitFor()
   assert.equal(new URL(page.url()).pathname,`/notes/${folder1.id}`)
-  assert.equal(await textarea.inputValue(),'保存失败也必须保留这段输入')
+  assert.equal(await textarea.innerText(),'保存失败也必须保留这段输入')
   await page.unroute(endpoint)
   const saved=page.waitForResponse(r=>r.url().endsWith(`/api/v1/notes/${note.id}`)&&r.request().method()==='PUT')
   await page.getByRole('button',{name:'保存',exact:true}).click();assert.equal((await saved).status(),200)
@@ -107,7 +107,7 @@ try{
   assert.equal((await request(`/notes/${note.id}`)).folder_id,null)
   await showNavGroup(side,'笔记')
   await side.getByRole('button',{name:/^未分类/}).click();await page.waitForURL('**/notes/uncategorized');await textarea.waitFor()
-  assert.ok((await textarea.inputValue()).includes('第二版'))
+  assert.ok((await textarea.innerText()).includes('第二版'))
   await page.setViewportSize({width:390,height:844})
   await page.getByRole('button',{name:'返回笔记列表',exact:true}).click();await page.locator('.note-item').first().click();await textarea.waitFor()
   await textarea.fill('手机端切换分类也能保存')

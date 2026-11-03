@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..models import TrashEntry, utcnow
 
-KINDS = {"table", "record", "note", "memo"}
+KINDS = {"table", "record", "note", "memo", "todo", "todo_list"}
 
 
 def push(

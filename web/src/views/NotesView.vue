@@ -22,6 +22,7 @@
           新建笔记
         </el-button>
       </div>
+      <el-pagination v-if="noteTotal>50" v-model:current-page="notePage" small :page-size="50" :total="noteTotal" layout="prev,pager,next" @current-change="loadNotes"/>
       <div class="note-list">
         <div
           v-for="item in notes"
@@ -65,7 +66,7 @@
             <el-option v-for="tag in tags" :key="tag.id" :label="tag.name" :value="tag.name" />
           </el-select>
           <div class="spacer" />
-          <span class="save-state" :class="saveState">{{ saveLabel }}</span>
+          <span class="save-state" :class="saveState" role="status" aria-live="polite">{{ saveLabel }}</span>
           <el-upload :show-file-list="false" :http-request="uploadImage" accept="image/*">
             <el-button text size="small" :icon="Picture">插入图片</el-button>
           </el-upload>
@@ -84,14 +85,7 @@
 
         <div class="editor-body" :class="mode">
           <div v-show="mode !== 'preview'" class="editor-col">
-            <el-input
-              ref="textareaRef"
-              v-model="content"
-              type="textarea"
-              resize="none"
-              placeholder="直接写内容，支持简单排版：# 大标题、- 列表、**加粗**"
-              @paste="onPaste"
-            />
+            <MarkdownEditor :key="current.id" ref="textareaRef" v-model="content" @paste="onPaste" />
           </div>
           <div v-show="mode !== 'edit'" class="preview-col markdown-body" v-html="rendered"></div>
         </div>
@@ -128,6 +122,7 @@
 </template>
 
 <script setup lang="ts">
+import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -206,16 +201,22 @@ async function loadFolders() {
   window.dispatchEvent(new Event('wb:notes-changed'))
 }
 
+const notePage=ref(1),noteTotal=ref(0)
+let noteRequest=0
 async function loadNotes() {
+  const request=++noteRequest
   loading.value = true
   try {
-    const params: Record<string, any> = { summary: true }
+    const params: Record<string, any> = { summary: true, page:notePage.value,page_size:50 }
     if (filter.folderId) params.folder_id = filter.folderId
     if (filter.uncategorized) params.uncategorized = true
     if (filter.tagId) params.tag_id = filter.tagId
     if (keyword.value.trim()) params.q = keyword.value.trim()
     const { data } = await http.get('/notes', { params })
-    notes.value = data
+    if(request!==noteRequest)return
+    notes.value = data.items
+    notePage.value=data.page
+    noteTotal.value=data.total
   } catch (error) {
     ElMessage.error(apiError(error).message)
   } finally {
@@ -224,11 +225,13 @@ async function loadNotes() {
 }
 
 function onSearch() {
+  notePage.value=1
   if (searchTimer) window.clearTimeout(searchTimer)
   searchTimer = window.setTimeout(loadNotes, 300)
 }
 
 function selectTag(id: number) {
+  notePage.value=1
   filter.tagId = filter.tagId === id ? null : id
   loadNotes()
 }
@@ -499,7 +502,8 @@ onMounted(async () => {
   await loadFolders()
   missingFolder.value = !!routeFolder && routeFolder !== 'uncategorized' && !folderData.folders.some(folder => String(folder.id) === routeFolder)
   if (!missingFolder.value) await loadNotes()
-  if (notes.value.length && window.innerWidth > 700) await openNote(notes.value[0].id, true)
+  if (route.query.note) await openNote(Number(route.query.note),true)
+  else if (notes.value.length && window.innerWidth > 700) await openNote(notes.value[0].id, true)
   window.addEventListener('beforeunload', beforeUnload)
 })
 
@@ -594,6 +598,13 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--wb-border);
 }
 .save-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--wb-surface-subtle);
+  font-weight: 500;
   font-size: 12px;
   color: var(--wb-text-tertiary);
 }

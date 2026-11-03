@@ -9,9 +9,10 @@
         :prefix-icon="Search"
         @input="onSearch"
       />
-      <span class="text-12 muted">{{ memos.length }} 张便利贴</span>
+      <span class="text-12 muted">{{ memoTotal }} 张便利贴</span>
       <div class="spacer" />
       <div class="toolbar-actions">
+        <CategoryManager resource="memos" @changed="load" />
         <el-button text :icon="Refresh" @click="load">刷新</el-button>
         <el-button class="btn-tonal" :icon="Plus" @click="openCreate">新建便利贴</el-button>
       </div>
@@ -24,13 +25,14 @@
         <el-button class="btn-tonal" @click="openCreate">写一张便利贴</el-button>
       </div>
 
+      <el-pagination v-if="memoTotal>50" v-model:current-page="memoPage" :page-size="50" :total="memoTotal" layout="total,prev,pager,next" @current-change="load" style="margin-bottom:16px"/>
       <div class="memo-grid">
         <div v-for="memo in memos" :key="memo.id" class="memo-card" :class="`c-${memo.color}`">
           <div class="memo-head">
             <span class="memo-title ellipsis-1">{{ memo.display_title }}</span>
             <span class="memo-chip">{{ memo.display_category }}</span>
           </div>
-          <div class="memo-content">{{ memo.content }}</div>
+          <MemoContent :content="memo.content" />
           <div class="memo-foot">
             <span class="text-12">{{ formatDate(memo.updated_at) }}</span>
             <div class="actions-group">
@@ -57,7 +59,7 @@
           <el-input
             v-model="form.content"
             type="textarea"
-            :rows="7"
+            :autosize="{ minRows: 3, maxRows: 16 }"
             maxlength="2000"
             show-word-limit
             placeholder="随手记内容，Ctrl / Command + Enter 保存"
@@ -104,6 +106,8 @@
 </template>
 
 <script setup lang="ts">
+import CategoryManager from '@/components/CategoryManager.vue'
+import MemoContent from '@/components/MemoContent.vue'
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -144,17 +148,23 @@ function formatDate(value: string) {
   return value ? new Date(value).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }) : ''
 }
 
+const memoPage=ref(1),memoTotal=ref(0)
+let memoRequest=0
 async function load() {
+  const request=++memoRequest
   loading.value = true
   try {
-    const params: Record<string, any> = {}
+    const params: Record<string, any> = {page:memoPage.value,page_size:50}
     if (category.value) params.category = category.value
     if (keyword.value.trim()) params.q = keyword.value.trim()
     const [{ data }, { data: cats }] = await Promise.all([
       http.get('/memos', { params }),
       http.get('/memos/categories'),
     ])
-    memos.value = data
+    if(request!==memoRequest)return
+    memoPage.value=data.page
+    memoTotal.value=data.total
+    memos.value = data.items
     categories.value = cats
   } catch (error) {
     ElMessage.error(apiError(error).message)
@@ -164,6 +174,7 @@ async function load() {
 }
 
 function onSearch() {
+  memoPage.value=1
   if (searchTimer) window.clearTimeout(searchTimer)
   searchTimer = window.setTimeout(load, 300)
 }
@@ -245,7 +256,7 @@ async function copyContent(memo: any) {
   }
 }
 
-onMounted(load)
+onMounted(async()=>{await load();if(route.query.focus){try{openEdit((await http.get('/memos/'+Number(route.query.focus))).data)}catch(e){ElMessage.error(apiError(e).message)}}})
 onUnmounted(() => { if (searchTimer) window.clearTimeout(searchTimer) })
 </script>
 
@@ -253,7 +264,8 @@ onUnmounted(() => { if (searchTimer) window.clearTimeout(searchTimer) })
 .category-heading { font-size: 13px; font-weight: 500; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .memo-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+  align-items: start;
   gap: 10px;
 }
 .memo-head {

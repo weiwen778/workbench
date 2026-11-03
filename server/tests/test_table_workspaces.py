@@ -158,9 +158,13 @@ def test_agent_and_legacy_writes_are_journaled(auth):
     token=auth.post('/api/v1/agent-tokens',json={'name':'表格测试 Agent','scopes':['tables:write']}).json()['token']
     with TestClient(app) as agent:
         agent.headers['Authorization']='Bearer '+token
-        assert agent.patch('/api/v1/agent/records/'+str(rows[0]['id']),json={'version':1,'data':{b:'17'}}).status_code==200
+        draft=agent.patch('/api/v1/agent/records/'+str(rows[0]['id']),json={'version':1,'data':{b:'17'}})
+        assert draft.status_code==202,draft.text
+        assert auth.get('/api/v1/records/'+str(rows[0]['id'])).json()['data'][b]=='2'
+        merged=auth.post(f"/api/v1/agent-changes/{draft.json()['id']}/merge",json={'version':1})
+        assert merged.status_code==200,merged.text
     h=auth.get(f"/api/v1/tables/{t['id']}/changes").json()[0]
-    assert h['source']=='Agent: 表格测试 Agent'
+    assert h['source']=='Agent 合并: 表格测试 Agent；审核: admin'
     assert auth.post(f"/api/v1/table-changes/{h['id']}/undo",json={'request_id':uuid.uuid4().hex}).status_code==200
     assert auth.get('/api/v1/records/'+str(rows[0]['id'])).json()['data'][b]=='2'
 
