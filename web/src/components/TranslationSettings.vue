@@ -1,5 +1,6 @@
 <template>
  <div class="translation-settings">
+  <section class="connection-card"><h3>翻译页面偏好</h3><el-form label-position="top"><el-form-item label="默认翻译服务"><el-select v-model="preferences.provider" @change="savePreferences"><el-option v-for="c in connections" :key="c.provider" :value="c.provider" :label="c.name" /></el-select></el-form-item><el-form-item label="按字数自动调整字号"><el-switch v-model="preferences.autoSize" @change="savePreferences" /></el-form-item><div class="connection-fields"><el-form-item v-for="item in fontFields" :key="item.key" :label="item.label"><el-input-number v-model="preferences[item.key]" :min="12" :max="40" @change="savePreferences"/></el-form-item></div><p class="text-12 secondary">原文和译文分别按字数计算。关闭自动调整时统一使用长文本字号，设置保存在当前浏览器。</p></el-form></section>
   <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon><el-button text @click="refresh">重试加载</el-button></el-alert>
   <el-alert v-if="!loading&&!keyReady" title="凭据加密服务暂未就绪" description="配置加密服务后才能保存和测试密钥。已有输入不会自动提交。" type="warning" :closable="false" show-icon/>
   <div class="connection-summary"><span class="text-13 secondary">{{ connections.filter(c=>c.enabled).length }} 个服务已启用 · 密钥仅显示保存状态</span><el-button text :loading="loading" @click="refresh">刷新状态</el-button></div>
@@ -21,6 +22,10 @@
 import {computed,onMounted,reactive,ref} from 'vue'
 import {ElMessageBox} from 'element-plus'
 import {http,apiError} from '@/api/client'
+import {key,readTranslationPreferences} from '@/utils/translation-preferences'
+const preferences=reactive(readTranslationPreferences())
+const fontFields=[{key:'shortSize',label:'100 字以内字号'},{key:'mediumSize',label:'101–500 字字号'},{key:'longSize',label:'超过 500 字字号'}]
+function savePreferences(){localStorage.setItem(key,JSON.stringify(preferences))}
 const emit=defineEmits<{(e:'updated'):void}>()
 const connections=ref<any[]>([]),loading=ref(false),error=ref(''),keyReady=ref(true)
 const draft=reactive<Record<string,Record<string,string>>>({baidu:{},youdao:{},deepseek:{}}),models=reactive<Record<string,string>>({}),busy=reactive<Record<string,string>>({}),messages=reactive<Record<string,string>>({}),failed=reactive<Record<string,boolean>>({})

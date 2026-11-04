@@ -31,6 +31,7 @@ services:
       WB_DATABASE_URL: postgresql+psycopg://${WB_DB_USER:-workbench}:${WB_DB_PASSWORD}@db:5432/${WB_DB_NAME:-workbench}
       WB_STORAGE_DIR: /data/storage
       WB_BACKUP_DIR: /data/backups
+      WB_HOST_METRICS_FILE: /metrics/current.json
       WB_BACKUP_ENABLED: ${WB_BACKUP_ENABLED:-true}
       WB_ADMIN_USERNAME: ${WB_ADMIN_USERNAME:-admin}
       WB_ADMIN_PASSWORD: ${WB_ADMIN_PASSWORD:?请在 .env 中设置 WB_ADMIN_PASSWORD}
@@ -46,6 +47,7 @@ services:
     volumes:
       - wb_storage:/data/storage
       - wb_backups:/data/backups
+      - wb_metrics:/metrics:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=4).read()"]
       interval: 15s
@@ -55,6 +57,23 @@ services:
     mem_limit: 640m
     ports:
       - "127.0.0.1:${WB_API_PORT:-8000}:8000"
+
+  host-metrics:
+    build: ./server
+    restart: unless-stopped
+    command: ["python", "-m", "app.services.server_metrics", "--output-dir", "/metrics", "--host-root", "/host"]
+    network_mode: host
+    pid: host
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
+    cpus: 0.1
+    volumes:
+      - /:/host:ro,rslave
+      - wb_metrics:/metrics
+    environment:
+      TZ: Asia/Shanghai
 
   web:
     build:
@@ -74,3 +93,4 @@ volumes:
   wb_pgdata:
   wb_storage:
   wb_backups:
+  wb_metrics:

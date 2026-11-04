@@ -42,7 +42,7 @@ const routes = [
   ...['tasks','search','activity'].map(path=>({path:'/'+path,name:path,component:()=>import('@/views/WorkspaceToolsView.vue'),meta:{title:path==='search'?'统一搜索':path==='activity'?'操作记录':'任务中心'}})),
   { path: '/trash', redirect: '/settings/trash' },
   { path: '/settings/trash', name: 'settings-trash', component: () => import('@/views/SettingsView.vue'), meta: { title: '设置 · 回收站' } },
-  { path: '/settings/:section(appearance|navigation|account|agents|translation|system)', name: 'settings-section', component: () => import('@/views/SettingsView.vue'), meta: { title: '设置' } },
+  { path: '/settings/:section(appearance|navigation|account|agents|translation|system|ai)', name: 'settings-section', component: () => import('@/views/SettingsView.vue'), meta: { title: '设置' } },
   { path: '/settings', name: 'settings', component: () => import('@/views/SettingsView.vue'), meta: { title: '设置' } },
   { path: '/:pathMatch(.*)*', redirect: '/checkins/shops' },
 ]

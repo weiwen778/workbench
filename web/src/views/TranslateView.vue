@@ -2,20 +2,6 @@
   <div class="page">
     <!-- 顶部操作条 -->
     <div class="page-toolbar">
-      <el-select v-model="provider" style="width: 150px" @change="onProviderChange">
-        <el-option
-          v-for="conn in connections"
-          :key="conn.provider"
-          :label="conn.name"
-          :value="conn.provider"
-        >
-          <span>{{ conn.name }}</span>
-          <span class="text-12 muted" style="margin-left: 6px">
-            {{ conn.enabled ? (conn.configured ? '' : '未配置') : '已停用' }}
-          </span>
-        </el-option>
-      </el-select>
-
       <el-select v-model="sourceLang" style="width: 130px">
         <el-option label="自动检测" value="auto" />
         <el-option v-for="lang in supportedLangs" :key="lang.code" :label="lang.name" :value="lang.code" />
@@ -37,9 +23,7 @@
 
       <div class="spacer" />
 
-      <div class="toolbar-actions">
-        <el-button text :icon="Setting" @click="settingsOpen = true">服务设置</el-button>
-      </div>
+
     </div>
 
     <!-- 中间工作区 -->
@@ -50,7 +34,7 @@
           <div class="spacer" />
           <span class="text-12 muted">{{ sourceText.length }} 字</span>
         </div>
-        <div class="pane-body">
+        <div class="pane-body" :style="{'--translation-font':translationFont(sourceText,preferences)}">
           <el-input
             v-model="sourceText"
             type="textarea"
@@ -74,7 +58,7 @@
             {{ result.provider_name }} · {{ result.duration_ms }} ms
           </span>
         </div>
-        <div class="pane-body result-body">
+        <div class="pane-body result-body" :style="{fontSize:translationFont(result?.target_text||'',preferences)}">
           <div v-if="result" class="result-text">{{ result.target_text }}</div>
           <div v-else class="text-13 muted">译文只读，可复制到其他地方修改</div>
         </div>
@@ -188,16 +172,14 @@
       </template>
     </el-dialog>
 
-    <el-drawer v-model="settingsOpen" title="翻译服务设置" size="min(650px,100vw)" :before-close="closeServiceSettings">
-      <TranslationSettings v-if="settingsOpen" ref="serviceSettings" @updated="loadConnections" />
-    </el-drawer>
+
   </div>
 </template>
 
 <script setup lang="ts">
 import {vSplitterA11y} from '@/utils/splitter-a11y'
-import {onBeforeRouteLeave} from 'vue-router'
-import TranslationSettings from '@/components/TranslationSettings.vue'
+import {readTranslationPreferences,translationFont} from '@/utils/translation-preferences'
+
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -209,21 +191,19 @@ import {
   Promotion,
   Refresh,
   Search,
-  Setting,
   Switch,
 } from '@/icons'
 import { apiError, copyText, http } from '@/api/client'
 
 const connections = ref<any[]>([])
 const languages = ref<{ code: string; name: string }[]>([])
-const provider = ref('baidu')
+const preferences=readTranslationPreferences()
+const provider = ref(preferences.provider)
 const sourceLang = ref('auto')
 const targetLang = ref('en')
 const sourceText = ref('')
 const result = ref<any>(null)
 const translating = ref(false)
-const settingsOpen = ref(false)
-const savingConfig = ref(false)
 
 const favorites = ref<any[]>([])
 const history = ref<any[]>([])
@@ -301,8 +281,8 @@ async function loadConnections() {
     const { data } = await http.get('/translation-connections')
     connections.value = data.items
     languages.value = data.languages || []
-    if (!connections.value.find((c: any) => c.provider === provider.value && c.enabled)) {
-      const firstEnabled = connections.value.find((c: any) => c.enabled)
+    if (!connections.value.find((c: any) => c.provider === provider.value && c.enabled && c.configured)) {
+      const firstEnabled = connections.value.find((c: any) => c.enabled && c.configured)
       if (firstEnabled) provider.value = firstEnabled.provider
     }
     ensureLanguage()
@@ -319,11 +299,6 @@ function ensureLanguage() {
   if (!codes.includes(targetLang.value)) {
     targetLang.value = codes.find((code) => code !== sourceLang.value) || codes[0]
   }
-}
-
-function onProviderChange() {
-  result.value = null
-  ensureLanguage()
 }
 
 function swapLanguages() {
@@ -511,10 +486,6 @@ async function copyDetail(which: 'source' | 'target') {
   ok ? ElMessage.success(which === 'source' ? '已复制原文' : '已复制译文') : ElMessage.warning('浏览器不让自动复制，请手动选中')
 }
 
-const serviceSettings=ref<InstanceType<typeof TranslationSettings>>()
-onBeforeRouteLeave(async()=>!settingsOpen.value||!serviceSettings.value||await serviceSettings.value.confirmDiscard())
-async function closeServiceSettings(done:()=>void){if(await serviceSettings.value?.confirmDiscard())done()}
-
 onMounted(async () => {
   if (bottomRef.value) {
     bottomWidth.value = bottomRef.value.clientWidth
@@ -535,6 +506,8 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.pane-body :deep(.el-textarea__inner) {font-size:var(--translation-font);line-height:1.65;color:var(--wb-text);}
+
 .translate-bottom :deep(.el-splitter__mask) { pointer-events:none; }
 .result-body {
   font-size: 14px;

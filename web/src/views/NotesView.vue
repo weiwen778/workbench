@@ -54,13 +54,18 @@
           </el-select>
           <el-select
             v-model="tagNames"
+            class="note-tag-select"
+            aria-label="笔记标签"
+            collapse-tags
+            collapse-tags-tooltip
+            :max-collapse-tags="1"
             size="small"
             multiple
             filterable
             allow-create
             default-first-option
             placeholder="标签"
-            style="min-width: 160px; max-width: 260px"
+            style="width: 260px; max-width: 100%; flex: 0 1 260px"
             @change="markDirty"
           >
             <el-option v-for="tag in tags" :key="tag.id" :label="tag.name" :value="tag.name" />
@@ -70,6 +75,7 @@
           <el-upload :show-file-list="false" :http-request="uploadImage" accept="image/*">
             <el-button text size="small" :icon="Picture">插入图片</el-button>
           </el-upload>
+          <el-dropdown trigger="click" @command="exportCurrent"><el-button text size="small" :loading="exporting">导出</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="html">HTML 网页</el-dropdown-item><el-dropdown-item command="pdf">PDF 文档</el-dropdown-item><el-dropdown-item command="png">PNG 图片</el-dropdown-item><el-dropdown-item command="docx">Word 文档</el-dropdown-item></el-dropdown-menu></template></el-dropdown>
           <el-button text size="small" :icon="Clock" @click="openRevisions">历史版本</el-button>
           <el-button text size="small" :icon="View" @click="cycleMode">{{ modeLabel }}</el-button>
           <el-button size="small" type="primary" :loading="saving" @click="save('manual')">保存</el-button>
@@ -84,10 +90,10 @@
         <el-input v-model="title" class="title-input" maxlength="200" placeholder="未命名笔记" />
 
         <div class="editor-body" :class="mode">
-          <div v-show="mode !== 'preview'" class="editor-col">
+          <el-splitter v-splitter-a11y="{label:'调整编辑和预览宽度',value:parseFloat(splitSize),min:15,max:85,disabled:mode!=='split'}" @keydown.capture="splitKey" @resize-end="rememberSplit"><el-splitter-panel v-if="mode !== 'preview'" :size="mode==='split'?splitSize:undefined" :min="mode==='split'?'15%':undefined"><div class="editor-col">
             <MarkdownEditor :key="current.id" ref="textareaRef" v-model="content" @paste="onPaste" />
           </div>
-          <div v-show="mode !== 'edit'" class="preview-col markdown-body" v-html="rendered"></div>
+          </el-splitter-panel><el-splitter-panel v-if="mode !== 'edit'" :min="mode==='split'?'15%':undefined"><div class="preview-col markdown-body" v-html="rendered"></div></el-splitter-panel></el-splitter>
         </div>
       </template>
       <div v-else class="empty-hint">选择左侧笔记开始编辑</div>
@@ -122,6 +128,8 @@
 </template>
 
 <script setup lang="ts">
+import {vSplitterA11y} from '@/utils/splitter-a11y'
+import { exportNote } from '@/utils/note-export'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
@@ -131,6 +139,11 @@ import { marked } from 'marked'
 import { Clock, MoreFilled, Picture, Plus, Search, View } from '@/icons'
 import { apiError, http } from '@/api/client'
 
+const splitSize=ref(localStorage.getItem('wb_note_split') || '50%')
+function rememberSplit(sizes:number[]){if(mode.value==='split'&&sizes.length===2){splitSize.value=`${sizes[0]/(sizes[0]+sizes[1])*100}%`;localStorage.setItem('wb_note_split',splitSize.value)}}
+function splitKey(e:KeyboardEvent){if(mode.value!=='split'||!(e.target as HTMLElement).closest('.el-splitter-bar'))return;const next={ArrowLeft:parseFloat(splitSize.value)-2,ArrowRight:parseFloat(splitSize.value)+2,Home:15,End:85}[e.key];if(next===undefined)return;e.preventDefault();splitSize.value=`${Math.min(85,Math.max(15,next))}%`;localStorage.setItem('wb_note_split',splitSize.value)}
+const exporting=ref(false)
+async function exportCurrent(format:string){if(exporting.value)return;exporting.value=true;try{await exportNote(title.value||'未命名笔记',rendered.value,format);ElMessage.success('已导出')}catch(e){ElMessage.error(e instanceof Error?e.message:'导出失败')}finally{exporting.value=false}}
 const route = useRoute(), router = useRouter()
 const routeFolder = String(route.params.folderKey || '')
 const missingFolder = ref(false)
@@ -597,6 +610,9 @@ onUnmounted(() => {
   flex-wrap: wrap;
   border-bottom: 1px solid var(--wb-border);
 }
+.note-tag-select :deep(.el-select__selection) { flex-wrap: nowrap; min-width: 0; }
+.note-tag-select :deep(.el-select__selected-item) { min-width: 0; }
+.note-tag-select :deep(.el-tag) { max-width: 160px; }
 .save-state {
   display: inline-flex;
   align-items: center;
@@ -643,9 +659,7 @@ onUnmounted(() => {
 .editor-body {
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1px;
+  display: flex;
   background: var(--wb-border);
   margin-top: 6px;
 }
@@ -653,8 +667,11 @@ onUnmounted(() => {
 .editor-body.preview {
   grid-template-columns: 1fr;
 }
+.editor-body :deep(.el-splitter-bar__dragger) { width:9px; }
 .editor-col,
 .preview-col {
+  height:100%;
+  box-sizing:border-box;
   background: var(--wb-surface);
   min-height: 0;
   overflow: auto;

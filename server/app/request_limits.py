@@ -34,7 +34,7 @@ class RequestConcurrencyLimit:
             slots = self._slots[loop] = asyncio.Semaphore(self.limit)
         heavy = None
         path = scope['path']
-        if path.startswith('/api/v1/virtual-tables') or path.startswith('/api/v1/imports/') or path.endswith('/export') or path.endswith('/workbook') and scope.get('method') == 'PUT':
+        if path.endswith('/ai/extract') or path.startswith('/api/v1/virtual-tables') or path.startswith('/api/v1/imports/') or path.endswith('/export') or path.endswith('/workbook') and scope.get('method') == 'PUT':
             heavy = self._heavy_slots.get(loop)
             if heavy is None:
                 heavy = self._heavy_slots[loop] = asyncio.Semaphore(min(2, self.limit))

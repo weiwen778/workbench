@@ -15,10 +15,39 @@ MAX_GROUPS = 2000
 DIMENSION_TYPES = {'short_text', 'select', 'checkbox', 'date'}
 
 
+class ProgressCondition(BaseModel):
+    field: str = Field(min_length=1,max_length=100)
+    op: Literal['eq','ne','contains','empty','not_empty','gt','gte','lt','lte'] = 'eq'
+    value: str | bool | int | float | None = None
+
+class ProgressConfig(BaseModel):
+    mode: Literal['tasks','quantity'] = 'tasks'
+    display: Literal['bar','circle'] = 'bar'
+    completed: ProgressCondition | None = None
+    actual_field: str | None = Field(default=None,max_length=100)
+    target_mode: Literal['rows','field','fixed'] = 'rows'
+    target_field: str | None = Field(default=None,max_length=100)
+    target_value: str = Field(default='100',max_length=50)
+    filters: list[ProgressCondition] = Field(default_factory=list,max_length=7)
+    due_field: str | None = Field(default=None,max_length=100)
+
+    @model_validator(mode='after')
+    def valid_progress(self):
+        if self.mode=='tasks' and (self.completed is None or self.target_mode=='field'):
+            raise ValueError('按任务数统计需设置完成条件，目标请选择记录总数或固定数量')
+        if self.mode=='quantity' and (not self.actual_field or self.target_mode=='rows' or (self.target_mode=='field' and not self.target_field)):
+            raise ValueError('数值进度请选择完成量，并设置目标列或固定目标')
+        if self.target_mode=='fixed':
+            try: value=Decimal(self.target_value)
+            except InvalidOperation: raise ValueError('固定目标需为有效正数')
+            if not value.is_finite() or value<Decimal('0.000001') or value>Decimal('1e18'):raise ValueError('固定目标需在 0.000001 到 10¹⁸ 之间')
+            if self.mode=='tasks' and value!=value.to_integral_value():raise ValueError('任务数量目标需要整数')
+        return self
+
 class Widget(BaseModel):
     id: str = Field(default_factory=lambda: uuid.uuid4().hex, min_length=1, max_length=64, pattern=r'^[a-zA-Z0-9_-]+$')
     title: str = Field(min_length=1, max_length=100)
-    kind: Literal['metric', 'bar', 'line', 'pie'] = 'metric'
+    kind: Literal['metric', 'bar', 'line', 'pie', 'progress'] = 'metric'
     table_id: int = Field(gt=0)
     aggregation: Literal['count', 'sum', 'avg', 'min', 'max'] = 'count'
     value_field: str | None = Field(default=None, max_length=100)
@@ -31,9 +60,11 @@ class Widget(BaseModel):
     decimals: int = Field(default=2, ge=0, le=6)
     unit: str = Field(default='', max_length=12)
     wide: bool = False
+    progress: ProgressConfig | None = None
 
     @model_validator(mode='after')
     def valid_series(self):
+        if self.kind=='progress' and self.progress is None:raise ValueError('请配置任务进度的统计方式')
         if len(set(self.value_fields)) != len(self.value_fields):
             raise ValueError('同一个数字列不能重复选择')
         if self.value_fields:
@@ -76,6 +107,10 @@ def validate_source(db, widget: Widget, source_cache=None):
             source_cache[table.id] = (table, fields)
     else:
         table, fields = cached
+    if widget.kind=='progress':
+        from .dashboard_progress import validate_progress
+        validate_progress(widget,fields)
+        return table,fields
     if widget.aggregation != 'count':
         for key in widget.value_fields or [widget.value_field]:
             field = fields.get(key)
@@ -305,6 +340,13 @@ def _aggregate_single(db, widgets: list[Widget], dates: DateRange, all_groups=fr
 
 def aggregate(db, widgets: list[Widget], dates: DateRange):
     """Compute all series in one source scan, then align them on one shared X axis."""
+    progress_widgets=[w for w in widgets if w.kind=='progress']
+    if progress_widgets:
+        from .dashboard_progress import aggregate_progress
+        progress_results=aggregate_progress(db,progress_widgets,dates)
+        regular=aggregate(db,[w for w in widgets if w.kind!='progress'],dates) if len(progress_widgets)!=len(widgets) else []
+        combined={r['id']:r for r in [*progress_results,*regular]}
+        return [combined[w.id] for w in widgets]
     expanded, plans, all_groups = [], {}, set()
     for widget in widgets:
         if not widget.value_fields:

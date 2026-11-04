@@ -567,3 +567,23 @@ class AgentReviewNote(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey('users.id'))
     note: Mapped[str] = mapped_column(String(1000))
     created_at: Mapped[datetime] = mapped_column(DateTime,default=utcnow)
+
+class AiConnection(Base):
+    __tablename__ = 'ai_connections'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    encrypted_config: Mapped[str | None] = mapped_column(Text)
+    default_model: Mapped[str] = mapped_column(String(32), default='glm-4v-flash')
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class AiExtraction(Base):
+    __tablename__ = 'ai_extractions'
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
+    table_id: Mapped[int] = mapped_column(ForeignKey('data_tables.id'), index=True)
+    schema_version: Mapped[int] = mapped_column(Integer)
+    model: Mapped[str] = mapped_column(String(32))
+    encrypted_result: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default='pending')
+    record_ids: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

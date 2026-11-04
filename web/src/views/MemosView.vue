@@ -12,6 +12,7 @@
       <span class="text-12 muted">{{ memoTotal }} 张便利贴</span>
       <div class="spacer" />
       <div class="toolbar-actions">
+        <label class="memo-columns-label">每行 <el-select v-model="columns" aria-label="便利贴每行列数" style="width:100px" @change="rememberColumns"><el-option label="自动" :value="0"/><el-option v-for="n in 8" :key="n" :label="`${n} 列`" :value="n"/></el-select></label>
         <CategoryManager resource="memos" @changed="load" />
         <el-button text :icon="Refresh" @click="load">刷新</el-button>
         <el-button class="btn-tonal" :icon="Plus" @click="openCreate">新建便利贴</el-button>
@@ -26,29 +27,32 @@
       </div>
 
       <el-pagination v-if="memoTotal>50" v-model:current-page="memoPage" :page-size="50" :total="memoTotal" layout="total,prev,pager,next" @current-change="load" style="margin-bottom:16px"/>
-      <div class="memo-grid">
+      <div class="memo-grid" :style="{columnCount: columns || undefined}">
         <div v-for="memo in memos" :key="memo.id" class="memo-card" :class="`c-${memo.color}`">
           <div class="memo-head">
-            <span class="memo-title ellipsis-1">{{ memo.display_title }}</span>
-            <span class="memo-chip">{{ memo.display_category }}</span>
+            <button class="memo-title" @click="viewing=memo">{{ memo.display_title }}</button>
           </div>
-          <MemoContent :content="memo.content" />
+          <MemoContent :content="memo.content" @expand="viewing=memo" />
           <div class="memo-foot">
             <span class="text-12">{{ formatDate(memo.updated_at) }}</span>
             <div class="actions-group">
-              <el-button text circle size="small" :icon="CopyDocument" title="复制正文" @click="copyContent(memo)" />
-              <el-button text circle size="small" :icon="Edit" title="编辑" @click="openEdit(memo)" />
-              <el-button text circle size="small" :icon="Delete" title="删除" @click="remove(memo)" />
+              <el-button text circle :icon="CopyDocument" title="复制正文" aria-label="复制正文" @click="copyContent(memo)" />
+              <el-button text circle :icon="Edit" title="编辑" aria-label="编辑便利贴" @click="openEdit(memo)" />
+              <el-button text circle :icon="Delete" title="删除" aria-label="删除便利贴" @click="remove(memo)" />
             </div>
           </div>
+          <span class="memo-chip">{{ memo.display_category }}</span>
         </div>
       </div>
     </div>
-
+    <el-dialog :model-value="!!viewing" :title="viewing?.display_title" width="min(720px,94vw)" @close="viewing=null">
+      <div class="memo-reader">{{ viewing?.content }}</div>
+      <template #footer><el-button @click="copyContent(viewing)">复制正文</el-button><el-button type="primary" @click="openEdit(viewing); viewing=null">编辑</el-button></template>
+    </el-dialog>
     <el-dialog
       v-model="dialogOpen"
       :title="editing ? '编辑便利贴' : '新建便利贴'"
-      width="540px"
+      width="min(640px,94vw)"
       :close-on-click-modal="false"
     >
       <el-form label-position="top">
@@ -115,6 +119,9 @@ import { CopyDocument, Delete, Edit, Plus, Refresh, Search } from '@/icons'
 import { apiError, copyText, http } from '@/api/client'
 import { memoFilter, memoTitle } from '@/memo-navigation'
 
+const viewing=ref<any>(null)
+const columns=ref(Math.min(8,Math.max(0,Number(localStorage.getItem('wb_memo_columns'))||0)))
+function rememberColumns(){localStorage.setItem('wb_memo_columns',String(columns.value))}
 const memos = ref<any[]>([])
 const categories = ref<string[]>([])
 const keyword = ref('')
@@ -262,27 +269,16 @@ onUnmounted(() => { if (searchTimer) window.clearTimeout(searchTimer) })
 
 <style scoped>
 .category-heading { font-size: 13px; font-weight: 500; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.memo-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
-  align-items: start;
-  gap: 10px;
-}
-.memo-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.memo-head .memo-title {
-  flex: 1;
-}
-.memo-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  opacity: 0.9;
-}
+.memo-grid { columns: 280px; column-gap: 12px; }
+.memo-card { break-inside: avoid; margin-bottom:12px; color:var(--wb-text) !important; }
+.memo-card :deep(.memo-content) { opacity:1; font-size:14px; }
+.memo-title { font:inherit; font-size:16px; font-weight:650; color:inherit; border:0; background:none; padding:0; text-align:left; cursor:pointer; overflow-wrap:anywhere; width:100%; }
+.memo-head { min-width:0; }
+.memo-foot { display:flex; align-items:center; justify-content:space-between; gap:6px; }
+.memo-foot :deep(.el-button) { width:40px; height:40px; margin:0; color:var(--wb-text); font-size:19px; }
+.memo-chip { height:auto; min-height:24px; padding:4px 8px; align-self:flex-start; overflow-wrap:anywhere; max-width:100%; }
+.memo-reader { max-height:65vh; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:16px; line-height:1.8; color:var(--wb-text); }
+.memo-columns-label {display:flex;align-items:center;gap:6px;white-space:nowrap}
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

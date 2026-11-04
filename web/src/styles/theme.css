@@ -846,3 +846,7 @@ html.dark {
 /* Reserve scrollbar space when settings sections have different heights. */
 .wb-content.settings-scroll { scrollbar-gutter:stable; }
 @supports not (scrollbar-gutter:stable) { .wb-content.settings-scroll { overflow-y:scroll; } }
+
+/* Dropdown indicators use SVG geometry, independent of text font baselines. */
+.el-button .dropdown-chevron { margin-left:5px; font-size:15px; width:15px; height:15px; flex:none; vertical-align:middle; }
+.el-button .dropdown-chevron svg { display:block; width:100%; height:100%; }

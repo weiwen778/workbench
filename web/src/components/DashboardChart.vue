@@ -1,6 +1,7 @@
 <template>
   <div class="dashboard-chart">
     <div v-if="result.status === 'error'" class="chart-empty error" role="alert">{{ result.message }}</div>
+    <TaskProgress v-else-if="widget.kind === 'progress'" :widget="widget" :result="result"/>
     <template v-else-if="widget.kind === 'metric'">
       <div class="metric-value"><strong>{{ format(result.value) }}</strong><span>{{ widget.unit }}</span></div>
       <div class="metric-caption">{{ aggregationLabels[widget.aggregation] }} · {{ result.matched_rows ?? 0 }} 条记录</div>
@@ -21,6 +22,7 @@
 </template>
 
 <script setup lang="ts">
+import TaskProgress from '@/components/TaskProgress.vue'
 import {computed} from 'vue'
 import {use} from 'echarts/core'
 import {CanvasRenderer} from 'echarts/renderers'

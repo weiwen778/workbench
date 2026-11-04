@@ -36,11 +36,15 @@ def create_app() -> FastAPI:
             from .maintenance import maintenance_loop
             task = asyncio.create_task(maintenance_loop())
         if settings.env!='test':
+            from .services.server_metrics import start as start_metrics
+            start_metrics()
             from .services.jobs import worker_loop
             worker=asyncio.create_task(worker_loop())
         try:
             yield
         finally:
+            from .services.server_metrics import stop as stop_metrics
+            stop_metrics()
             if worker is not None:
                 worker.cancel()
                 with suppress(asyncio.CancelledError): await worker
@@ -172,6 +176,8 @@ def create_app() -> FastAPI:
     app.include_router(memos.router, prefix=api)
     app.include_router(bookmarks.router, prefix=api)
     app.include_router(translate.router, prefix=api)
+    from .routers import ai_tables
+    app.include_router(ai_tables.router, prefix=api)
     app.include_router(trash.router, prefix=api)
 
     from .routers import workspace_tools

@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     backup_interval_hours: int = Field(default=24,ge=1,le=720)
     backup_keep: int = Field(default=7,ge=1,le=365)
 
+    host_metrics_file: Path | None = None
+
     timezone: str = "Asia/Shanghai"
     public_base_url: str = ""
     cookie_secure: bool = False

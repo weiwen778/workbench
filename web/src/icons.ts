@@ -26,6 +26,7 @@ export {
   IconArrowUp as ArrowUp,
   IconArrowDown as ArrowDown,
   IconChevronRight as ArrowRight,
+  IconChevronDown as ChevronDown,
   IconDots as MoreFilled,
   IconCalendarCheck as Calendar,
   IconTable as Collection,

@@ -43,7 +43,7 @@
           </div>
           <span class="text-12 muted">{{ lastRefresh ? `更新于 ${displayTime(lastRefresh)} · ` : '' }}每 60 秒自动刷新</span>
         </div>
-        <div class="dashboard-note text-12 secondary">汇总原表全部有效记录，不继承表格页的临时筛选。原表或 Agent 更新后，刷新即可看到最新结果；时间筛选仅作用于已配置日期列的图表。</div>
+        <div class="dashboard-note text-12 secondary">汇总原表有效记录；任务进度按卡片配置的统计范围计算，不继承表格页的临时筛选。原表或 Agent 更新后，刷新即可看到最新结果；时间筛选仅作用于已配置日期列的图表。</div>
 
         <div v-if="!current.widgets.length" class="dashboard-empty">
           <el-icon :size="42"><DashboardIcon /></el-icon>
@@ -69,7 +69,7 @@
             </div>
             <div class="widget-source text-12 muted">
               <router-link :to="`/data/${widget.table_id}`">{{ resultFor(widget).table_name || tableName(widget.table_id) }}</router-link>
-              <span> · {{ aggregationLabels[widget.aggregation] }}{{ widget.unit ? `（${widget.unit}）` : '' }}</span>
+              <span> · {{ widget.kind==='progress'?(widget.progress?.mode==='quantity'?'数值累计进度':'任务完成进度'):aggregationLabels[widget.aggregation] }}{{ widget.unit ? `（${widget.unit}）` : '' }}</span>
             </div>
             <DashboardChart v-if="results[widget.id]" :widget="widget" :result="results[widget.id]" />
             <div v-else class="widget-placeholder">{{ refreshing ? '正在汇总…' : '等待刷新数据' }}</div>
@@ -88,7 +88,7 @@
 
     <el-dialog v-model="editorOpen" :title="editingId ? '编辑图表' : '添加图表'" width="min(800px, 95vw)" :close-on-click-modal="false" @closed="editorClosed">
       <el-form label-position="top" class="widget-form">
-        <div class="chart-guide">例如：想看每天的销售额、成本和利润，就选折线图，横轴选“日期”，对比数字勾选这三列，计算方式选“加起来”。三条线使用同一套纵轴刻度。</div>
+        <div v-if="form.kind!=='progress'" class="chart-guide">例如：想看每天的销售额、成本和利润，就选折线图，横轴选“日期”，对比数字勾选这三列，计算方式选“加起来”。三条线使用同一套纵轴刻度。</div>
         <el-form-item label="图表标题"><el-input v-model="form.title" maxlength="100" placeholder="例如：本月销售额、各店铺销售对比" /></el-form-item>
         <el-form-item label="展示方式">
           <el-radio-group v-model="form.kind" @change="kindChanged">
@@ -102,20 +102,21 @@
           <div v-if="!tables.length" class="text-12 muted">还没有表格，<el-link type="primary" @click="editorOpen = false; router.push('/data')">先去创建或导入</el-link>。</div>
         </el-form-item>
         <el-alert v-if="fieldError" :title="fieldError" type="error" :closable="false" />
+        <ProgressEditor v-if="form.kind==='progress'&&form.progress" v-model="form.progress" :fields="fields" :grouped="!!form.group_field"/>
         <div v-loading="fieldsLoading" class="form-grid">
-          <el-form-item label="同一天或同一类的数据怎么算？">
+          <el-form-item v-if="form.kind!=='progress'" label="同一天或同一类的数据怎么算？">
             <el-select v-model="form.aggregation" aria-label="同一天或同一类的数据怎么算？" @change="aggregationChanged">
               <el-option v-for="(label, value) in aggregationLabels" :key="value" :label="label" :value="value" :disabled="form.kind === 'pie' && !['count', 'sum'].includes(value)" />
             </el-select>
           </el-form-item>
-          <el-form-item v-if="form.aggregation !== 'count'" :label="['bar','line'].includes(form.kind) ? '纵轴：要对比哪些数字？（可多选）' : '要看哪个数字？'" required>
+          <el-form-item v-if="form.kind!=='progress' && form.aggregation !== 'count'" :label="['bar','line'].includes(form.kind) ? '纵轴：要对比哪些数字？（可多选）' : '要看哪个数字？'" required>
             <el-select v-if="['bar','line'].includes(form.kind)" v-model="form.value_fields" multiple :multiple-limit="8" placeholder="例如：销售额、成本、利润" aria-label="对比指标" @change="form.value_field = form.value_fields?.[0] || null"><el-option v-for="field in numericFields" :key="field.key" :label="field.name" :value="field.key" /></el-select>
             <el-select v-else v-model="form.value_field" placeholder="选择数字列" aria-label="统计列"><el-option v-for="field in numericFields" :key="field.key" :label="field.name" :value="field.key" /></el-select>
             <div class="text-12 secondary">最多对比 8 列，使用同一个纵轴；请选择单位一致的数字，如都是“元”。</div>
             <div v-if="!numericFields.length && form.table_id" class="text-12 muted">这张表没有数字列，可选择“数一数有多少条记录”。</div>
           </el-form-item>
-          <el-form-item v-if="form.kind !== 'metric'" :label="form.kind === 'pie' ? '按什么分类看占比？' : '横轴：按什么对比？'" required>
-            <el-select v-model="form.group_field" placeholder="例如：店铺、状态、日期" aria-label="横轴" @change="groupChanged">
+          <el-form-item v-if="form.kind !== 'metric'" :label="form.kind==='progress'?'按负责人或项目分组（可选）':form.kind === 'pie' ? '按什么分类看占比？' : '横轴：按什么对比？'" :required="form.kind!=='progress'">
+            <el-select v-model="form.group_field" placeholder="例如：店铺、状态、日期" aria-label="横轴" :clearable="form.kind==='progress'" @change="groupChanged">
               <el-option v-for="field in dimensionFields" :key="field.key" :label="field.name" :value="field.key" />
             </el-select>
           </el-form-item>
@@ -129,12 +130,12 @@
           </el-form-item>
           <el-form-item label="数值单位"><el-input v-model="form.unit" maxlength="12" placeholder="例如：元、单、件（不自动换算）" /></el-form-item>
           <el-form-item label="最多保留小数位"><el-input-number v-model="form.decimals" :min="0" :max="6" /></el-form-item>
-          <el-form-item v-if="form.kind !== 'metric'" label="最多显示多少个横轴项目？"><el-input-number v-model="form.limit" :min="1" :max="30" /></el-form-item>
-          <el-form-item v-if="form.kind !== 'metric' && !(form.kind === 'line' && selectedGroup?.type === 'date')" label="横轴项目怎么排列？">
-            <el-select v-model="form.sort"><el-option label="按第一个指标，从大到小" value="value_desc" /><el-option label="按名称或日期顺序" value="label_asc" /></el-select>
+          <el-form-item v-if="form.kind !== 'metric'" :label="form.kind==='progress'?'最多展示多少个分组？':'最多显示多少个横轴项目？'"><el-input-number v-model="form.limit" :min="1" :max="30" /></el-form-item>
+          <el-form-item v-if="form.kind !== 'metric' && !(form.kind === 'line' && selectedGroup?.type === 'date')" :label="form.kind==='progress'?'分组怎么排列？':'横轴项目怎么排列？'">
+            <el-select v-model="form.sort"><el-option :label="form.kind==='progress'?'完成率从高到低':'按第一个指标，从大到小'" value="value_desc" /><el-option label="按名称或日期顺序" value="label_asc" /></el-select>
           </el-form-item>
         </div>
-        <div class="form-options"><el-checkbox v-model="form.wide">图表占满一行</el-checkbox><span class="text-12 muted">日期折线按时间先后显示；多条线或多组柱子用不同颜色区分。</span></div>
+        <div class="form-options"><el-checkbox v-model="form.wide">图表占满一行</el-checkbox><span v-if="form.kind!=='progress'" class="text-12 muted">日期折线按时间先后显示；多条线或多组柱子用不同颜色区分。</span></div>
         <el-alert v-if="previewError" :title="previewError" type="error" :closable="false" />
         <div v-if="previewResult" class="preview-box"><div class="text-12 muted">数据预览 · 使用当前页面的时间范围</div><DashboardChart :widget="form" :result="previewResult" /></div>
       </el-form>
@@ -153,11 +154,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DashboardIcon, MoreFilled, Plus, Refresh } from '@/icons'
 import { apiError, http } from '@/api/client'
+import ProgressEditor from '@/components/ProgressEditor.vue'
 import DashboardChart from '@/components/DashboardChart.vue'
-import { aggregationLabels, chartLabels, type DashboardBoard, type DashboardWidget, type DashboardResult } from '@/dashboard'
+import { aggregationLabels, chartLabels, type DashboardBoard, type DashboardWidget, type DashboardResult,type ProgressConfig } from '@/dashboard'
 
 interface TableInfo { id: number; name: string; kind?: string }
-interface FieldInfo { key: string; name: string; type: string }
+interface FieldInfo { key: string; name: string; type: string;options?:{id:string;name:string}[] }
 const router = useRouter()
 const route = useRoute()
 let linkedTableId = Number(route.query.table) || 0
@@ -178,9 +180,10 @@ const editorOpen = ref(false), editingId = ref(''), fieldsLoading = ref(false)
 const fields = ref<FieldInfo[]>([]), fieldError = ref(''), previewError = ref('')
 const previewResult = ref<DashboardResult | null>(null), previewing = ref(false)
 let fieldRequestId = 0, previewRequestId = 0
+function emptyProgress():ProgressConfig{return {mode:'tasks',display:'bar',completed:{field:'',op:'eq',value:true},actual_field:null,target_mode:'rows',target_field:null,target_value:'100',filters:[],due_field:null}}
 function emptyWidget(): DashboardWidget {
   return { id: `w_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`, title: '', kind: 'metric', table_id: 0,
-    aggregation: 'count', value_field: null, value_fields: [], group_field: null, date_field: null, date_bucket: 'day', sort: 'value_desc', limit: 10, decimals: 0, unit: '', wide: false }
+    aggregation: 'count', value_field: null, value_fields: [], group_field: null, date_field: null, date_bucket: 'day', sort: 'value_desc', limit: 10, decimals: 0, unit: '', wide: false,progress:emptyProgress() }
 }
 const form = reactive<DashboardWidget>(emptyWidget())
 const numericFields = computed(() => fields.value.filter(f => ['number','formula','rollup'].includes(f.type)))
@@ -290,16 +293,25 @@ async function loadFields(id: number) {
 }
 async function chooseTable(id: number) {
   fields.value = []
-  form.value_fields = []; form.value_field = null; form.group_field = null; form.date_field = null
+  form.value_fields = []; form.value_field = null; form.group_field = null; form.date_field = null;form.progress=emptyProgress()
   await loadFields(id)
   if (form.table_id !== id || fieldError.value) return
   form.value_field = numericFields.value[0]?.key || null
   form.value_fields = form.value_field ? [form.value_field] : []
   if (['bar','line'].includes(form.kind) && form.aggregation === 'count' && numericFields.value.length) form.aggregation = 'sum'
-  form.group_field = dimensionFields.value[0]?.key || null
+  form.group_field = form.kind==='progress'?null:dimensionFields.value[0]?.key || null
+  if(form.kind==='progress')initializeProgress()
   form.date_field = dateFields.value[0]?.key || null
 }
+function initializeProgress(){
+  form.progress ||= emptyProgress()
+  const complete=fields.value.find(f=>f.type==='checkbox')||fields.value.find(f=>f.type==='select')||fields.value.find(f=>f.type==='short_text')
+  if(complete&&!form.progress.completed?.field)form.progress.completed={field:complete.key,op:'eq',value:complete.type==='checkbox'?true:complete.type==='select'?(complete.options?.find(o=>/^(已完成|完成|done|complete)$/i.test(o.name))||complete.options?.[0])?.id||'':''}
+  form.progress.actual_field ||= numericFields.value[0]?.key||null
+  form.progress.target_field ||= numericFields.value[1]?.key||numericFields.value[0]?.key||null
+}
 function kindChanged() {
+  if(form.kind==='progress'){form.aggregation='count';form.value_field=null;form.value_fields=[];form.group_field=null;initializeProgress();return}
   if (['bar','line'].includes(form.kind) && form.aggregation === 'count' && numericFields.value.length) form.aggregation = 'sum'
   if (!['bar','line'].includes(form.kind)) form.value_fields = []
   else if (!form.value_fields?.length && form.value_field) form.value_fields = [form.value_field]
@@ -311,7 +323,8 @@ function groupChanged() {
   if (form.kind === 'line' && selectedGroup.value?.type === 'date') { form.sort = 'label_asc'; if (!form.date_field) form.date_field = form.group_field }
 }
 function draft(): DashboardWidget {
-  return { ...form, title: form.title.trim() || `${fields.value.find(f => f.key === form.value_field)?.name || tableName(form.table_id)} · ${aggregationLabels[form.aggregation]}`,
+  return { ...form, title: form.title.trim() || (form.kind==='progress'?`${tableName(form.table_id)} · 任务进度`:`${fields.value.find(f => f.key === form.value_field)?.name || tableName(form.table_id)} · ${aggregationLabels[form.aggregation]}`),
+    progress:form.kind==='progress'?form.progress:null,
     value_fields: ['bar','line'].includes(form.kind) && form.aggregation !== 'count' ? form.value_fields || [] : [],
     date_field: form.date_field || null, value_field: ['bar','line'].includes(form.kind) && form.aggregation !== 'count' ? form.value_fields?.[0] || null : form.value_field || null, group_field: form.group_field || null }
 }

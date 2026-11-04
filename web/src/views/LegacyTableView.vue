@@ -9,6 +9,7 @@
       <div class="spacer" />
       <div class="toolbar-actions">
         <slot name="header-actions" />
+        <el-button text @click="aiOpen=true">AI 图片填表</el-button>
         <el-button text :type="filtersOpen?'primary':undefined" @click="filtersOpen=!filtersOpen">筛选{{ filters.length?`(${filters.length})`:'' }}</el-button>
         <el-popover placement="bottom-end" :width="360" trigger="click">
           <template #reference>
@@ -33,7 +34,7 @@
             <el-button size="small" type="primary" @click="applySorts">应用</el-button>
           </div>
         </el-popover>
-        <el-dropdown trigger="click" @command="tableCommand"><el-button text>更多操作 ⌄</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="refresh">刷新</el-dropdown-item><el-dropdown-item command="fields">列设置</el-dropdown-item><el-dropdown-item command="export" divided>导出</el-dropdown-item><el-dropdown-item command="import">批量导入</el-dropdown-item><el-dropdown-item command="analysis" divided>汇总与透视</el-dropdown-item><el-dropdown-item command="visualize" divided>用于数据可视化</el-dropdown-item></el-dropdown-menu></template></el-dropdown>
+        <el-dropdown trigger="click" @command="tableCommand"><el-button text>更多操作<el-icon class="dropdown-chevron"><ChevronDown/></el-icon></el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="refresh">刷新</el-dropdown-item><el-dropdown-item command="fields">列设置</el-dropdown-item><el-dropdown-item command="export" divided>导出</el-dropdown-item><el-dropdown-item command="import">批量导入</el-dropdown-item><el-dropdown-item command="analysis" divided>汇总与透视</el-dropdown-item><el-dropdown-item command="visualize" divided>用于数据可视化</el-dropdown-item></el-dropdown-menu></template></el-dropdown>
         <el-button class="btn-tonal" :icon="Plus" :disabled="!fields.length" @click="openCreate">添加一行</el-button>
       </div>
     </div>
@@ -102,7 +103,9 @@
     </div>
 
     <div class="page-body">
-      <div v-if="!fields.length" class="empty-hint">
+      <el-alert v-if="initialError" :title="initialError" type="error" :closable="false"><el-button text @click="initialize">重试加载</el-button></el-alert>
+      <div v-else-if="initialLoading&&!fields.length" class="empty-hint">正在打开表格…</div>
+      <div v-else-if="!fields.length" class="empty-hint">
         <div>这张表格还没有列</div>
         <el-button class="btn-tonal" @click="fieldsOpen = true">添加一列</el-button>
       </div>
@@ -110,6 +113,7 @@
         <div class="table-scroll">
           <el-table
             :data="rows"
+            row-key="id"
             v-loading="loading"
             size="small"
             height="100%"
@@ -165,6 +169,7 @@
               删除选中的 {{ selection.length }} 行
             </el-button>
             <span v-if="!rows.length" class="text-12 muted">没有符合条件的内容</span>
+            <span v-else-if="fields.length>60&&pageSize===20" class="text-12 muted">宽表每页 20 行，可调整每页数量</span>
           </div>
           <div class="spacer" />
           <el-pagination
@@ -180,16 +185,17 @@
       </template>
     </div>
 
-    <RecordDrawer
+    <AiTableFill v-if="aiOpen" v-model="aiOpen" :table-id="tableId" @saved="loadRecords"/>
+    <RecordDrawer v-if="recordOpen"
       v-model="recordOpen"
       :table-id="tableId"
       :fields="fields"
       :record="editingRecord"
       @saved="loadRecords"
     />
-    <AttachmentPreview v-model="previewOpen" :file="previewFile" />
-    <FieldManager v-model="fieldsOpen" :table-id="tableId" :fields="fields" @updated="reload" />
-    <ImportWizard v-model="importOpen" :table-id="tableId" :existing-fields="fields" @done="reload" />
+    <AttachmentPreview v-if="previewOpen" v-model="previewOpen" :file="previewFile" />
+    <FieldManager v-if="fieldsOpen" v-model="fieldsOpen" :table-id="tableId" :fields="fields" @updated="reload" />
+    <ImportWizard v-if="importOpen" v-model="importOpen" :table-id="tableId" :existing-fields="fields" @done="reload" />
 
     <TableAnalysisDialog v-if="analysisOpen" v-model="analysisOpen" :table-id="tableId" />
     <!-- 导出 -->
@@ -215,16 +221,18 @@
 <script setup lang="ts">
 import {defineAsyncComponent} from 'vue'
 const TableAnalysisDialog=defineAsyncComponent(()=>import('@/components/TableAnalysisDialog.vue'))
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Close, DashboardIcon, Download, InfoFilled, Plus, Refresh, Setting, Sort, Upload } from '@/icons'
+import { ChevronDown, Check, Close, DashboardIcon, Download, InfoFilled, Plus, Refresh, Setting, Sort, Upload } from '@/icons'
 import { apiError, http } from '@/api/client'
-import RecordDrawer from '@/components/RecordDrawer.vue'
-import AttachmentPreview from '@/components/AttachmentPreview.vue'
-import FieldManager from '@/components/FieldManager.vue'
-import ImportWizard from '@/components/ImportWizard.vue'
+const AiTableFill=defineAsyncComponent(()=>import('@/components/AiTableFill.vue'))
+const RecordDrawer=defineAsyncComponent(()=>import('@/components/RecordDrawer.vue'))
+const AttachmentPreview=defineAsyncComponent(()=>import('@/components/AttachmentPreview.vue'))
+const FieldManager=defineAsyncComponent(()=>import('@/components/FieldManager.vue'))
+const ImportWizard=defineAsyncComponent(()=>import('@/components/ImportWizard.vue'))
 
+const aiOpen=ref(false)
 const props=defineProps<{embedded?:boolean;toolbarTarget?:string;toolbarActive?:boolean}>()
 const filtersOpen=ref(false),elementTable=ref<any>()
 watch(()=>props.toolbarActive,async value=>{if(value){await nextTick();elementTable.value?.doLayout()}})
@@ -241,12 +249,17 @@ async function openAttachment(id: number) {
 }
 const tableId = Number(route.params.tableId)
 
+const initialLoading=ref(true),initialError=ref('')
+let initialColumns:Promise<void>|undefined
 const table = ref<any>(null)
-const fields = ref<any[]>([])
-const rows = ref<any[]>([])
+const fields = shallowRef<any[]>([])
+const rows = shallowRef<any[]>([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(50)
+const pageSizeKey=`wb-table-page-size:${tableId}`
+let explicitPageSize=false
+function preferredPageSize(){try{const saved=Number(sessionStorage.getItem(pageSizeKey));if([20,50,100].includes(saved)){explicitPageSize=true;return saved}}catch{}return 50}
+const pageSize = ref(preferredPageSize())
 const loading = ref(false)
 const selection = ref<any[]>([])
 
@@ -279,6 +292,8 @@ const operatorsByType: Record<string, { label: string; value: string }[]> = {
   ],
   number: [
     { label: '等于', value: 'eq' },
+    { label: '大于等于', value: 'gte' },
+    { label: '小于等于', value: 'lte' },
     { label: '大于', value: 'gt' },
     { label: '小于', value: 'lt' },
     { label: '区间', value: 'between' },
@@ -287,6 +302,8 @@ const operatorsByType: Record<string, { label: string; value: string }[]> = {
   ],
   date: [
     { label: '等于', value: 'eq' },
+    { label: '不早于', value: 'gte' },
+    { label: '不晚于', value: 'lte' },
     { label: '早于', value: 'lt' },
     { label: '晚于', value: 'gt' },
     { label: '区间', value: 'between' },
@@ -410,9 +427,14 @@ async function loadTable() {
   const { data } = await http.get(`/tables/${tableId}`)
   table.value = data
   fields.value = data.fields
+  if(!explicitPageSize)pageSize.value=data.fields.length>60?20:50
 }
 
+let recordsRequest=0,viewActive=true
+onUnmounted(()=>{viewActive=false;recordsRequest++})
 async function loadRecords() {
+  if(!viewActive)return
+  const request=++recordsRequest
   loading.value = true
   try {
     const params: Record<string, any> = { page: page.value, page_size: pageSize.value }
@@ -420,12 +442,17 @@ async function loadRecords() {
     if (activeFilters.length) params.filters = JSON.stringify(activeFilters)
     if (sorts.value.length) params.sorts = JSON.stringify(sorts.value)
     const { data } = await http.get(`/tables/${tableId}/records`, { params })
-    rows.value = data.items
+    if(initialLoading.value&&initialColumns)await initialColumns
+    if(!viewActive||request!==recordsRequest)return
+    rows.value = initialLoading.value&&page.value===1 ? data.items.slice(0,pageSize.value) : data.items
     total.value = data.total
   } catch (error) {
-    ElMessage.error(apiError(error).message)
+    if(viewActive&&request===recordsRequest){
+      if(initialLoading.value)initialError.value=apiError(error).message
+      ElMessage.error(apiError(error).message)
+    }
   } finally {
-    loading.value = false
+    if(viewActive&&request===recordsRequest)loading.value = false
   }
 }
 
@@ -440,6 +467,8 @@ async function reload() {
 }
 
 function onPageSizeChange() {
+  if(initialLoading.value)return
+  explicitPageSize=true;try{sessionStorage.setItem(pageSizeKey,String(pageSize.value))}catch{}
   page.value = 1
   loadRecords()
 }
@@ -511,15 +540,27 @@ async function doExport() {
   }
 }
 
-onMounted(async () => {
+async function initialize(){
+  initialLoading.value=true;initialError.value=''
   try {
+    if(!route.query.filters){const metadata=loadTable();initialColumns=metadata.then(async()=>{await nextTick();if(fields.value.length>60)await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())))}).catch(()=>{});await Promise.all([metadata,loadRecords()])}
+    else{
     await loadTable()
+    if(route.query.filters){
+      const raw=String(route.query.filters)
+      if(raw.length>12000)throw new Error('来源筛选条件过长')
+      const parsed=JSON.parse(raw)
+      if(!Array.isArray(parsed)||parsed.length>10||parsed.some(f=>!f||!fields.value.some(field=>field.key===f.field)))throw new Error('来源筛选条件无效，请重新从看板打开')
+      filters.value=parsed;filtersOpen.value=!!parsed.length
+    }
     await loadRecords()
+    }
     if(route.query.record) openEdit((await http.get('/records/'+Number(route.query.record))).data)
   } catch (error) {
-    ElMessage.error(apiError(error).message)
-  }
-})
+    initialError.value=apiError(error).message
+  } finally {initialLoading.value=false}
+}
+onMounted(initialize)
 </script>
 
 <style scoped>

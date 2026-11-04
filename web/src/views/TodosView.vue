@@ -31,7 +31,7 @@
           </template>
         </el-input>
         <div class="quick-extra">
-          <el-popover placement="bottom-start" :width="300" trigger="click">
+          <el-popover placement="bottom-start" :width="300" trigger="click" :persistent="false">
             <template #reference>
               <el-button text size="small" :icon="Clock">
                 {{ newDue.due_date ? dueText(newDue) : '设置截止' }}
@@ -55,10 +55,11 @@
       </div>
 
       <div class="scroll-area" v-loading="loading">
+        <el-alert v-if="loadError" :title="loadError" type="error" :closable="false"><el-button text @click="load">重试加载</el-button></el-alert>
         <div v-if="!currentList" class="empty-hint"><div>{{ missingList ? '清单不存在或已删除，请从左侧选择其他清单' : '从左侧选择清单，或新建一个清单开始记录' }}</div><el-button style="margin-top: 12px" @click="createList">新建清单</el-button></div>
         <template v-else>
           <el-pagination v-if="counts.top_pending>50" v-model:current-page="pendingPage" :page-size="50" :total="counts.top_pending" layout="total,prev,pager,next" @current-change="load"/>
-          <TransitionGroup name="wb-task" tag="div" class="task-list">
+          <TransitionGroup v-if="loaded" name="wb-task" tag="div" class="task-list">
           <div v-for="(item, index) in pending" :key="item.id" class="task-block" :class="{ 'is-completing': completingIds.has(item.id) }" :aria-busy="togglingIds.has(item.id)">
             <div class="task-row" :class="{ overdue: item.overdue }">
               <el-tooltip
@@ -124,6 +125,7 @@
                   @click="subOpen[item.id] = !subOpen[item.id]"
                 />
                 <el-button
+                  v-if="sortMode==='manual'"
                   text
                   size="small"
                   :icon="ArrowUp"
@@ -132,6 +134,7 @@
                   @click="move(index, -1)"
                 />
                 <el-button
+                  v-if="sortMode==='manual'"
                   text
                   size="small"
                   :icon="ArrowDown"
@@ -139,44 +142,7 @@
                   title="下移"
                   @click="move(index, 1)"
                 />
-                <el-popover
-                  placement="bottom-end"
-                  :width="300"
-                  trigger="click"
-                  @show="openEdit(item)"
-                >
-                  <template #reference>
-                    <el-button text size="small" :icon="Edit" title="编辑" />
-                  </template>
-                  <div class="text-13" style="margin-bottom: 6px">编辑待办</div>
-                  <el-input v-model="editForm.title" maxlength="200" placeholder="标题" />
-                  <el-input
-                    v-model="editForm.note"
-                    type="textarea"
-                    :rows="3"
-                    maxlength="5000"
-                    placeholder="说明"
-                    style="margin-top: 8px"
-                  />
-                  <el-date-picker
-                    v-model="editForm.due_date"
-                    type="date"
-                    value-format="YYYY-MM-DD"
-                    placeholder="截止日期"
-                    style="width: 100%; margin-top: 8px"
-                  />
-                  <el-time-picker
-                    v-model="editForm.due_time"
-                    format="HH:mm"
-                    value-format="HH:mm"
-                    placeholder="具体时间（可选）"
-                    style="width: 100%; margin-top: 8px"
-                  />
-                  <div class="toolbar-actions" style="justify-content: flex-end; margin-top: 8px">
-                    <el-button size="small" @click="clearEditDue">清空截止</el-button>
-                    <el-button size="small" type="primary" @click="saveEdit(item)">保存</el-button>
-                  </div>
-                </el-popover>
+                <el-button text size="small" :icon="Edit" title="编辑" aria-label="编辑待办" @click="openEdit(item)" />
                 <el-button text size="small" :icon="Delete" title="删除" @click="removeTodo(item)" />
               </div>
             </div>
@@ -190,11 +156,11 @@
 
           <!-- 已完成区 -->
           <div v-if="completed.length" class="completed-block">
-            <div class="completed-head" @click="completedOpen = !completedOpen">
+            <button type="button" class="completed-head" :aria-expanded="completedOpen" @click="completedOpen = !completedOpen">
               <el-icon><component :is="completedOpen ? ArrowDown : ArrowRight" /></el-icon>
               <span>已完成 {{ counts.top_done }}</span>
-            </div>
-            <div v-show="completedOpen">
+            </button>
+            <div v-if="completedOpen">
               <el-pagination v-if="counts.top_done>50" v-model:current-page="donePage" :page-size="50" :total="counts.top_done" layout="total,prev,pager,next" @current-change="load"/>
               <div v-for="item in completed" :key="item.id" class="task-row completed">
                 <el-checkbox
@@ -227,10 +193,20 @@
       </div>
     </div>
   </div>
+  <el-dialog v-if="editingItem" v-model="editOpen" title="编辑待办" width="min(520px,94vw)" :close-on-click-modal="false" @closed="!editOpen && (editingItem=null)">
+    <el-form label-position="top" :disabled="editingSaving" @submit.prevent="saveEdit(editingItem)">
+      <el-form-item label="标题" required><el-input v-model="editForm.title" maxlength="200" placeholder="标题"/></el-form-item>
+      <el-form-item label="说明"><el-input v-model="editForm.note" type="textarea" :rows="3" maxlength="5000" placeholder="说明"/></el-form-item>
+      <el-form-item label="截止日期"><el-date-picker v-model="editForm.due_date" type="date" value-format="YYYY-MM-DD" placeholder="截止日期" style="width:100%"/></el-form-item>
+      <el-form-item label="具体时间（可选）"><el-time-picker v-model="editForm.due_time" format="HH:mm" value-format="HH:mm" placeholder="具体时间（可选）" style="width:100%"/></el-form-item>
+    </el-form>
+    <template #footer><el-button :disabled="editingSaving" @click="clearEditDue">清空截止</el-button><el-button :disabled="editingSaving" @click="editOpen=false">取消</el-button><el-button type="primary" :loading="editingSaving" @click="saveEdit(editingItem)">保存</el-button></template>
+  </el-dialog>
+
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, shallowRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -253,13 +229,16 @@ const missingList = ref(false)
 const currentList = computed(() => lists.value.find((l) => l.id === currentListId.value) || null)
 const focusTarget=ref<number|undefined>(route.query.focus?Number(route.query.focus):undefined)
 const pendingPage=ref(1),donePage=ref(1)
-const pending = ref<any[]>([])
-const completed = ref<any[]>([])
+const pending = shallowRef<any[]>([])
+const completed = shallowRef<any[]>([])
 const counts = ref({ nodes_total: 0, nodes_pending: 0, nodes_done: 0,top_pending:0,top_done:0 })
 const sortMode = ref<'auto' | 'manual'>('auto')
-const loading = ref(false)
+const loading = ref(true)
+const loaded=ref(false),loadError=ref('')
+let loadRequest=0
 const adding = ref(false)
-const completedOpen = ref(true)
+const completedOpen = ref(false)
+const editingItem=shallowRef<any>(null),editOpen=ref(false),editingSaving=ref(false)
 const todoRoot = ref<HTMLElement>()
 const checkboxVersions = reactive<Record<number, number>>({})
 const togglingIds = reactive(new Set<number>())
@@ -311,22 +290,26 @@ async function loadLists() {
 }
 
 async function load() {
-  if (!currentListId.value) return
+  if (!currentListId.value||!viewActive) return
+  const request=++loadRequest,focus=focusTarget.value
   loading.value = true
   try {
     const { data } = await http.get('/todos', { params: { list_id: currentListId.value,page:pendingPage.value,completed_page:donePage.value,page_size:50,focus:focusTarget.value } })
+    if(!viewActive||request!==loadRequest)return
     focusTarget.value=undefined
+    if(focus&&data.completed.some((item:any)=>item.id===focus||item.children.some((child:any)=>child.id===focus)))completedOpen.value=true
+    missingList.value=false;loadError.value=''
     pendingPage.value=data.page||1;donePage.value=data.completed_page||1
     pending.value = data.pending
     completed.value = data.completed
     counts.value = data.counts
     lists.value = data.lists
-    window.dispatchEvent(new Event('wb:todos-changed'))
+    window.dispatchEvent(new CustomEvent('wb:todos-changed',{detail:{lists:data.lists}}))
     sortMode.value = data.list.sort_mode
-  } catch (error) {
-    ElMessage.error(apiError(error).message)
+  } catch (error:any) {
+    if(viewActive&&request===loadRequest){loadError.value=apiError(error).message;missingList.value=error?.response?.status===404;ElMessage.error(loadError.value)}
   } finally {
-    loading.value = false
+    if(viewActive&&request===loadRequest){loading.value=false;loaded.value=true}
   }
 }
 
@@ -486,6 +469,7 @@ async function move(index: number, offset: number) {
 }
 
 function openEdit(item: any) {
+  editingItem.value=item;editOpen.value=true
   editForm.title = item.title
   editForm.note = item.note || ''
   editForm.due_date = item.due_date
@@ -498,6 +482,9 @@ function clearEditDue() {
 }
 
 async function saveEdit(item: any) {
+  if(!item||editingSaving.value)return
+  if(!editForm.title.trim()){ElMessage.warning('标题不能为空');return}
+  editingSaving.value=true
   try {
     const payload: Record<string, any> = { title: editForm.title.trim(), note: editForm.note }
     if (editForm.due_date) {
@@ -507,17 +494,18 @@ async function saveEdit(item: any) {
       payload.clear_due = true
     }
     await http.patch(`/todos/${item.id}`, payload)
+    editOpen.value=false
     await load()
     if(route.query.focus){await nextTick();const target=document.querySelector<HTMLElement>(`[data-todo-id="${Number(route.query.focus)}"]`);target?.scrollIntoView({block:'center'});target?.closest('.task-row')?.classList.add('search-focus')}
   } catch (error) {
     ElMessage.error(apiError(error).message)
-  }
+  } finally {editingSaving.value=false}
 }
 
 async function removeTodo(item: any) {
   try {
     const suffix = item.children?.length ? `及其 ${item.children.length} 个子任务` : ''
-    await ElMessageBox.confirm(`删除「${item.title}」${suffix}？删了就找不回来。`, '删除待办', {
+    await ElMessageBox.confirm(`删除「${item.title}」${suffix}？删除后可在回收站恢复，保留 30 天。`, '删除待办', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消',
@@ -532,8 +520,11 @@ async function removeTodo(item: any) {
 
 onMounted(async () => {
   try {
-    await loadLists()
-    if (!route.params.listId && lists.value.length) { await router.replace(`/todos/${lists.value[0].id}`); return }
+    if(!route.params.listId){
+      await loadLists()
+      if(lists.value.length){await router.replace(`/todos/${lists.value[0].id}`);return}
+      loading.value=false;loaded.value=true;return
+    }
     await load()
     if(route.query.focus){await nextTick();const target=document.querySelector<HTMLElement>(`[data-todo-id="${Number(route.query.focus)}"]`);target?.scrollIntoView({block:'center'});target?.closest('.task-row')?.classList.add('search-focus')}
   } catch (error) {
@@ -543,6 +534,8 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.completed-head{border:0;background:transparent;font:inherit;color:inherit;width:100%;text-align:left}
+
 .search-focus{outline:2px solid var(--wb-primary);outline-offset:3px;border-radius:4px}
 .todos-layout {
   display: flex;

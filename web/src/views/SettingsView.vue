@@ -23,11 +23,12 @@
     <section class="setting-card setting-row"><div class="setting-label"><h3>退出当前设备</h3><p>退出后需要重新登录才能访问工作台。</p></div><el-button :loading="loggingOut" @click="handleLogout">退出登录</el-button></section>
    </template>
    <AgentAccess v-else-if="section==='agents'" ref="agentRef" embedded/>
+   <AiTableSettings v-else-if="section==='ai'" ref="aiRef"/>
    <TranslationSettings v-else-if="section==='translation'" ref="translationRef"/>
    <TrashView v-else-if="section==='trash'" class="settings-trash"/>
    <template v-else-if="section==='system'">
     <BackupPanel/>
-    <section class="setting-card"><div class="setting-row"><div class="setting-label"><h3>运行状态</h3><p>检查工作台服务和数据连接是否正常。</p></div><el-button :loading="checkingHealth" @click="checkHealth">重新检查</el-button></div><p v-if="healthError" class="error-text" role="alert">{{ healthError }}</p><dl class="system-facts"><div><dt>工作台服务</dt><dd :class="health.status==='ok'?'success-text':'error-text'">{{ checkingHealth?'检查中…':health.status==='ok'?'运行正常':'连接异常' }}</dd></div><div><dt>数据连接</dt><dd>{{ checkingHealth?'检查中…':health.database==='ok'?'连接正常':'暂时不可用' }}</dd></div><div><dt>服务检查时间</dt><dd>{{ checkedAt?new Date(checkedAt).toLocaleTimeString('zh-CN'):'尚未检查' }}</dd></div><div><dt>工作台时区</dt><dd>北京时间 · Asia/Shanghai</dd></div><div><dt>当前地址</dt><dd class="breakable">{{ origin }}</dd></div></dl></section>
+    <ServerMonitor/>
     <section class="setting-card"><div class="setting-label"><h3>数据与隐私</h3><p>笔记、待办、表格等数据保存在当前工作台。图片处理在浏览器本地完成，不上传图片；翻译内容会发送到你启用的翻译服务。</p></div><div class="setting-actions"><el-button @click="navigate('trash')">打开回收站</el-button><el-button @click="navigate('translation')">管理翻译服务</el-button></div></section>
    </template>
   </main>
@@ -42,13 +43,15 @@ import {http,apiError} from '@/api/client'
 import {session,setTheme,setThemeColor,logout} from '@/stores/session'
 import {DEFAULT_THEME_COLOR} from '@/theme-color'
 import {reduceMotion,setReduceMotion} from '@/stores/motion'
+import ServerMonitor from '@/components/ServerMonitor.vue'
 import BackupPanel from '@/components/BackupPanel.vue'
 import AgentAccess from '@/components/AgentAccess.vue'
+import AiTableSettings from '@/components/AiTableSettings.vue'
 import TranslationSettings from '@/components/TranslationSettings.vue'
 import TrashView from '@/views/TrashView.vue'
 const route=useRoute(),router=useRouter(),search=ref(''),feedback=ref(''),feedbackError=ref(false)
 const groups=[{name:'偏好设置'},{name:'账号与连接'},{name:'数据与维护'}]
-const items=[{key:'appearance',label:'外观与动效',group:'偏好设置',icon:Sunny,description:'调整工作台的主题、强调色和动画体验。',keywords:'主题 深色 浅色 颜色 动画'}, {key:'navigation',label:'导航与命名',group:'偏好设置',icon:Menu,description:'让导航名称更符合你的使用习惯。',keywords:'打卡 店铺 社媒 重命名'}, {key:'account',label:'账号与安全',group:'账号与连接',icon:Setting,description:'管理登录密码和当前设备的登录状态。',keywords:'密码 用户名 退出 登录'}, {key:'agents',label:'Agent 接入',group:'账号与连接',icon:Todo,description:'管理自动化助手的访问权限和写入记录。',keywords:'令牌 API token 自动化 权限'}, {key:'translation',label:'翻译服务',group:'账号与连接',icon:Translate,description:'配置、启用和测试翻译服务，密钥留空时保留原有值。',keywords:'百度 有道 DeepSeek 密钥 模型'}, {key:'trash',label:'回收站',group:'数据与维护',icon:Delete,description:'恢复误删内容，或清理不再需要的数据。',keywords:'删除 恢复 清理 数据'}, {key:'system',label:'系统与备份',group:'数据与维护',icon:InfoFilled,description:'查看运行状态、数据连接及工作台的数据处理方式。',keywords:'健康 时区 隐私 状态 备份 恢复'}]
+const items=[{key:'ai',label:'AI 图片填表',group:'账号与连接',icon:InfoFilled,description:'配置智谱视觉与 OCR 模型，用图片填写表格数据。',keywords:'GLM OCR 视觉 图片 识别 API Key'},{key:'appearance',label:'外观与动效',group:'偏好设置',icon:Sunny,description:'调整工作台的主题、强调色和动画体验。',keywords:'主题 深色 浅色 颜色 动画'}, {key:'navigation',label:'导航与命名',group:'偏好设置',icon:Menu,description:'让导航名称更符合你的使用习惯。',keywords:'打卡 店铺 社媒 重命名'}, {key:'account',label:'账号与安全',group:'账号与连接',icon:Setting,description:'管理登录密码和当前设备的登录状态。',keywords:'密码 用户名 退出 登录'}, {key:'agents',label:'Agent 接入',group:'账号与连接',icon:Todo,description:'管理自动化助手的访问权限和写入记录。',keywords:'令牌 API token 自动化 权限'}, {key:'translation',label:'翻译服务',group:'账号与连接',icon:Translate,description:'配置、启用和测试翻译服务，密钥留空时保留原有值。',keywords:'百度 有道 DeepSeek 密钥 模型'}, {key:'trash',label:'回收站',group:'数据与维护',icon:Delete,description:'恢复误删内容，或清理不再需要的数据。',keywords:'删除 恢复 清理 数据'}, {key:'system',label:'系统与备份',group:'数据与维护',icon:InfoFilled,description:'查看服务器 CPU、内存、磁盘、网络、运行状态与备份。',keywords:'CPU 内存 磁盘 网络 负载 监控 健康 时区 隐私 状态 备份 恢复'}]
 const section=computed(()=>route.name==='settings-trash'?'trash':String(route.params.section||'appearance'))
 const current=computed(()=>items.find(i=>i.key===section.value)||items[0])
 const filtered=computed(()=>items.filter(i=>(i.label+i.keywords).toLowerCase().includes(search.value.trim().toLowerCase())))
@@ -56,10 +59,11 @@ const themeChoices=[{value:'light' as const,label:'浅色'},{value:'dark' as con
 const passwordForm=reactive({old_password:'',new_password:'',confirm:''}),navForm=reactive({shop:session.user?.checkin_shop_label||'店铺打卡',social:session.user?.checkin_social_label||'社媒打卡'})
 const navDirty=computed(()=>navForm.shop!==(session.user?.checkin_shop_label||'店铺打卡')||navForm.social!==(session.user?.checkin_social_label||'社媒打卡'))
 const passwordValid=computed(()=>!!passwordForm.old_password&&passwordForm.new_password.length>=8&&passwordForm.new_password===passwordForm.confirm)
-const savingNavigation=ref(false),savingPassword=ref(false),loggingOut=ref(false),checkingHealth=ref(false),health=reactive<Record<string,any>>({}),healthError=ref(''),checkedAt=ref(0),origin=window.location.origin
+const savingNavigation=ref(false),savingPassword=ref(false),loggingOut=ref(false)
+const aiRef=ref<InstanceType<typeof AiTableSettings>>()
 const translationRef=ref<InstanceType<typeof TranslationSettings>>(),agentRef=ref<InstanceType<typeof AgentAccess>>()
-const pending=computed(()=>savingNavigation.value||savingPassword.value||session.appearanceSaving||translationRef.value?.pending)
-const dirty=computed(()=>(section.value==='navigation'&&navDirty.value)||(section.value==='account'&&Object.values(passwordForm).some(Boolean))||translationRef.value?.dirty||agentRef.value?.hasUnsaved)
+const pending=computed(()=>savingNavigation.value||savingPassword.value||session.appearanceSaving||aiRef.value?.pending||translationRef.value?.pending)
+const dirty=computed(()=>(section.value==='navigation'&&navDirty.value)||(section.value==='account'&&Object.values(passwordForm).some(Boolean))||aiRef.value?.dirty||translationRef.value?.dirty||agentRef.value?.hasUnsaved)
 function notify(message:string,error=false){feedback.value=message;feedbackError.value=error}
 async function guard(){if(pending.value){notify('正在保存，请稍候再切换。',true);return false}if(!dirty.value)return true;try{await ElMessageBox.confirm('未保存的输入将被放弃；新建令牌请先复制保存。','离开当前设置',{confirmButtonText:'放弃并离开',cancelButtonText:'继续编辑'});return true}catch{return false}}
 onBeforeRouteLeave(guard);onBeforeRouteUpdate(guard)
@@ -71,19 +75,17 @@ function resetNames(){navForm.shop='店铺打卡';navForm.social='社媒打卡';
 async function saveNavigation(){if(savingNavigation.value)return;if(!navForm.shop.trim()||!navForm.social.trim()){notify('两个导航名称都不能为空。',true);return}savingNavigation.value=true;try{const {data}=await http.put('/preferences',{checkin_shop_label:navForm.shop.trim(),checkin_social_label:navForm.social.trim()});if(session.user){session.user.checkin_shop_label=data.checkin_shop_label;session.user.checkin_social_label=data.checkin_social_label}navForm.shop=data.checkin_shop_label;navForm.social=data.checkin_social_label;notify('导航名称已保存。')}catch(e){notify(apiError(e).message,true)}finally{savingNavigation.value=false}}
 async function changePassword(){if(!passwordValid.value||savingPassword.value)return;savingPassword.value=true;try{await http.post('/auth/password',{old_password:passwordForm.old_password,new_password:passwordForm.new_password});Object.assign(passwordForm,{old_password:'',new_password:'',confirm:''});notify('密码已更新，其他设备需要重新登录。')}catch(e){notify(apiError(e).message,true)}finally{savingPassword.value=false}}
 async function handleLogout(){if(!await guard())return;loggingOut.value=true;try{await logout();Object.assign(passwordForm,{old_password:'',new_password:'',confirm:''});await router.replace('/login')}catch(e){notify(apiError(e).message,true)}finally{loggingOut.value=false}}
-async function checkHealth(){if(checkingHealth.value)return;checkingHealth.value=true;healthError.value='';try{const {data}=await http.get('/health');Object.assign(health,data)}catch(e){health.status='error';health.database='error';healthError.value=apiError(e).message+'，可重新检查。'}finally{checkedAt.value=Date.now();checkingHealth.value=false}}
 function beforeUnload(e:BeforeUnloadEvent){if(dirty.value||pending.value){e.preventDefault();e.returnValue=''}}
 watch(section,async()=>{
  feedback.value=''
  Object.assign(passwordForm,{old_password:'',new_password:'',confirm:''})
  Object.assign(navForm,{shop:session.user?.checkin_shop_label||'店铺打卡',social:session.user?.checkin_social_label||'社媒打卡'})
- if(section.value==='system')void checkHealth()
  await nextTick()
  // Reset section content without replacing the persistent navigation or frame.
  const scroller=document.querySelector<HTMLElement>('.wb-content.settings-scroll')
  if(scroller)scroller.scrollTop=0
 },{flush:'sync'})
-onMounted(()=>{window.addEventListener('beforeunload',beforeUnload);if(section.value==='system')void checkHealth()})
+onMounted(()=>{window.addEventListener('beforeunload',beforeUnload)})
 onUnmounted(()=>window.removeEventListener('beforeunload',beforeUnload))
 </script>
 <style scoped>

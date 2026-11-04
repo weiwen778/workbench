@@ -136,7 +136,7 @@
         <el-button v-if="isNarrow" text :icon="Menu" aria-label="打开导航" @click="drawerOpen = true" />
         <h1 class="title-15 page-title" :title="pageTitle">{{ pageTitle }}</h1>
         <div class="spacer" />
-        <el-button text aria-label="统一搜索" @click="go('/search')">搜索</el-button>
+        <el-tooltip content="搜索（Ctrl / ⌘ + K）" placement="bottom"><el-button text circle :icon="Search" class="topbar-action" aria-label="统一搜索" @click="go('/search')"/></el-tooltip>
         <TaskStatusButton/>
         <el-tooltip content="设置" placement="bottom">
           <el-button
@@ -191,6 +191,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  Search,
   Calendar,
   Collection,
   DashboardIcon,
@@ -363,8 +364,11 @@ async function loadTables() {
 async function loadDashboards() {
   try { const { data } = await http.get('/dashboards'); dashboards.value = data } catch { /* keep the last sidebar list */ }
 }
-async function loadTodoLists() {
-  try { const { data } = await http.get('/todo-lists'); todoLists.value = data } catch { /* keep navigation available */ }
+let todoListRequest=0
+async function loadTodoLists(event?:Event) {
+  const request=++todoListRequest,provided=(event as CustomEvent|undefined)?.detail?.lists
+  if(Array.isArray(provided)){todoLists.value=provided;return}
+  try { const { data } = await http.get('/todo-lists');if(request===todoListRequest)todoLists.value = data } catch { /* keep navigation available */ }
 }
 async function openNewMemoCategory() {
   try {
