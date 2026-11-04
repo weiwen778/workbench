@@ -16,6 +16,7 @@ PORT = 18192
 if not (ROOT / 'web/dist/index.html').is_file():
     raise SystemExit('Build the frontend first: cd web && npm run build')
 with socket.socket() as probe:
+    probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         probe.bind(('127.0.0.1', PORT))
     except OSError:
@@ -57,7 +58,7 @@ with tempfile.TemporaryDirectory(prefix='wb_modal_layout_') as name:
                 time.sleep(.2)
             if not ready:
                 raise RuntimeError('Isolated server did not become ready')
-            result = subprocess.run(['node', str(ROOT / 'e2e/modal-layout.mjs')], cwd=ROOT, env=env)
+            result = subprocess.run(['node', str(ROOT / (sys.argv[1] if len(sys.argv)>1 else 'e2e/modal-layout.mjs'))], cwd=ROOT, env=env)
         finally:
             child.terminate()
             try:

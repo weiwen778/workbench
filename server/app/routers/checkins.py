@@ -46,7 +46,7 @@ def _load_instances(
 ) -> list[CheckinInstance]:
     start, _end = period_bounds(period, period_start or today_local())
     targets = db.scalars(
-        select(WorkTarget).where(WorkTarget.kind == kind, WorkTarget.status == "active")
+        select(WorkTarget).where((WorkTarget.kind == kind) if kind != "all" else WorkTarget.kind.in_(["shop", "social"]), WorkTarget.status == "active")
     ).all()
     if target_id:
         targets = [t for t in targets if t.id == target_id]
@@ -58,7 +58,7 @@ def _load_instances(
         select(CheckinInstance)
         .join(WorkTarget, WorkTarget.id == CheckinInstance.target_id)
         .where(
-            WorkTarget.kind == kind,
+            (WorkTarget.kind == kind) if kind != "all" else WorkTarget.kind.in_(["shop", "social"]),
             WorkTarget.status != "deleted",
             CheckinInstance.period_type == period,
             CheckinInstance.period_start == start,
@@ -86,8 +86,8 @@ def list_instances(
     period_start: str | None = None,
     db: Session = Depends(get_db),
 ):
-    if kind not in {"shop", "social"}:
-        raise ApiError("INVALID_KIND", "类型只能是 shop 或 social", 422)
+    if kind not in {"shop", "social", "all"}:
+        raise ApiError("INVALID_KIND", "类型只能是 shop、social 或 all", 422)
     if period not in PERIODS:
         raise ApiError("INVALID_PERIOD", "周期不合法", 422)
     if status not in {"all", "pending", "done"}:
@@ -101,7 +101,7 @@ def list_instances(
 
     groups = {g.id: g for g in db.scalars(select(CheckinGroup)).all()}
     targets = db.scalars(
-        select(WorkTarget).where(WorkTarget.kind == kind, WorkTarget.status == "active")
+        select(WorkTarget).where((WorkTarget.kind == kind) if kind != "all" else WorkTarget.kind.in_(["shop", "social"]), WorkTarget.status == "active")
     ).all()
 
     grouped: dict[int, dict] = {}
@@ -125,7 +125,7 @@ def list_instances(
         node["total"] = len(node["items"])
 
     start, end = period_bounds(period, ref or today_local())
-    stats = statistics(db, period, [t.id for t in targets])
+    stats = statistics(db, period, [t.id for t in targets if target_id is None or t.id == target_id])
     return {
         "kind": kind,
         "period_type": period,
@@ -155,11 +155,12 @@ def history(
     stmt = (
         select(CheckinInstance)
         .join(WorkTarget, WorkTarget.id == CheckinInstance.target_id)
-        .where(WorkTarget.kind == kind)
+        .where((WorkTarget.kind == kind) if kind != "all" else WorkTarget.kind.in_(["shop", "social"]))
         .order_by(CheckinInstance.period_start.desc(), CheckinInstance.id)
     )
     if target_id:
         stmt = stmt.where(CheckinInstance.target_id == target_id)
+    stmt = stmt.where(CheckinInstance.period_type == period)
     if status == "pending":
         stmt = stmt.where(CheckinInstance.completed_at.is_(None))
     elif status == "done":
@@ -221,7 +222,7 @@ def stats(
     if period not in PERIODS:
         raise ApiError("INVALID_PERIOD", "周期不合法", 422)
     targets = db.scalars(
-        select(WorkTarget.id).where(WorkTarget.kind == kind, WorkTarget.status == "active")
+        select(WorkTarget.id).where((WorkTarget.kind == kind) if kind != "all" else WorkTarget.kind.in_(["shop", "social"]), WorkTarget.status == "active")
     ).all()
     for tid in targets:
         target = db.get(WorkTarget, tid)

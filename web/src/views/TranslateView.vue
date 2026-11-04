@@ -71,8 +71,8 @@
     </div>
 
     <div ref="bottomRef" class="translate-bottom" :class="{ 'is-resizing': resizing }" :style="{ '--translate-favorites-width': `${favoritesWidth}px` }">
-      <el-splitter v-splitter-a11y="{label:'调整收藏和历史的宽度',value:favoritesWidth,min:MIN_FAVORITES_WIDTH,max:maxFavoritesWidth,disabled:stacked,vertical:stacked}" :layout="stacked ? 'vertical' : 'horizontal'" @resize-start="resizing=true" @resize-end="finishFavoritesResize" @dblclick="resetOnBar" @keydown.capture="resizeOnBarKey">
-      <el-splitter-panel @update:size="resizeFavorites" :size="stacked ? '40%' : favoritesWidth" :min="stacked ? 100 : MIN_FAVORITES_WIDTH" :max="stacked ? undefined : maxFavoritesWidth">
+      <el-splitter v-splitter-a11y="{label:'调整收藏和历史的宽度',value:favoritesWidth,min:MIN_FAVORITES_WIDTH,max:maxFavoritesWidth,disabled:stacked,vertical:stacked}" :key="stacked ? 'vertical' : 'horizontal'" :layout="stacked ? 'vertical' : 'horizontal'" @resize-start="resizing=true" @resize-end="finishFavoritesResize" @dblclick="resetOnBar" @keydown.capture="resizeOnBarKey">
+      <el-splitter-panel @update:size="resizeFavorites" :size="stacked ? '40%' : favoritesWidth" :min="stacked ? 100 : MIN_FAVORITES_WIDTH">
       <!-- 收藏 -->
       <div id="translate-favorites" class="bottom-pane">
         <div class="history-head">
@@ -99,7 +99,7 @@
       </div>
 
       </el-splitter-panel>
-      <el-splitter-panel :min="stacked ? 120 : MIN_HISTORY_WIDTH">
+      <el-splitter-panel :size="stacked ? '60%' : Math.max(MIN_HISTORY_WIDTH,bottomWidth-favoritesWidth)" :min="stacked ? 120 : MIN_HISTORY_WIDTH">
       <!-- 历史 -->
       <div id="translate-history" class="bottom-pane">
         <div class="history-head">
@@ -213,7 +213,7 @@ const pageSize = ref(20)
 const detailOpen = ref(false)
 const detail = ref<any>(null)
 
-// 收藏／历史分栏：仅在左右布局时启用，窄屏继续上下排列。
+// 收藏／历史分栏：以右侧 min 约束拖动范围；不传动态 max，避免组件注册时缓存初始窄宽度。
 const MIN_FAVORITES_WIDTH = 240
 const MIN_HISTORY_WIDTH = 360
 const DIVIDER_WIDTH = 9
@@ -509,6 +509,8 @@ onUnmounted(() => {
 .pane-body :deep(.el-textarea__inner) {font-size:var(--translation-font);line-height:1.65;color:var(--wb-text);}
 
 .translate-bottom :deep(.el-splitter__mask) { pointer-events:none; }
+.translate-bottom :deep(.el-splitter-bar) { z-index:5; }
+.translate-bottom :deep(.el-splitter-bar__dragger-horizontal) { width:16px!important; }
 .result-body {
   font-size: 14px;
   line-height: 1.7;

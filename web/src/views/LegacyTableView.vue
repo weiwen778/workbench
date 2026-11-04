@@ -34,12 +34,13 @@
             <el-button size="small" type="primary" @click="applySorts">应用</el-button>
           </div>
         </el-popover>
-        <el-dropdown trigger="click" @command="tableCommand"><el-button text>更多操作<el-icon class="dropdown-chevron"><ChevronDown/></el-icon></el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="refresh">刷新</el-dropdown-item><el-dropdown-item command="fields">列设置</el-dropdown-item><el-dropdown-item command="export" divided>导出</el-dropdown-item><el-dropdown-item command="import">批量导入</el-dropdown-item><el-dropdown-item command="analysis" divided>汇总与透视</el-dropdown-item><el-dropdown-item command="visualize" divided>用于数据可视化</el-dropdown-item></el-dropdown-menu></template></el-dropdown>
+        <el-dropdown trigger="click" @command="tableCommand"><el-button text>更多操作<el-icon class="dropdown-chevron"><ChevronDown/></el-icon></el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="refresh">刷新</el-dropdown-item><el-dropdown-item command="rename">重命名表格</el-dropdown-item><el-dropdown-item command="delete">导出备份后删除表格</el-dropdown-item><el-dropdown-item command="fields">列设置</el-dropdown-item><el-dropdown-item command="export" divided>导出</el-dropdown-item><el-dropdown-item command="import">批量导入</el-dropdown-item><el-dropdown-item command="analysis" divided>汇总与透视</el-dropdown-item><el-dropdown-item command="visualize" divided>用于数据可视化</el-dropdown-item></el-dropdown-menu></template></el-dropdown>
         <el-button class="btn-tonal" :icon="Plus" :disabled="!fields.length" @click="openCreate">添加一行</el-button>
       </div>
     </div>
 
     </Teleport>
+    <DeleteTableDialog v-model="deleteTableOpen" :table="table ? {id:tableId,name:table.name} : null" @deleted="router.push('/data')"/>
 
     <!-- 筛选条 -->
     <div v-if="!embedded || filtersOpen" class="filter-bar">
@@ -226,6 +227,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ChevronDown, Check, Close, DashboardIcon, Download, InfoFilled, Plus, Refresh, Setting, Sort, Upload } from '@/icons'
 import { apiError, http } from '@/api/client'
+import {requestId} from '@/utils/request-id'
+import DeleteTableDialog from '@/components/DeleteTableDialog.vue'
+import {renameTable} from '@/utils/table-actions'
+const deleteTableOpen=ref(false)
+async function renameCurrentTable(){try{await renameTable({id:tableId,name:table.value.name});await loadTable()}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(apiError(e).message)}}
 const AiTableFill=defineAsyncComponent(()=>import('@/components/AiTableFill.vue'))
 const RecordDrawer=defineAsyncComponent(()=>import('@/components/RecordDrawer.vue'))
 const AttachmentPreview=defineAsyncComponent(()=>import('@/components/AttachmentPreview.vue'))
@@ -236,7 +242,7 @@ const aiOpen=ref(false)
 const props=defineProps<{embedded?:boolean;toolbarTarget?:string;toolbarActive?:boolean}>()
 const filtersOpen=ref(false),elementTable=ref<any>()
 watch(()=>props.toolbarActive,async value=>{if(value){await nextTick();elementTable.value?.doLayout()}})
-function tableCommand(command:string){if(command==='refresh')void reload();else if(command==='fields')fieldsOpen.value=true;else if(command==='export')exportOpen.value=true;else if(command==='import')importOpen.value=true;else if(command==='analysis')analysisOpen.value=true;else if(command==='visualize')router.push({path:'/visualizations',query:{table:tableId}})}
+function tableCommand(command:string){if(command==='rename')void renameCurrentTable();else if(command==='delete')deleteTableOpen.value=true;else if(command==='refresh')void reload();else if(command==='fields')fieldsOpen.value=true;else if(command==='export')exportOpen.value=true;else if(command==='import')importOpen.value=true;else if(command==='analysis')analysisOpen.value=true;else if(command==='visualize')router.push({path:'/visualizations',query:{table:tableId}})}
 const route = useRoute()
 const router = useRouter()
 const previewOpen = ref(false)
@@ -529,7 +535,7 @@ async function doExport() {
       body.filters = normalizedFilters()
       body.sorts = sorts.value
     }
-    await http.post(`/tables/${tableId}/export-tasks`, body, {headers:{'Idempotency-Key':crypto.randomUUID()}})
+    await http.post(`/tables/${tableId}/export-tasks`, body, {headers:{'Idempotency-Key':requestId()}})
     ElMessage.success('已提交后台导出，可在任务中心查看进度并下载')
     exportOpen.value = false
     await router.push('/tasks')

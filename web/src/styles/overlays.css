@@ -90,3 +90,6 @@
   .el-drawer > .el-drawer__body { padding:16px; }
   .el-drawer > .el-drawer__footer { padding:12px 16px; }
 }
+
+/* Navigation drawers own their full-height sidebar, including its padding. */
+.el-drawer.nav-drawer > .el-drawer__body { padding:0; overflow:hidden; }

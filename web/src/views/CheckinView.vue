@@ -7,7 +7,7 @@
         <el-radio-button value="monthly">本月</el-radio-button>
       </el-radio-group>
 
-      <el-select v-model="targetId" :placeholder="'全部' + kindLabel" clearable style="width: 150px" @change="load">
+      <el-select v-if="!route.params.targetId" v-model="targetId" placeholder="全部打卡项目" clearable style="width: 180px" @change="selectTarget">
         <el-option v-for="t in targets" :key="t.id" :label="t.name" :value="t.id" />
       </el-select>
 
@@ -31,7 +31,7 @@
         <el-button text :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
         <el-button text :icon="Clock" @click="historyOpen = true">历史</el-button>
         <el-button text :icon="Upload" @click="openImport">导入</el-button>
-        <el-button class="btn-tonal" :icon="Setting" @click="manageOpen = true">管理{{ kindLabel }}</el-button>
+        <el-button v-if="targetId" text @click="router.push(`/checkins/targets/${targetId}`)">资料与任务</el-button><el-button class="btn-tonal" :icon="Setting" @click="manageOpen = true">管理打卡项目</el-button>
       </div>
     </div>
 
@@ -266,7 +266,8 @@ const router = useRouter()
 
 const period = ref<'daily' | 'weekly' | 'monthly'>('daily')
 const status = ref('all')
-const targetId = ref<number | null>(null)
+const targetId = ref<number | null>(Number(route.params.targetId)||null)
+function selectTarget(){router.push(targetId.value?`/checkins/items/${targetId.value}`:'/checkins')}
 const groups = ref<any[]>([])
 const targets = ref<any[]>([])
 const statistics = ref<{ completed: number; total: number; rate: number | null }>({
@@ -303,8 +304,8 @@ const historyLoading = ref(false)
 const historyStatus = ref('all')
 const historyRange = ref<[string, string] | null>(null)
 
-const kind = computed(() => (route.meta.kind as string) === 'social' ? 'social' : 'shop')
-const kindLabel = computed(() => (kind.value === 'social' ? '社媒账号' : '店铺'))
+const kind = computed(() => 'all')
+const kindLabel = computed(() => '打卡项目')
 const periodUnit = computed(() => ({ daily: '日', weekly: '周', monthly: '月' }[period.value]))
 const periodLabel = computed(() => ({ daily: '今天', weekly: '本周', monthly: '本月' }[period.value]))
 const emptyText = computed(() => {
@@ -403,8 +404,9 @@ async function saveNote(item: any) {
 
 async function loadTargets() {
   const { data } = await http.get('/work-targets', { params: { include_archived: true } })
-  allTargets.value = data.filter((t: any) => t.kind === kind.value)
-  targets.value = data.filter((t: any) => t.kind === kind.value && t.status === 'active')
+  allTargets.value = data
+  targets.value = data.filter((t: any) => t.status === 'active')
+  window.dispatchEvent(new Event('wb:checkins-changed'))
 }
 
 async function loadGroups() {
@@ -429,7 +431,7 @@ async function createTarget() {
   creatingTarget.value = true
   try {
     await http.post('/work-targets', {
-      kind: kind.value,
+      kind: 'shop',
       name: newTarget.name.trim(),
       platform: newTarget.platform.trim() || null,
     })
@@ -525,7 +527,7 @@ function openImport() {
 
 function downloadTemplate() {
   const link = document.createElement('a')
-  link.href = `/api/v1/checkin-imports/template?kind=${kind.value}`
+  link.href = '/api/v1/checkin-imports/template?kind=shop'
   document.body.appendChild(link)
   link.click()
   link.remove()
@@ -552,7 +554,7 @@ async function onImportFile(file: any) {
       return
     }
     try {
-      const { data } = await http.post('/checkin-imports', parsed, { params: { kind: kind.value } })
+      const { data } = await http.post('/checkin-imports', parsed, { params: { kind: 'shop' } })
       importResult.value = data
       ElMessage.success('导入完成')
       await load()

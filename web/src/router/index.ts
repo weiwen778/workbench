@@ -3,18 +3,20 @@ import { loadSession, session } from '@/stores/session'
 
 const routes = [
   { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue'), meta: { title: '登录', public: true } },
-  { path: '/', redirect: '/checkins/shops' },
+  { path: '/', redirect: '/checkins' },
+  { path:'/checkins',name:'checkins',component:()=>import('@/views/CheckinView.vue'),meta:{title:'打卡'} },
+  { path:'/checkins/items/:targetId',name:'checkin-item',component:()=>import('@/views/CheckinView.vue'),meta:{title:'打卡'} },
   {
     path: '/checkins/shops',
     name: 'shops',
     component: () => import('@/views/CheckinView.vue'),
-    meta: { title: '店铺打卡', kind: 'shop' },
+    meta: { title: '打卡', kind: 'shop' },
   },
   {
     path: '/checkins/social',
     name: 'social',
     component: () => import('@/views/CheckinView.vue'),
-    meta: { title: '社媒打卡', kind: 'social' },
+    meta: { title: '打卡', kind: 'social' },
   },
   {
     path: '/checkins/targets/:id',
@@ -56,7 +58,7 @@ router.beforeEach(async (to) => {
   if (!session.loaded) {
     await loadSession()
   }
-  document.title = `${to.meta.title || '个人工作台'} · 个人工作台`
+  document.title = `${to.meta.title || 'Nexus'} · Nexus`
   if (to.meta.public) {
     return session.user ? { path: '/checkins/shops' } : true
   }

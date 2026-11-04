@@ -169,7 +169,7 @@ function formatTime(value: string) {
 }
 
 function goBack() {
-  router.push(target.value?.kind === 'social' ? '/checkins/social' : '/checkins/shops')
+  router.push(`/checkins/items/${targetId}`)
 }
 
 async function loadAll() {
@@ -181,6 +181,7 @@ async function loadAll() {
       http.get('/checkin-groups'),
     ])
     target.value = detail
+    window.dispatchEvent(new Event('wb:checkins-changed'))
     form.name = detail.name
     form.platform = detail.platform || ''
     form.note = detail.note || ''
@@ -266,7 +267,7 @@ async function saveRule() {
       if (data.period_change?.pending) {
         ElMessage.success(`已保存，${data.period_change.effective_from} 起按新频率执行`)
       } else {
-        ElMessage.success('已保存')
+        window.dispatchEvent(new Event('wb:checkins-changed'));ElMessage.success('已保存')
       }
     } else {
       await http.post(`/work-targets/${targetId}/rules`, {

@@ -27,7 +27,7 @@
       </div>
 
       <el-pagination v-if="memoTotal>50" v-model:current-page="memoPage" :page-size="50" :total="memoTotal" layout="total,prev,pager,next" @current-change="load" style="margin-bottom:16px"/>
-      <div class="memo-grid" :style="{columnCount: columns || undefined}">
+      <div class="memo-grid" :style="{gridTemplateColumns: columns ? `repeat(${columns}, minmax(0, 1fr))` : undefined}">
         <div v-for="memo in memos" :key="memo.id" class="memo-card" :class="`c-${memo.color}`">
           <div class="memo-head">
             <button class="memo-title" @click="viewing=memo">{{ memo.display_title }}</button>
@@ -271,11 +271,11 @@ onUnmounted(() => { if (searchTimer) window.clearTimeout(searchTimer) })
 
 <style scoped>
 .memo-board { background:color-mix(in srgb,var(--wb-surface-subtle) 36%,var(--wb-surface)); }
-.memo-grid { columns:300px; column-gap:16px; }
+.memo-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; grid-auto-rows:360px; }
 .memo-card {
   --memo-accent:#718096;
   --memo-paper:var(--wb-memo-default);
-  position:relative; break-inside:avoid; margin-bottom:16px; min-width:0;
+  position:relative; container-type:inline-size; min-width:0; height:360px; box-sizing:border-box; overflow:hidden;
   display:flex; flex-direction:column; gap:0; padding:22px 20px 16px;
   border:1px solid color-mix(in srgb,var(--memo-accent) 19%,var(--wb-border)); border-radius:14px;
   color:var(--wb-text); font-family:var(--el-font-family);
@@ -290,22 +290,27 @@ onUnmounted(() => { if (searchTimer) window.clearTimeout(searchTimer) })
 .memo-card.c-pink { --memo-accent:var(--wb-memo-pink-text); --memo-paper:var(--wb-memo-pink); }
 .memo-card.c-purple { --memo-accent:var(--wb-memo-purple-text); --memo-paper:var(--wb-memo-purple); }
 .memo-card:hover,.memo-card:focus-within { border-color:color-mix(in srgb,var(--memo-accent) 50%,var(--wb-border)); box-shadow:0 4px 14px rgba(20,30,45,.065); }
-.memo-head { min-width:0; margin-bottom:12px; }
+.memo-head { min-width:0; margin-bottom:12px; flex:none; }
+.memo-card :deep(.memo-body) { flex:1; min-height:0; overflow:hidden; }
+.memo-card :deep(.memo-content) { white-space:pre-wrap; overflow-wrap:anywhere; min-height:0; flex-shrink:1; }
+.memo-card :deep(.expand-content) { flex-shrink:0; }
+.memo-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .memo-title { display:block; width:100%; border:0; background:none; padding:0; font:inherit; font-size:16px; line-height:1.5; font-weight:650; letter-spacing:.1px; color:var(--wb-text); text-align:left; cursor:pointer; overflow-wrap:anywhere; }
 .memo-title:focus-visible { outline:2px solid var(--wb-primary); outline-offset:4px; border-radius:3px; }
 .memo-card :deep(.memo-content) { opacity:1; font-size:14px; line-height:1.85; color:var(--wb-text-secondary); }
-.memo-foot { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; margin-top:18px; padding-top:12px; border-top:1px solid color-mix(in srgb,var(--memo-accent) 12%,var(--wb-border)); }
+.memo-foot { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; margin-top:12px; flex:none; padding-top:12px; border-top:1px solid color-mix(in srgb,var(--memo-accent) 12%,var(--wb-border)); }
 .memo-meta { display:flex; flex-direction:column; align-items:flex-start; gap:7px; min-width:0; flex:1; }
 .memo-date { font-size:12px; line-height:1.5; color:var(--wb-text-secondary); font-variant-numeric:tabular-nums; }
 .memo-meta .memo-chip { display:inline-flex; align-items:flex-start; gap:5px; max-width:100%; min-height:0; height:auto; padding:0; border-radius:0; background:none; color:var(--wb-text-secondary); font-size:12px; line-height:1.6; }
 .memo-chip .el-icon { flex:none; margin-top:2px; font-size:13px; color:var(--memo-accent); }
-.memo-chip>span { overflow-wrap:anywhere; }
+.memo-chip>span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .memo-actions { display:flex; flex:none; gap:2px; }
 .memo-actions :deep(.memo-action) { width:40px; height:40px; padding:0; margin:0; border:1px solid transparent; border-radius:9px; color:var(--wb-text-secondary); font-size:18px; background:transparent; }
 .memo-actions :deep(.memo-action:hover),.memo-actions :deep(.memo-action:focus-visible) { background:var(--wb-surface); border-color:var(--wb-border); color:var(--wb-primary); }
 .memo-actions :deep(.memo-action:active) { background:var(--wb-pressed); transform:scale(.95); }
 .memo-actions :deep(.memo-delete:hover),.memo-actions :deep(.memo-delete:focus-visible) { color:var(--el-color-danger); }
-@media(max-width:700px){.memo-grid{columns:auto!important;column-count:1!important}.memo-card{padding:20px 18px 14px}.memo-foot{gap:8px}.memo-actions{gap:0}}
+@container(max-width:220px){.memo-foot{flex-direction:column;align-items:stretch;gap:6px}.memo-actions{width:100%;justify-content:flex-end;gap:0}.memo-actions :deep(.memo-action){flex:1;min-width:0;max-width:40px;width:auto}}
+@media(max-width:700px){.memo-grid{grid-template-columns:minmax(0,1fr)!important}.memo-card{padding:20px 18px 14px}.memo-foot{gap:8px}.memo-actions{gap:0}}
 @media(prefers-reduced-motion:reduce){.memo-card,.memo-actions :deep(.memo-action){transition:none}}
 .memo-reader { white-space:pre-wrap; overflow-wrap:anywhere; font-size:16px; line-height:1.8; color:var(--wb-text); }
 .memo-columns-label {display:flex;align-items:center;gap:6px;white-space:nowrap}

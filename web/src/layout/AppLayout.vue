@@ -5,12 +5,13 @@
       v-if="isNarrow"
       v-model="drawerOpen"
       direction="ltr"
-      size="232px"
+      size="min(300px, calc(100vw - 24px))"
       :with-header="false"
       class="nav-drawer"
     >
       <SidebarContent
         :collapsed="false"
+        :checkin-targets="checkinTargets"
         :tables="tables"
         :dashboards="dashboards"
         :todo-lists="todoLists"
@@ -26,6 +27,7 @@
         @new-note-folder="openNewNoteFolder"
         @new-memo-category="openNewMemoCategory"
         @rename-checkin="renameCheckinItem"
+        @new-checkin="newCheckin"
       />
     </el-drawer>
 
@@ -34,7 +36,7 @@
     <!-- 桌面：图标栏或展开栏 -->
     <template v-if="!isNarrow">
       <div v-if="collapsed" class="wb-iconbar">
-        <img class="compact-brand" src="/favicon.svg?v=20261031-notion" width="28" height="28" alt="个人工作台" />
+        <img class="compact-brand" src="/favicon.svg?v=20261105-nexus-avatar-clear" width="28" height="28" alt="Nexus" />
         <div class="icon-btn" :title="'展开侧栏'" @click="setCollapsed(false)">
           <el-icon><Expand /></el-icon>
         </div>
@@ -58,6 +60,7 @@
               <button class="wb-nav-item collapsed-item" :class="{ active: route.path === item.path }" :title="item.label" @click="go(item.path)"><span class="ellipsis-1">{{ item.label }}</span></button>
               <el-button text size="small" :icon="Edit" class="rename-checkin" :aria-label="`重命名${item.label}`" title="重命名" @click="renameCheckinItem(item.key)" />
             </div>
+            <template v-if="group.key === 'checkin'"><button class="wb-nav-item collapsed-item" @click="go('/checkins')">全部打卡</button><button class="wb-nav-item collapsed-item" @click="newCheckin"><el-icon><Plus/></el-icon>新建打卡项目</button></template>
             <template v-if="group.key === 'visualizations'">
               <div v-for="board in dashboards" :key="board.id" class="wb-nav-item" :class="{ active: String(route.params.dashboardId) === String(board.id) }" :title="board.name" @click="go(`/visualizations/${board.id}`)"><span class="ellipsis-1">{{ board.name }}</span></div>
               <div class="wb-nav-item" @click="openNewDashboard"><el-icon><Plus /></el-icon><span>新建看板</span></div>
@@ -109,6 +112,7 @@
         :width="sidebarWidth"
         :collapsed="false"
         :collapsible="true"
+        :checkin-targets="checkinTargets"
         :tables="tables"
         :dashboards="dashboards"
         :todo-lists="todoLists"
@@ -124,6 +128,7 @@
         @new-note-folder="openNewNoteFolder"
         @new-memo-category="openNewMemoCategory"
         @rename-checkin="renameCheckinItem"
+        @new-checkin="newCheckin"
         @collapse="setCollapsed(true)"
       />
 
@@ -212,7 +217,7 @@ import {
 import SidebarContent from './SidebarContent.vue'
 import { isMemoActive, memoPath, memoTitle } from '@/memo-navigation'
 import { http, apiError } from '@/api/client'
-import { checkinItems, session, setCheckinLabel, toggleTheme, type CheckinNavKey } from '@/stores/session'
+import { session, toggleTheme } from '@/stores/session'
 
 const route = useRoute()
 const router = useRouter()
@@ -222,19 +227,19 @@ const viewKey = computed(() => isSettingsRoute.value ? 'settings' : route.path)
 
 const collapsed = ref(localStorage.getItem('wb_sidebar_collapsed') === '1')
 const drawerOpen = ref(false)
-const isNarrow = ref(window.innerWidth < 1280)
+const isNarrow = ref(window.innerWidth < 1024)
 const viewportWidth=ref(window.innerWidth),resizingSidebar=ref(false)
 const sidebarMax=computed(()=>Math.max(180,Math.min(360,Math.floor(viewportWidth.value*.28),viewportWidth.value-640)))
-function storedSidebarWidth(){try{const n=Number(localStorage.getItem('wb_sidebar_width'));return Number.isFinite(n)&&n>=180&&n<=360?n:192}catch{return 192}}
+function storedSidebarWidth(){try{const n=Number(localStorage.getItem('wb_sidebar_width'));return Number.isFinite(n)&&n>=180&&n<=360?n:256}catch{return 256}}
 const preferredSidebarWidth=ref(storedSidebarWidth())
 const sidebarWidth=computed(()=>Math.round(Math.max(180,Math.min(sidebarMax.value,preferredSidebarWidth.value))))
-let sidebarStartWidth=192,sidebarCancelled=false
+let sidebarStartWidth=256,sidebarCancelled=false
 function beginSidebarResize(){sidebarStartWidth=preferredSidebarWidth.value;sidebarCancelled=false;resizingSidebar.value=true;window.addEventListener('keydown',cancelSidebarWithEscape)}
 function endSidebarResize(){resizingSidebar.value=false;window.removeEventListener('keydown',cancelSidebarWithEscape);if(!sidebarCancelled)persistSidebarWidth()}
 function cancelSidebarWithEscape(e:KeyboardEvent){if(e.key!=='Escape')return;e.preventDefault();sidebarCancelled=true;window.dispatchEvent(new MouseEvent('mouseup'));preferredSidebarWidth.value=sidebarStartWidth;resizingSidebar.value=false}
 function persistSidebarWidth(){try{localStorage.setItem('wb_sidebar_width',String(preferredSidebarWidth.value))}catch{}}
 function resizeSidebarPanel(size:string|number|undefined){if(resizingSidebar.value&&typeof size==='number'&&!isNarrow.value&&!collapsed.value)preferredSidebarWidth.value=Math.max(180,Math.min(sidebarMax.value,size))}
-function resetSplitBar(e:MouseEvent){if((e.target as HTMLElement).closest('.el-splitter-bar')){sidebarCancelled=true;resizingSidebar.value=false;preferredSidebarWidth.value=192;persistSidebarWidth()}}
+function resetSplitBar(e:MouseEvent){if((e.target as HTMLElement).closest('.el-splitter-bar')){sidebarCancelled=true;resizingSidebar.value=false;preferredSidebarWidth.value=256;persistSidebarWidth()}}
 function splitBarKey(e:KeyboardEvent){
  if(!(e.target as HTMLElement).closest('.el-splitter-bar')||isNarrow.value||collapsed.value)return
  if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return
@@ -252,6 +257,10 @@ const newTableOpen = ref(false)
 const creatingTable = ref(false)
 const newTable = reactive({ name: '', note: '' })
 
+const checkinTargets=ref<any[]>([])
+const checkinItems=computed(()=>checkinTargets.value.map(t=>({key:t.id,path:`/checkins/items/${t.id}`,label:t.name})))
+async function loadCheckinTargets(){try{checkinTargets.value=(await http.get('/work-targets')).data}catch{/* preserve navigation */}}
+async function newCheckin(){try{const {value}=await ElMessageBox.prompt('打卡项目名称','新建打卡项目',{inputValidator:v=>!!v?.trim()&&v.trim().length<=100||'请输入 1–100 个字',confirmButtonText:'创建',cancelButtonText:'取消'});const {data}=await http.post('/work-targets',{kind:'shop',name:value.trim()});await loadCheckinTargets();go(`/checkins/targets/${data.id}`)}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(apiError(e).message)}}
 const collapsedGroups = computed(() => [
   {
     key: 'checkin',
@@ -295,10 +304,10 @@ const pageTitle = computed(() => {
     if (route.params.folderKey === 'uncategorized') return '未分类笔记'
     if (route.params.folderKey) return noteFolders.value.find(f => String(f.id) === String(route.params.folderKey))?.name || '笔记'
   }
-  return (route.meta.title as string) || '个人工作台'
+  return (route.meta.title as string) || 'Nexus'
 })
 
-watch([pageTitle, () => route.fullPath], ([title]) => { document.title = `${title} · 个人工作台` }, { immediate: true })
+watch([pageTitle, () => route.fullPath], ([title]) => { document.title = `${title} · Nexus` }, { immediate: true })
 
 async function handleThemeToggle(){try{await toggleTheme()}catch(error){ElMessage.error(apiError(error).message)}}
 
@@ -314,19 +323,9 @@ function isGroupActive(group: { key: string }) {
   return route.path.startsWith('/data')
 }
 
-async function renameCheckinItem(key: CheckinNavKey) {
-  drawerOpen.value = false; closeNavPopovers()
-  const item = checkinItems.value.find(item => item.key === key)
-  if (!item) return
-  try {
-    const { value } = await ElMessageBox.prompt('修改左侧导航显示名称', '重命名打卡子项', {
-      inputValue: item.label, inputPlaceholder: '请输入 1–40 个字',
-      inputValidator: value => !!value?.trim() && value.trim().length <= 40 || '请输入 1–40 个字',
-      confirmButtonText: '保存', cancelButtonText: '取消',
-    })
-    await setCheckinLabel(key, value)
-    ElMessage.success('名称已保存')
-  } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(apiError(error).message) }
+async function renameCheckinItem(key:number){
+ const target=checkinTargets.value.find(t=>t.id===key);if(!target)return
+ try{const {value}=await ElMessageBox.prompt('打卡项目名称','重命名打卡项目',{inputValue:target.name,inputValidator:v=>!!v?.trim()&&v.trim().length<=100||'请输入 1–100 个字',confirmButtonText:'保存',cancelButtonText:'取消'});await http.patch(`/work-targets/${key}`,{name:value.trim()});await loadCheckinTargets();window.dispatchEvent(new Event('wb:checkins-changed'))}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(apiError(e).message)}
 }
 
 function updateNavPopover(key: string, visible: boolean) {
@@ -348,8 +347,8 @@ function setCollapsed(value: boolean) {
 
 function onResize() {
   viewportWidth.value=window.innerWidth
-  if (isNarrow.value !== (window.innerWidth < 1280)) closeNavPopovers()
-  isNarrow.value = window.innerWidth < 1280
+  if (isNarrow.value !== (window.innerWidth < 1024)) closeNavPopovers()
+  isNarrow.value = window.innerWidth < 1024
 }
 
 async function loadTables() {
@@ -457,6 +456,9 @@ function onTablesChanged() {
 }
 
 onMounted(() => {
+  loadCheckinTargets()
+  window.addEventListener('wb:checkins-changed',loadCheckinTargets)
+  window.addEventListener('focus',loadCheckinTargets)
   loadTables()
   loadDashboards()
   loadTodoLists(); loadNoteFolders(); loadMemoCategories()
@@ -473,6 +475,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  window.removeEventListener('wb:checkins-changed',loadCheckinTargets)
+  window.removeEventListener('focus',loadCheckinTargets)
   if(resizingSidebar.value)window.dispatchEvent(new MouseEvent('mouseup'))
   window.removeEventListener('keydown',cancelSidebarWithEscape)
   window.removeEventListener('wb:memos-changed', loadMemoCategories)

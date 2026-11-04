@@ -312,3 +312,27 @@ def test_daily_weekly_monthly_rules_do_not_generate_each_others_instances(auth, 
         assert {item["title"] for item in items} == {title}
     for instance in db.query(CheckinInstance).all():
         assert instance.period_type == db.get(CheckinRule, instance.rule_id).period
+
+
+def test_unified_projects_keep_periods_and_target_statistics(auth):
+    shop = make_target(auth, name="打卡项目甲")
+    social = make_target(auth, kind="social", name="打卡项目乙")
+    group = make_group(auth)
+    for period in ("daily", "weekly", "monthly"):
+        make_rule(auth, shop["id"], group["id"], title=period + "甲", period=period)
+        make_rule(auth, social["id"], group["id"], title=period + "乙", period=period)
+        payload = list_today(auth, kind="all", period=period)
+        assert {item["target_id"] for item in all_items(payload)} == {shop["id"], social["id"]}
+        assert payload["statistics"]["total"] == 2
+        selected = auth.get("/api/v1/checkin-instances", params={"kind":"all", "period":period, "target_id":social["id"]}).json()
+        assert len(all_items(selected)) == 1
+        assert selected["statistics"]["total"] == 1
+        instance = all_items(selected)[0]
+        assert auth.post(f"/api/v1/checkin-instances/{instance['id']}/complete", json={}).status_code == 200
+        selected = auth.get("/api/v1/checkin-instances", params={"kind":"all", "period":period, "target_id":social["id"]}).json()
+        assert selected["statistics"]["completed"] == 1
+        history = auth.get("/api/v1/checkin-instances/history", params={"kind":"all", "period":period, "target_id":social["id"]}).json()
+        assert len(history["items"]) == 1
+        assert history["items"][0]["period_type"] == period
+    assert len(all_items(list_today(auth, kind="shop"))) == 1
+    assert len(all_items(list_today(auth, kind="social"))) == 1

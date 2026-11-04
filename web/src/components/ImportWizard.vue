@@ -142,6 +142,7 @@
 </template>
 
 <script setup lang="ts">
+import {requestId} from '@/utils/request-id'
 import { computed, reactive, ref } from 'vue'
 import {useRouter} from 'vue-router'
 const router=useRouter()
@@ -332,7 +333,7 @@ async function confirmImport() {
   confirming.value = true
   try {
     await http.post(`/imports/${job.value.id}/draft`, payload())
-    await http.post(`/imports/${job.value.id}/confirm-tasks`,undefined,{headers:{'Idempotency-Key':crypto.randomUUID()}})
+    await http.post(`/imports/${job.value.id}/confirm-tasks`,undefined,{headers:{'Idempotency-Key':requestId()}})
     ElMessage.success('已提交后台导入，可在任务中心查看进度和结果')
     emit('update:modelValue', false)
     await router.push('/tasks')

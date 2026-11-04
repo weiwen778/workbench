@@ -72,16 +72,20 @@
     </el-dialog>
 
     <ImportWizard v-model="importOpen" @done="onImported" />
+    <DeleteTableDialog v-model="deleteOpen" :table="deletingTable" @deleted="load"/>
   </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Delete, Plus, Refresh, Upload } from '@/icons'
 import { apiError, http } from '@/api/client'
 import ImportWizard from '@/components/ImportWizard.vue'
+import DeleteTableDialog from '@/components/DeleteTableDialog.vue'
+import {renameTable} from '@/utils/table-actions'
+const deleteOpen=ref(false),deletingTable=ref<any>(null)
 
 const router = useRouter()
 const tables = ref<any[]>([])
@@ -152,38 +156,8 @@ function open(row: any) {
   router.push(`/data/${row.id}`)
 }
 
-async function rename(row: any) {
-  try {
-    const { value } = await ElMessageBox.prompt('新的表格名称', '重命名表格', {
-      inputValue: row.name,
-      inputPattern: /\S+/,
-      inputErrorMessage: '请输入表格名称',
-    })
-    await http.patch(`/tables/${row.id}`, { name: value.trim() })
-    await load()
-    window.dispatchEvent(new Event('wb:tables-changed'))
-  } catch (error: any) {
-    if (error === 'cancel' || error === 'close') return
-    ElMessage.error(apiError(error).message)
-  }
-}
-
-async function remove(row: any) {
-  try {
-    await ElMessageBox.confirm(
-      `删除整张表格「${row.name}」和里面的 ${row.record_count} 行内容？删除后会在回收站保留 30 天。`,
-      '删除表格',
-      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
-    )
-    await http.delete(`/tables/${row.id}`)
-    await load()
-    window.dispatchEvent(new Event('wb:tables-changed'))
-    ElMessage.success('已移入回收站')
-  } catch (error: any) {
-    if (error === 'cancel' || error === 'close') return
-    ElMessage.error(apiError(error).message)
-  }
-}
+async function rename(row:any){try{await renameTable(row);await load()}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(apiError(e).message)}}
+function remove(row:any){deletingTable.value=row;deleteOpen.value=true}
 
 function onImported(tableId: number) {
   load()
