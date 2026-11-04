@@ -1,10 +1,11 @@
 import { createApp } from 'vue'
 import { ElLoading } from 'element-plus'
 
-// 引入顺序固定：组件库基线 → 暗色变量 → 项目主题（必须最后）
+// 引入顺序固定：组件库基线 → 暗色变量 → 项目主题、弹窗布局与动效
 import 'element-plus/dist/index.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 import './styles/theme.css'
+import './styles/overlays.css'
 import './styles/motion.css'
 
 import App from './App.vue'

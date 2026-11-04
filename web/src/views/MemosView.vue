@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <div class="page memos-page">
     <div class="page-toolbar">
       <el-input
         v-model="keyword"
@@ -19,7 +19,7 @@
       </div>
     </div>
 
-    <div class="page-body scroll-area">
+    <div class="page-body scroll-area memo-board">
       <div v-if="!memos.length && !loading" class="empty-hint">
         <div>{{ keyword ? '没有匹配的便利贴' : '还没有便利贴' }}</div>
         <div class="text-12">记录供应商信息、临时号码这类短内容，可以直接复制正文</div>
@@ -34,14 +34,16 @@
           </div>
           <MemoContent :content="memo.content" @expand="viewing=memo" />
           <div class="memo-foot">
-            <span class="text-12">{{ formatDate(memo.updated_at) }}</span>
-            <div class="actions-group">
-              <el-button text circle :icon="CopyDocument" title="复制正文" aria-label="复制正文" @click="copyContent(memo)" />
-              <el-button text circle :icon="Edit" title="编辑" aria-label="编辑便利贴" @click="openEdit(memo)" />
-              <el-button text circle :icon="Delete" title="删除" aria-label="删除便利贴" @click="remove(memo)" />
+            <div class="memo-meta">
+              <time class="memo-date" :datetime="memo.updated_at" :title="new Date(memo.updated_at).toLocaleString('zh-CN')">更新于 {{ formatDate(memo.updated_at) }}</time>
+              <span class="memo-chip"><el-icon><Folder/></el-icon><span>{{ memo.display_category }}</span></span>
+            </div>
+            <div class="actions-group memo-actions">
+              <el-button text class="memo-action" :icon="CopyDocument" title="复制正文" aria-label="复制正文" @click="copyContent(memo)" />
+              <el-button text class="memo-action" :icon="Edit" title="编辑" aria-label="编辑便利贴" @click="openEdit(memo)" />
+              <el-button text class="memo-action memo-delete" :icon="Delete" title="删除" aria-label="删除便利贴" @click="remove(memo)" />
             </div>
           </div>
-          <span class="memo-chip">{{ memo.display_category }}</span>
         </div>
       </div>
     </div>
@@ -115,7 +117,7 @@ import MemoContent from '@/components/MemoContent.vue'
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { CopyDocument, Delete, Edit, Plus, Refresh, Search } from '@/icons'
+import { CopyDocument, Delete, Edit, Folder, Plus, Refresh, Search } from '@/icons'
 import { apiError, copyText, http } from '@/api/client'
 import { memoFilter, memoTitle } from '@/memo-navigation'
 
@@ -268,16 +270,44 @@ onUnmounted(() => { if (searchTimer) window.clearTimeout(searchTimer) })
 </script>
 
 <style scoped>
-.category-heading { font-size: 13px; font-weight: 500; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.memo-grid { columns: 280px; column-gap: 12px; }
-.memo-card { break-inside: avoid; margin-bottom:12px; color:var(--wb-text) !important; }
-.memo-card :deep(.memo-content) { opacity:1; font-size:14px; }
-.memo-title { font:inherit; font-size:16px; font-weight:650; color:inherit; border:0; background:none; padding:0; text-align:left; cursor:pointer; overflow-wrap:anywhere; width:100%; }
-.memo-head { min-width:0; }
-.memo-foot { display:flex; align-items:center; justify-content:space-between; gap:6px; }
-.memo-foot :deep(.el-button) { width:40px; height:40px; margin:0; color:var(--wb-text); font-size:19px; }
-.memo-chip { height:auto; min-height:24px; padding:4px 8px; align-self:flex-start; overflow-wrap:anywhere; max-width:100%; }
-.memo-reader { max-height:65vh; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:16px; line-height:1.8; color:var(--wb-text); }
+.memo-board { background:color-mix(in srgb,var(--wb-surface-subtle) 36%,var(--wb-surface)); }
+.memo-grid { columns:300px; column-gap:16px; }
+.memo-card {
+  --memo-accent:#718096;
+  --memo-paper:var(--wb-memo-default);
+  position:relative; break-inside:avoid; margin-bottom:16px; min-width:0;
+  display:flex; flex-direction:column; gap:0; padding:22px 20px 16px;
+  border:1px solid color-mix(in srgb,var(--memo-accent) 19%,var(--wb-border)); border-radius:14px;
+  color:var(--wb-text); font-family:var(--el-font-family);
+  box-shadow:0 2px 5px rgba(20,30,45,.035);
+  transition:border-color .16s ease,box-shadow .16s ease;
+}
+.memo-card::before { content:''; position:absolute; top:0; left:20px; width:28px; height:3px; border-radius:0 0 3px 3px; background:var(--memo-accent); }
+.memo-card.c-default,.memo-card.c-yellow,.memo-card.c-green,.memo-card.c-blue,.memo-card.c-pink,.memo-card.c-purple { background:color-mix(in srgb,var(--memo-paper) 40%,var(--wb-surface)); color:var(--wb-text); }
+.memo-card.c-yellow { --memo-accent:var(--wb-memo-yellow-text); --memo-paper:var(--wb-memo-yellow); }
+.memo-card.c-green { --memo-accent:var(--wb-memo-green-text); --memo-paper:var(--wb-memo-green); }
+.memo-card.c-blue { --memo-accent:var(--wb-memo-blue-text); --memo-paper:var(--wb-memo-blue); }
+.memo-card.c-pink { --memo-accent:var(--wb-memo-pink-text); --memo-paper:var(--wb-memo-pink); }
+.memo-card.c-purple { --memo-accent:var(--wb-memo-purple-text); --memo-paper:var(--wb-memo-purple); }
+.memo-card:hover,.memo-card:focus-within { border-color:color-mix(in srgb,var(--memo-accent) 50%,var(--wb-border)); box-shadow:0 4px 14px rgba(20,30,45,.065); }
+.memo-head { min-width:0; margin-bottom:12px; }
+.memo-title { display:block; width:100%; border:0; background:none; padding:0; font:inherit; font-size:16px; line-height:1.5; font-weight:650; letter-spacing:.1px; color:var(--wb-text); text-align:left; cursor:pointer; overflow-wrap:anywhere; }
+.memo-title:focus-visible { outline:2px solid var(--wb-primary); outline-offset:4px; border-radius:3px; }
+.memo-card :deep(.memo-content) { opacity:1; font-size:14px; line-height:1.85; color:var(--wb-text-secondary); }
+.memo-foot { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; margin-top:18px; padding-top:12px; border-top:1px solid color-mix(in srgb,var(--memo-accent) 12%,var(--wb-border)); }
+.memo-meta { display:flex; flex-direction:column; align-items:flex-start; gap:7px; min-width:0; flex:1; }
+.memo-date { font-size:12px; line-height:1.5; color:var(--wb-text-secondary); font-variant-numeric:tabular-nums; }
+.memo-meta .memo-chip { display:inline-flex; align-items:flex-start; gap:5px; max-width:100%; min-height:0; height:auto; padding:0; border-radius:0; background:none; color:var(--wb-text-secondary); font-size:12px; line-height:1.6; }
+.memo-chip .el-icon { flex:none; margin-top:2px; font-size:13px; color:var(--memo-accent); }
+.memo-chip>span { overflow-wrap:anywhere; }
+.memo-actions { display:flex; flex:none; gap:2px; }
+.memo-actions :deep(.memo-action) { width:40px; height:40px; padding:0; margin:0; border:1px solid transparent; border-radius:9px; color:var(--wb-text-secondary); font-size:18px; background:transparent; }
+.memo-actions :deep(.memo-action:hover),.memo-actions :deep(.memo-action:focus-visible) { background:var(--wb-surface); border-color:var(--wb-border); color:var(--wb-primary); }
+.memo-actions :deep(.memo-action:active) { background:var(--wb-pressed); transform:scale(.95); }
+.memo-actions :deep(.memo-delete:hover),.memo-actions :deep(.memo-delete:focus-visible) { color:var(--el-color-danger); }
+@media(max-width:700px){.memo-grid{columns:auto!important;column-count:1!important}.memo-card{padding:20px 18px 14px}.memo-foot{gap:8px}.memo-actions{gap:0}}
+@media(prefers-reduced-motion:reduce){.memo-card,.memo-actions :deep(.memo-action){transition:none}}
+.memo-reader { white-space:pre-wrap; overflow-wrap:anywhere; font-size:16px; line-height:1.8; color:var(--wb-text); }
 .memo-columns-label {display:flex;align-items:center;gap:6px;white-space:nowrap}
 .form-grid {
   display: grid;

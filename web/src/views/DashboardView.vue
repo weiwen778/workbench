@@ -86,9 +86,11 @@
       <div v-else-if="!loading" class="dashboard-empty"><div class="empty-title">看板不存在或已删除</div><el-button @click="router.push('/visualizations')">返回全部看板</el-button></div>
     </div>
 
-    <el-dialog v-model="editorOpen" :title="editingId ? '编辑图表' : '添加图表'" width="min(800px, 95vw)" :close-on-click-modal="false" @closed="editorClosed">
-      <el-form label-position="top" class="widget-form">
-        <div v-if="form.kind!=='progress'" class="chart-guide">例如：想看每天的销售额、成本和利润，就选折线图，横轴选“日期”，对比数字勾选这三列，计算方式选“加起来”。三条线使用同一套纵轴刻度。</div>
+    <el-dialog v-model="editorOpen" :title="editingId ? '编辑图表' : '添加图表'" class="chart-editor-dialog" width="min(880px, 96vw)" :close-on-click-modal="false" @closed="editorClosed">
+      <el-form ref="editorForm" label-position="top" class="widget-form">
+        <el-tabs v-model="editorTab" class="chart-editor-tabs" @tab-change="resetEditorScroll">
+          <el-tab-pane label="数据与图表" name="data">
+        <details v-if="form.kind!=='progress'" class="chart-guide"><summary>配置示例与说明</summary><p>想看每天的销售额、成本和利润：选择折线图，横轴选“日期”，对比数字勾选这三列，计算方式选“加起来”。三条线共用纵轴。</p></details>
         <el-form-item label="图表标题"><el-input v-model="form.title" maxlength="100" placeholder="例如：本月销售额、各店铺销售对比" /></el-form-item>
         <el-form-item label="展示方式">
           <el-radio-group v-model="form.kind" @change="kindChanged">
@@ -123,6 +125,10 @@
           <el-form-item v-if="selectedGroup?.type === 'date' && form.kind !== 'metric'" label="日期按天、周还是月显示？">
             <el-select v-model="form.date_bucket" aria-label="日期按天、周还是月显示？"><el-option label="按天" value="day" /><el-option label="按周（周一开始）" value="week" /><el-option label="按月" value="month" /></el-select>
           </el-form-item>
+        </div>
+          </el-tab-pane>
+          <el-tab-pane label="显示与筛选" name="display">
+        <div class="form-grid">
           <el-form-item label="顶部的日期筛选用哪一列？">
             <el-select v-model="form.date_field" clearable placeholder="不参与页面时间筛选" aria-label="时间筛选列" @clear="form.date_field = null">
               <el-option v-for="field in dateFields" :key="field.key" :label="field.name" :value="field.key" />
@@ -136,8 +142,15 @@
           </el-form-item>
         </div>
         <div class="form-options"><el-checkbox v-model="form.wide">图表占满一行</el-checkbox><span v-if="form.kind!=='progress'" class="text-12 muted">日期折线按时间先后显示；多条线或多组柱子用不同颜色区分。</span></div>
-        <el-alert v-if="previewError" :title="previewError" type="error" :closable="false" />
-        <div v-if="previewResult" class="preview-box"><div class="text-12 muted">数据预览 · 使用当前页面的时间范围</div><DashboardChart :widget="form" :result="previewResult" /></div>
+          </el-tab-pane>
+          <el-tab-pane label="数据预览" name="preview" lazy>
+            <el-alert v-if="previewError" :title="previewError" type="error" :closable="false" show-icon />
+            <div v-loading="previewing" class="chart-preview-content">
+              <div v-if="previewResult" class="preview-box"><div class="text-12 muted">使用当前页面的时间范围 · 仅预览，尚未保存</div><DashboardChart :widget="form" :result="previewResult" /></div>
+              <el-empty v-else :image-size="64" :description="previewing?'正在读取并汇总数据…':'配置完成后，点击底部「预览数据」查看效果'" />
+            </div>
+          </el-tab-pane>
+        </el-tabs>
       </el-form>
       <template #footer><div class="editor-footer">
         <el-button :loading="previewing" :disabled="!form.table_id || fieldsLoading" @click="preview">预览数据</el-button>
@@ -176,6 +189,8 @@ const period = ref('all')
 const customDates = ref<string[] | null>(null)
 let requestId = 0, lastRequestedAt = 0
 let timer: ReturnType<typeof setInterval> | undefined
+const editorTab=ref('data'),editorForm=ref<any>()
+function resetEditorScroll(){editorForm.value?.$el?.closest('.el-dialog__body')?.scrollTo({top:0})}
 const editorOpen = ref(false), editingId = ref(''), fieldsLoading = ref(false)
 const fields = ref<FieldInfo[]>([]), fieldError = ref(''), previewError = ref('')
 const previewResult = ref<DashboardResult | null>(null), previewing = ref(false)
@@ -272,6 +287,7 @@ async function removeBoard() {
   } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(apiError(error).message) }
 }
 async function openEditor(widget?: DashboardWidget) {
+  editorTab.value='data'
   editingId.value = widget?.id || ''
   Object.assign(form, emptyWidget(), widget ? JSON.parse(JSON.stringify(widget)) : {})
   if (!form.value_fields?.length && form.value_field) form.value_fields = [form.value_field]
@@ -329,6 +345,7 @@ function draft(): DashboardWidget {
     date_field: form.date_field || null, value_field: ['bar','line'].includes(form.kind) && form.aggregation !== 'count' ? form.value_fields?.[0] || null : form.value_field || null, group_field: form.group_field || null }
 }
 async function preview() {
+  editorTab.value='preview'
   const sequence = ++previewRequestId
   previewing.value = true; previewError.value = ''; previewResult.value = null
   try {
@@ -399,12 +416,19 @@ onBeforeUnmount(() => { ++requestId; ++previewRequestId; ++fieldRequestId; clear
 .dashboard-empty p { font-size: 13px; margin: 0; line-height: 1.8; }
 .empty-title { font-size: 18px; color: var(--wb-text); }
 .board-bottom { margin-top: 10px; }
-.chart-guide { padding: 12px; margin-bottom: 16px; border-radius: 6px; background: var(--wb-surface-subtle); color: var(--wb-text-secondary); font-size: 13px; line-height: 1.7; }
+.chart-guide { padding: 9px 12px; margin-bottom: 16px; border-radius: 6px; background: var(--wb-surface-subtle); color: var(--wb-text-secondary); font-size: 13px; line-height: 1.7; }
 .widget-form :deep(.el-select) { width: 100%; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
 .form-options { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .preview-box { padding: 16px; border: 1px solid var(--wb-border); border-radius: 10px; margin-top: 16px; }
-.editor-footer { display: flex; align-items: center; gap: 8px; }
+.editor-footer { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.chart-editor-tabs :deep(.el-tabs__header){margin-bottom:18px}
+.chart-editor-tabs :deep(.el-tabs__item){font-size:13px}
+.chart-guide summary{cursor:pointer;font-weight:500}
+.chart-guide p{margin:8px 0 0}
+.chart-preview-content{min-height:260px}
+.chart-preview-content .preview-box{margin-top:0}
+.widget-form :deep(.el-form-item){margin-bottom:18px}
 @media (max-width: 1150px) { .metric-card { grid-column: span 6; } .wide-card { grid-column: span 12; } }
 .metric-card.only-metric { grid-column: span 12; }
 @media (max-width: 700px) {

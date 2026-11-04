@@ -155,14 +155,12 @@
 
     <!-- 历史详情 -->
     <el-dialog v-model="detailOpen" title="翻译详情" width="720px">
-      <div v-if="detail">
-        <div class="detail-label">原文（{{ langText(detail.source_lang) }}）</div>
-        <div class="detail-box">{{ detail.source_text }}</div>
-        <div class="detail-label" style="margin-top: 10px">译文（{{ langText(detail.target_lang) }}）</div>
-        <div class="detail-box">{{ detail.target_text }}</div>
-        <div class="text-12 muted" style="margin-top: 8px">
-          {{ detail.provider_name }}{{ detail.model ? ' · ' + detail.model : '' }} · {{ formatTime(detail.created_at) }}
-        </div>
+      <div v-if="detail" class="translation-detail">
+        <div class="text-12 secondary" style="margin-bottom:12px">{{ detail.provider_name }}{{ detail.model ? ' · ' + detail.model : '' }} · {{ formatTime(detail.created_at) }}</div>
+        <el-tabs v-model="detailTab">
+          <el-tab-pane :label="`原文（${langText(detail.source_lang)}）`" name="source"><div class="detail-box">{{ detail.source_text }}</div></el-tab-pane>
+          <el-tab-pane :label="`译文（${langText(detail.target_lang)}）`" name="target"><div class="detail-box">{{ detail.target_text }}</div></el-tab-pane>
+        </el-tabs>
       </div>
       <template #footer>
         <div class="toolbar-actions" style="justify-content: flex-end">
@@ -391,7 +389,9 @@ function onHistorySearch() {
   historyTimer = window.setTimeout(() => loadHistory(1), 300)
 }
 
+const detailTab=ref('source')
 async function openDetail(item: any) {
+  detailTab.value='source'
   try {
     const { data } = await http.get(`/translation-history/${item.id}`)
     detail.value = data
@@ -571,8 +571,7 @@ onUnmounted(() => {
   font-size: 13px;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 220px;
-  overflow: auto;
+  line-height:1.8;
 }
 .conn-block {
   border: 1px solid var(--wb-border);

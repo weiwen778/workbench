@@ -93,6 +93,6 @@ onBeforeUnmount(dispose)
 
 <style scoped>
 .pdf-tools { flex-wrap: wrap; margin-bottom: 12px; }
-.pdf-viewport { height: min(62vh, 680px); min-height: 240px; overflow: auto; background: var(--el-fill-color-light); padding: 12px; }
+.pdf-viewport { height:min(48dvh,600px); min-height:min(200px,32dvh); overflow: auto; background: var(--el-fill-color-light); padding: 12px; }
 .pdf-viewport canvas { display: block; margin: auto; }
 </style>
