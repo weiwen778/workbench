@@ -29,6 +29,9 @@ class ConfigIn(BaseModel):
 class ConfirmIn(BaseModel):
     records:list[dict]=Field(min_length=1,max_length=50)
 
+class TextIn(BaseModel):
+    text:str=Field(min_length=1,max_length=20000)
+
 
 def connection(db):return db.get(AiConnection,1)
 def config_payload(c):return {'configured':bool(c and c.encrypted_config),'default_model':c.default_model if c else 'glm-4v-flash','compare_models':bool(decrypt_config(c.encrypted_config).get('compare_models',False)) if c and c.encrypted_config else False,'models':list(service.MODELS)}
@@ -64,7 +67,7 @@ def extract(table_id:int,image:UploadFile=File(...),model:str=Form('glm-4v-flash
     fields=[field_payload(f) for f in _fields(db,table_id)]
     if not any(f['type'] in service.WRITABLE for f in fields):raise ApiError('NO_FIELDS','此表没有可识别填写的字段',422)
     c=connection(db);key=decrypt_config(c.encrypted_config if c else None).get('api_key')
-    if not key:raise ApiError('AI_NOT_CONFIGURED','请先在设置 → AI 图片填表中配置 API Key',409)
+    if not key:raise ApiError('AI_NOT_CONFIGURED','请先在设置 → AI 能力中配置 API Key',409)
     version=table.schema_version;uid=user.id
     # Release the DB connection while waiting for remote inference.
     db.commit()
@@ -90,6 +93,33 @@ def extract(table_id:int,image:UploadFile=File(...),model:str=Form('glm-4v-flash
     db.execute(delete(AiExtraction).where(AiExtraction.created_at<utcnow()-timedelta(days=1),AiExtraction.status=='pending'))
     db.commit()
     return {'table_id':table_id,'schema_version':version,'fields':fields,'results':results}
+
+@router.post('/tables/{table_id}/ai/extract-text')
+def extract_text(table_id:int,payload:TextIn,user:User=Depends(browser_only),db:Session=Depends(get_db)):
+    table=db.get(DataTable,table_id)
+    if not table or table.deleted_at is not None:raise ApiError('NOT_FOUND','表格不存在',404)
+    if table.kind=='virtual':raise ApiError('TABLE_READ_ONLY','请使用原始表',422)
+    fields=[field_payload(f) for f in _fields(db,table_id)]
+    if not any(f['type'] in service.WRITABLE for f in fields):raise ApiError('NO_FIELDS','此表没有可识别填写的字段',422)
+    c=connection(db);key=decrypt_config(c.encrypted_config if c else None).get('api_key')
+    if not key:raise ApiError('AI_NOT_CONFIGURED','请先在设置 → AI 能力中配置 API Key',409)
+    version=table.schema_version;uid=user.id
+    db.commit()
+    result=service.recognize_text(key,payload.text,fields)
+    from types import SimpleNamespace
+    for i,record in enumerate(result['records']):
+        for k,value in list(record.items()):
+            f=next(f for f in fields if f['key']==k)
+            try:record[k]=validate_value(db,SimpleNamespace(**f),value,table_id=table_id)
+            except ApiError as e:record.pop(k);result['warnings'].append(f'第 {i+1} 条「{f["name"]}」：{e.message}')
+        for f in fields:
+            if f['required'] and record.get(f['key']) in (None,'',[]):result['warnings'].append(f'第 {i+1} 条：必填项「{f["name"]}」需要补充')
+    draft=AiExtraction(id=uuid4().hex,user_id=uid,table_id=table_id,schema_version=version,model=result['model'],encrypted_result=encrypt_config(result))
+    db.add(draft);result['draft_id']=draft.id
+    db.execute(delete(AiExtraction).where(AiExtraction.created_at<utcnow()-timedelta(days=1),AiExtraction.status=='pending'))
+    db.commit()
+    return {'table_id':table_id,'schema_version':version,'fields':fields,'results':[result]}
+
 
 @router.post('/tables/{table_id}/ai/drafts/{draft_id}/confirm')
 def confirm(table_id:int,draft_id:str,payload:ConfirmIn,user:User=Depends(browser_only),db:Session=Depends(get_db)):

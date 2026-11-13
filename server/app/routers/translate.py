@@ -4,7 +4,7 @@ import time
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -19,17 +19,45 @@ from ..utils import iso_z
 
 router = APIRouter(tags=["translate"], dependencies=[Depends(get_current_user)])
 
-PROVIDERS = {"baidu": "百度翻译", "youdao": "有道翻译", "deepseek": "DeepSeek"}
+PROVIDERS = {
+    "baidu": "百度翻译",
+    "youdao": "有道翻译",
+    "deepseek": "DeepSeek",
+    "zhipu": "智谱 GLM",
+    "openai": "OpenAI 兼容",
+    "deepl": "DeepL",
+    "mymemory": "MyMemory（免费）",
+    "libretranslate": "LibreTranslate",
+}
 FIELDS = {
     "baidu": ["app_id", "secret"],
     "youdao": ["app_key", "secret"],
     "deepseek": ["api_key"],
+    "zhipu": ["api_key"],
+    "openai": ["api_key"],
+    "deepl": ["api_key"],
+    "mymemory": [],
+    "libretranslate": ["api_key"],
 }
+REQUIRED = {
+    "baidu": ["app_id", "secret"],
+    "youdao": ["app_key", "secret"],
+    "deepseek": ["api_key"],
+    "zhipu": ["api_key"],
+    "openai": ["api_key"],
+    "deepl": ["api_key"],
+    "mymemory": [],
+    "libretranslate": ["base_url"],
+}
+KEYLESS = {"mymemory"}
+MODEL_PROVIDERS = {"deepseek", "zhipu", "openai"}
+DEFAULT_MODELS = {"deepseek": "deepseek-chat", "zhipu": "glm-4-flash", "openai": "gpt-4o-mini"}
 LABELS = {
     "app_id": "APP ID",
     "app_key": "应用 ID",
     "secret": "应用密钥",
     "api_key": "API Key",
+    "base_url": "接口地址",
 }
 
 
@@ -66,21 +94,44 @@ def _conn(db: Session, provider: str) -> TranslationConnection:
     return conn
 
 
-def connection_payload(conn: TranslationConnection) -> dict:
+def _ai_key(db: Session) -> str:
+    from ..models import AiConnection
+    connection = db.get(AiConnection, 1)
+    if not connection or not connection.encrypted_config:
+        return ""
+    try:
+        return decrypt_config(connection.encrypted_config).get("api_key", "")
+    except ApiError:
+        return ""
+
+
+def _effective_config(db: Session, conn: TranslationConnection) -> dict:
+    config = decrypt_config(conn.encrypted_config) if conn.encrypted_config else {}
+    if conn.provider == "zhipu" and not config.get("api_key"):
+        key = _ai_key(db)
+        if key:
+            config = {**config, "api_key": key}
+    if conn.model:
+        config = {**config, "model": conn.model}
+    return config
+
+
+def connection_payload(conn: TranslationConnection, config: dict | None = None) -> dict:
     key_ready = bool(settings.encryption_key)
-    config: dict = {}
     decrypt_error = None
-    if key_ready:
+    if key_ready and config is None:
         try:
             config = decrypt_config(conn.encrypted_config)
         except ApiError as exc:
             decrypt_error = exc.message
+            config = {}
+    config = config or {}
     masked = {field: mask(config.get(field)) for field in FIELDS.get(conn.provider, [])}
     return {
         "provider": conn.provider,
         "name": PROVIDERS.get(conn.provider, conn.provider),
         "enabled": conn.enabled,
-        "configured": bool(config),
+        "configured": bool(config) or conn.provider in KEYLESS,
         "credential_key_ready": key_ready,
         "masked": masked,
         "base_url": config.get("base_url") or "",
@@ -97,9 +148,10 @@ def connection_payload(conn: TranslationConnection) -> dict:
 
 @router.get("/translation-connections")
 def list_connections(db: Session = Depends(get_db)):
-    conns = db.scalars(select(TranslationConnection)).all()
-    by_provider = {c.provider: c for c in conns}
-    items = [connection_payload(_conn(db, p)) for p in PROVIDERS if p in by_provider]
+    items = []
+    for provider in PROVIDERS:
+        conn = _conn(db, provider)
+        items.append(connection_payload(conn, _effective_config(db, conn)))
     return {
         "credential_key_ready": bool(settings.encryption_key),
         "message": None
@@ -116,8 +168,6 @@ def save_connection(provider: str, payload: ConnectionIn, db: Session = Depends(
     if payload.config is not None:
         allowed = set(FIELDS[provider]) | {"base_url"}
         clean = {k: str(v).strip() for k, v in payload.config.items() if k in allowed and str(v).strip()}
-        if not clean:
-            raise ApiError("CONFIG_EMPTY", "请填写该服务需要的凭据", 422)
         current = {}
         if conn.encrypted_config:
             try:
@@ -125,13 +175,22 @@ def save_connection(provider: str, payload: ConnectionIn, db: Session = Depends(
             except ApiError:
                 current = {}
         current.update(clean)
-        conn.encrypted_config = encrypt_config(current)
-    if payload.model is not None and provider == "deepseek":
-        conn.model = payload.model or "deepseek-chat"
+        missing = [f for f in REQUIRED[provider] if not current.get(f)]
+        if missing and not (provider == "zhipu" and _ai_key(db)):
+            raise ApiError(
+                "PROVIDER_NOT_CONFIGURED",
+                "请填写完整凭据：" + "、".join(LABELS[f] for f in missing),
+                422,
+                {"missing": missing},
+            )
+        if current:
+            conn.encrypted_config = encrypt_config(current)
+    if payload.model is not None and provider in MODEL_PROVIDERS:
+        conn.model = (payload.model or DEFAULT_MODELS[provider]).strip() or DEFAULT_MODELS[provider]
     if payload.enabled is not None:
         if payload.enabled:
-            existing = decrypt_config(conn.encrypted_config) if conn.encrypted_config else {}
-            missing = [f for f in FIELDS[provider] if not existing.get(f)]
+            existing = _effective_config(db, conn)
+            missing = [f for f in REQUIRED[provider] if not existing.get(f)]
             if missing:
                 raise ApiError(
                     "PROVIDER_NOT_CONFIGURED",
@@ -142,7 +201,7 @@ def save_connection(provider: str, payload: ConnectionIn, db: Session = Depends(
         conn.enabled = payload.enabled
     conn.updated_at = utcnow()
     db.commit()
-    return connection_payload(conn)
+    return connection_payload(conn, _effective_config(db, conn))
 
 
 @router.delete("/translation-connections/{provider}")
@@ -154,17 +213,15 @@ def clear_connection(provider: str, db: Session = Depends(get_db)):
     conn.last_test_ok = None
     conn.last_test_message = None
     db.commit()
-    return connection_payload(conn)
+    return connection_payload(conn, _effective_config(db, conn))
 
 
 @router.post("/translation-connections/{provider}/test")
 def test_connection(provider: str, db: Session = Depends(get_db)):
     conn = _conn(db, provider)
-    config = decrypt_config(conn.encrypted_config)
-    if not config:
+    config = _effective_config(db, conn)
+    if not config and provider not in KEYLESS:
         raise ApiError("PROVIDER_NOT_CONFIGURED", "尚未配置该服务的凭据", 409)
-    if provider == "deepseek" and conn.model:
-        config["model"] = conn.model
     started = time.monotonic()
     try:
         text, model = prov.translate(provider, "连接测试", "zh", "en", config)
@@ -194,11 +251,9 @@ def translate(payload: TranslateIn, db: Session = Depends(get_db)):
         raise ApiError("SAME_LANGUAGE", "源语言与目标语言不能相同", 422)
 
     conn = _conn(db, payload.provider)
-    config = decrypt_config(conn.encrypted_config)
-    if not config:
+    config = _effective_config(db, conn)
+    if not config and payload.provider not in KEYLESS:
         raise ApiError("PROVIDER_NOT_CONFIGURED", f"{PROVIDERS[payload.provider]} 尚未配置凭据", 409)
-    if payload.provider == "deepseek" and conn.model:
-        config["model"] = conn.model
     if not conn.enabled:
         raise ApiError("PROVIDER_DISABLED", f"{PROVIDERS[payload.provider]} 已停用，请先在服务设置中启用", 409)
 
@@ -274,6 +329,13 @@ def history(
             for h in rows
         ],
     }
+
+
+@router.delete("/translation-history")
+def clear_history(db: Session = Depends(get_db)):
+    result = db.execute(delete(TranslationHistory))
+    db.commit()
+    return {"deleted": result.rowcount or 0}
 
 
 @router.get("/translation-history/{history_id}")

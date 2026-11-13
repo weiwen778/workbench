@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     host_metrics_file: Path | None = None
 
     timezone: str = "Asia/Shanghai"
+
     public_base_url: str = ""
     cookie_secure: bool = False
     cookie_name: str = "wb_session"

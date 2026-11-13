@@ -1,13 +1,15 @@
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_current_user
 from ..errors import ApiError
-from ..models import Dashboard, User, utcnow
+from ..models import AiConnection, Dashboard, DataField, DataTable, User, utcnow
 from ..services.dashboard import DateRange, Widget, aggregate, validate_source
+from ..services.encryption import decrypt_config
+from ..services import dashboard_ai
 from ..utils import iso_z
 
 router = APIRouter(tags=['dashboards'])
@@ -37,6 +39,11 @@ class BoardUpdate(BoardIn):
 
 class PreviewIn(DateRange):
     widget: Widget
+
+
+class SuggestIn(BaseModel):
+    prompt: str = Field(min_length=2, max_length=1000)
+    table_id: int | None = None
 
 
 def board_payload(board):
@@ -72,6 +79,38 @@ def create_board(payload: BoardIn, user: User = Depends(get_current_user), db: S
 def preview(payload: PreviewIn, _user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     validate_source(db, payload.widget)
     return aggregate(db, [payload.widget], payload)[0]
+
+
+@router.post('/dashboards/ai/suggest')
+def ai_suggest(payload: SuggestIn, _user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    connection = db.get(AiConnection, 1)
+    key = decrypt_config(connection.encrypted_config if connection else None).get('api_key')
+    if not key:
+        raise ApiError('AI_NOT_CONFIGURED', '请先在设置 → AI 能力中配置 API Key', 409)
+    tables: dict[int, dict] = {}
+    for table in db.scalars(select(DataTable).where(DataTable.deleted_at.is_(None)).order_by(DataTable.id)).all():
+        fields = {}
+        for field in db.scalars(select(DataField).where(DataField.table_id == table.id).order_by(DataField.sort_order)).all():
+            fields[field.key] = {'key': field.key, 'name': field.name, 'type': field.type, 'options': field.options or []}
+        tables[table.id] = {'name': table.name, 'fields': fields}
+    if not tables:
+        raise ApiError('NO_TABLES', '还没有可用于生成图表的表格，请先创建表格', 422)
+    default_table = payload.table_id if payload.table_id in tables else None
+    result = dashboard_ai.suggest(key, payload.prompt, tables, default_table)
+    widgets = []
+    for item in result.get('widgets', []):
+        try:
+            widget = Widget.model_validate(item['config'])
+            validate_source(db, widget)
+            widgets.append({'widget': widget.model_dump(mode='json'), 'reason': item.get('reason') or ''})
+        except ValidationError:
+            result['warnings'].append(f'已跳过不可用配置「{item.get("config", {}).get("title", "")}」：字段或图表规则不完整')
+        except ApiError as exc:
+            result['warnings'].append(f'已跳过不可用配置「{item.get("config", {}).get("title", "")}」：{exc.message}')
+    result['widgets'] = widgets
+    if not widgets:
+        result['warnings'].append('没有生成可用配置，请补充指标或分组方式后再试')
+    return result
 
 
 @router.get('/dashboards/{board_id}/data')

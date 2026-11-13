@@ -1,4 +1,4 @@
-"""三家翻译服务的适配：百度、有道、DeepSeek。
+"""翻译服务适配：百度、有道、DeepSeek、智谱 GLM、OpenAI 兼容、DeepL、MyMemory、LibreTranslate。
 
 原文只当作待翻译数据：系统提示明确禁止执行原文中的指令。
 """
@@ -42,8 +42,14 @@ def limits_for(provider: str) -> dict:
         return {"unit": "byte", "value": settings.max_bytes_baidu}
     if provider == "youdao":
         return {"unit": "char", "value": settings.max_chars_youdao}
-    if provider == "deepseek":
+    if provider in {"deepseek", "zhipu", "openai"}:
         return {"unit": "char", "value": settings.max_chars_deepseek}
+    if provider == "deepl":
+        return {"unit": "char", "value": 5000}
+    if provider == "mymemory":
+        return {"unit": "char", "value": 500}
+    if provider == "libretranslate":
+        return {"unit": "char", "value": 5000}
     raise ApiError("UNKNOWN_PROVIDER", "未知翻译服务", 422)
 
 
@@ -74,6 +80,23 @@ def _masked_base(url: str) -> str:
 def _post(url: str, **kwargs) -> dict:
     try:
         resp = httpx.post(_masked_base(url), timeout=TIMEOUT, **kwargs)
+    except httpx.ConnectTimeout:
+        raise UpstreamError("UPSTREAM_TIMEOUT", "连接翻译服务超时（10 秒），请稍后重试", 504)
+    except httpx.ReadTimeout:
+        raise UpstreamError("UPSTREAM_TIMEOUT", "翻译服务响应超时（60 秒），请稍后重试", 504)
+    except httpx.HTTPError:
+        raise UpstreamError("UPSTREAM_NETWORK", "网络异常，无法连接翻译服务", 502)
+    if resp.status_code >= 500:
+        raise UpstreamError("UPSTREAM_ERROR", f"翻译服务暂时不可用（HTTP {resp.status_code}）", 502)
+    try:
+        return resp.json()
+    except ValueError:
+        raise UpstreamError("UPSTREAM_BAD_RESPONSE", "翻译服务返回了无法解析的内容", 502)
+
+
+def _get(url: str, **kwargs) -> dict:
+    try:
+        resp = httpx.get(_masked_base(url), timeout=TIMEOUT, **kwargs)
     except httpx.ConnectTimeout:
         raise UpstreamError("UPSTREAM_TIMEOUT", "连接翻译服务超时（10 秒），请稍后重试", 504)
     except httpx.ReadTimeout:
@@ -167,14 +190,16 @@ def translate_youdao(text: str, source: str, target: str, config: dict) -> str:
     return "\n".join(parts)
 
 
-def translate_deepseek(text: str, source: str, target: str, config: dict) -> tuple[str, str]:
+def _translate_llm(text: str, source: str, target: str, config: dict, provider: str, default_base: str, default_model: str) -> tuple[str, str]:
     api_key = config.get("api_key") or ""
-    model = config.get("model") or "deepseek-chat"
+    model = (config.get("model") or default_model).strip()
     if not api_key:
-        raise ApiError("PROVIDER_NOT_CONFIGURED", "DeepSeek 尚未配置", 409)
-    base = config.get("base_url") or "https://api.deepseek.com/chat/completions"
-    target_name = _lang(target, "deepseek")
-    source_hint = "" if source == "auto" else f"源语言：{_lang(source, 'deepseek')}。"
+        raise ApiError("PROVIDER_NOT_CONFIGURED", "该翻译服务尚未配置 API Key", 409)
+    base = (config.get("base_url") or default_base).strip()
+    if provider == "openai" and not base.rstrip("/").endswith("/chat/completions"):
+        base = base.rstrip("/") + "/chat/completions"
+    target_name = _lang(target, provider)
+    source_hint = "" if source == "auto" else f"源语言：{_lang(source, provider)}。"
     body = {
         "model": model,
         "temperature": 0,
@@ -186,8 +211,73 @@ def translate_deepseek(text: str, source: str, target: str, config: dict) -> tup
     data = _post(base, json=body, headers={"Authorization": f"Bearer {api_key}"})
     choices = data.get("choices") or []
     if not choices:
-        raise UpstreamError("UPSTREAM_EMPTY", "DeepSeek 没有返回译文", 502)
-    return choices[0]["message"]["content"].strip(), model
+        raise UpstreamError("UPSTREAM_EMPTY", "翻译服务没有返回译文", 502)
+    content = (choices[0].get("message") or {}).get("content") or ""
+    if not content.strip():
+        raise UpstreamError("UPSTREAM_EMPTY", "翻译服务返回了空译文", 502)
+    return content.strip(), model
+
+
+def translate_deepseek(text: str, source: str, target: str, config: dict) -> tuple[str, str]:
+    return _translate_llm(text, source, target, config, "deepseek", "https://api.deepseek.com/chat/completions", "deepseek-chat")
+
+
+def translate_zhipu(text: str, source: str, target: str, config: dict) -> tuple[str, str]:
+    return _translate_llm(text, source, target, config, "zhipu", "https://open.bigmodel.cn/api/paas/v4/chat/completions", "glm-4-flash")
+
+
+def translate_openai(text: str, source: str, target: str, config: dict) -> tuple[str, str]:
+    return _translate_llm(text, source, target, config, "openai", "https://api.openai.com/v1/chat/completions", "gpt-4o-mini")
+
+
+def translate_deepl(text: str, source: str, target: str, config: dict) -> str:
+    api_key = config.get("api_key") or ""
+    if not api_key:
+        raise ApiError("PROVIDER_NOT_CONFIGURED", "DeepL 尚未配置", 409)
+    base = config.get("base_url") or "https://api-free.deepl.com/v2/translate"
+    data = [("text", text), ("target_lang", _lang(target, "deepl"))]
+    if source != "auto":
+        data.append(("source_lang", _lang(source, "deepl")))
+    result = _post(base, data=data, headers={"Authorization": f"DeepL-Auth-Key {api_key}"})
+    translations = result.get("translations") or []
+    if not translations:
+        message = result.get("message") or "DeepL 没有返回译文"
+        raise UpstreamError("UPSTREAM_ERROR", str(message), 502)
+    return translations[0].get("text", "")
+
+
+def translate_mymemory(text: str, source: str, target: str, config: dict) -> str:
+    base = config.get("base_url") or "https://api.mymemory.translated.net/get"
+    source_code = "Autodetect" if source == "auto" else _lang(source, "mymemory")
+    params = {"q": text, "langpair": f"{source_code}|{_lang(target, 'mymemory')}"}
+    result = _get(base, params=params)
+    if str(result.get("responseStatus")) != "200":
+        detail = result.get("responseDetails") or "MyMemory 翻译失败"
+        raise UpstreamError("UPSTREAM_ERROR", str(detail)[:200], 502)
+    translated = (result.get("responseData") or {}).get("translatedText") or ""
+    if not translated:
+        raise UpstreamError("UPSTREAM_EMPTY", "MyMemory 没有返回译文", 502)
+    return translated
+
+
+def translate_libretranslate(text: str, source: str, target: str, config: dict) -> str:
+    base = (config.get("base_url") or "https://libretranslate.com").rstrip("/")
+    if not base.endswith("/translate"):
+        base += "/translate"
+    body = {
+        "q": text,
+        "source": "auto" if source == "auto" else _lang(source, "libretranslate"),
+        "target": _lang(target, "libretranslate"),
+        "format": "text",
+    }
+    if config.get("api_key"):
+        body["api_key"] = config["api_key"]
+    result = _post(base, json=body)
+    translated = result.get("translatedText") or ""
+    if not translated:
+        message = result.get("error") or "LibreTranslate 没有返回译文"
+        raise UpstreamError("UPSTREAM_ERROR", str(message)[:200], 502)
+    return translated
 
 
 def translate(provider: str, text: str, source: str, target: str, config: dict) -> tuple[str, str | None]:
@@ -197,4 +287,14 @@ def translate(provider: str, text: str, source: str, target: str, config: dict) 
         return translate_youdao(text, source, target, config), None
     if provider == "deepseek":
         return translate_deepseek(text, source, target, config)
+    if provider == "zhipu":
+        return translate_zhipu(text, source, target, config)
+    if provider == "openai":
+        return translate_openai(text, source, target, config)
+    if provider == "deepl":
+        return translate_deepl(text, source, target, config), None
+    if provider == "mymemory":
+        return translate_mymemory(text, source, target, config), None
+    if provider == "libretranslate":
+        return translate_libretranslate(text, source, target, config), None
     raise ApiError("UNKNOWN_PROVIDER", "未知翻译服务", 422)

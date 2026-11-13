@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from ..errors import ApiError
 
-PROVIDERS = ("baidu", "youdao", "deepseek")
+PROVIDERS = ("baidu", "youdao", "deepseek", "zhipu", "openai", "deepl", "mymemory", "libretranslate")
 
 LANGUAGES: list[dict[str, str]] = [
     {"code": "zh", "name": "中文（简体）", "baidu": "zh", "youdao": "zh-CHS", "deepseek": "Simplified Chinese"},
@@ -29,6 +29,17 @@ LANGUAGES: list[dict[str, str]] = [
     {"code": "pl", "name": "波兰语", "baidu": "pl", "youdao": "pl", "deepseek": "Polish"},
     {"code": "el", "name": "希腊语", "baidu": "el", "youdao": "el", "deepseek": "Greek"},
 ]
+
+_DEEPL = {"zh": "ZH-HANS", "zh-Hant": "ZH-HANT", "en": "EN", "ja": "JA", "ko": "KO", "fr": "FR", "es": "ES", "de": "DE", "ru": "RU", "pt": "PT", "it": "IT", "ar": "AR", "nl": "NL", "pl": "PL", "el": "EL"}
+_MYMEMORY = {"zh": "zh-CN", "zh-Hant": "zh-TW", "en": "en", "ja": "ja", "ko": "ko", "fr": "fr", "es": "es", "de": "de", "ru": "ru", "pt": "pt", "it": "it", "ar": "ar", "th": "th", "vi": "vi", "nl": "nl", "pl": "pl", "el": "el"}
+_LIBRE = {"zh": "zh", "zh-Hant": "zt", "en": "en", "ja": "ja", "ko": "ko", "fr": "fr", "es": "es", "de": "de", "ru": "ru", "pt": "pt", "it": "it", "ar": "ar", "th": "th", "vi": "vi", "nl": "nl", "pl": "pl", "el": "el"}
+for _item in LANGUAGES:
+    _item["zhipu"] = _item["deepseek"]
+    _item["openai"] = _item["deepseek"]
+    if _item["code"] in _DEEPL:
+        _item["deepl"] = _DEEPL[_item["code"]]
+    _item["mymemory"] = _MYMEMORY[_item["code"]]
+    _item["libretranslate"] = _LIBRE[_item["code"]]
 
 _BY_CODE = {item["code"]: item for item in LANGUAGES}
 
@@ -55,7 +66,10 @@ def supports(provider: str, code: str) -> bool:
 def to_provider_code(provider: str, code: str) -> str:
     """把内部语言代码换成该服务要求的写法；auto 按各家约定处理。"""
     if code == "auto":
-        return {"baidu": "auto", "youdao": "auto", "deepseek": ""}.get(provider, "auto")
+        return {
+            "baidu": "auto", "youdao": "auto", "deepseek": "", "zhipu": "", "openai": "",
+            "deepl": "", "mymemory": "Autodetect", "libretranslate": "auto",
+        }.get(provider, "auto")
     entry = _BY_CODE.get(code)
     if not entry or not entry.get(provider):
         raise ApiError("UNSUPPORTED_LANGUAGE", "这个翻译服务不支持所选语言", 422)

@@ -1,0 +1,109 @@
+/* 仅保留布局结构，视觉样式交给 MUI 主题 */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+.spacer { flex: 1; }
+.toolbar-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.actions-group { display: flex; align-items: center; gap: 4px; }
+.scroll-area { overflow: auto; min-height: 0; }
+.table-scroll { overflow: auto; min-height: 0; }
+
+/* 笔记编辑器 */
+.markdown-editor { height: 100%; min-height: 160px; min-width: 0; }
+.markdown-editor .cm-editor { height: 100%; font-size: 13px; }
+.markdown-editor .cm-scroller {
+  overflow: auto;
+  font-family: "IBM Plex Sans", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  line-height: 1.75;
+}
+
+/* Markdown 阅读排版 */
+.markdown-body {
+  font-size: 13px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+  margin: 1.2em 0 0.45em;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.markdown-body h1 { font-size: 1.55em; }
+.markdown-body h2 { font-size: 1.3em; }
+.markdown-body h3 { font-size: 1.12em; }
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol { margin: 0.65em 0; }
+.markdown-body ul,
+.markdown-body ol { padding-left: 1.4em; }
+.markdown-body blockquote {
+  margin: 0.8em 0;
+  padding: 0.1em 0 0.1em 0.9em;
+  border-left: 2px solid rgba(128, 128, 128, 0.35);
+  color: inherit;
+  opacity: 0.85;
+}
+.markdown-body code {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.92em;
+  padding: 0.12em 0.3em;
+  border-radius: 4px;
+  background: rgba(128, 128, 128, 0.10);
+}
+.markdown-body pre {
+  overflow: auto;
+  padding: 12px 14px;
+  border-radius: 6px;
+  background: rgba(128, 128, 128, 0.08);
+}
+.markdown-body pre code { padding: 0; background: transparent; }
+.markdown-body table { width: 100%; border-collapse: collapse; margin: 0.9em 0; }
+.markdown-body th,
+.markdown-body td { border: 1px solid rgba(128, 128, 128, 0.22); padding: 6px 10px; text-align: left; }
+.markdown-body img { max-width: 100%; height: auto; border-radius: 4px; }
+.markdown-body hr { border: 0; border-top: 1px solid rgba(128, 128, 128, 0.22); margin: 1.4em 0; }
+
+/* 打卡 */
+.group-block { min-width: 0; }
+.group-head { display: flex; align-items: center; gap: 8px; }
+.group-title { flex: 1; min-width: 0; }
+.checkin-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 4px; }
+.checkin-main { flex: 1; min-width: 0; }
+.checkin-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.checkin-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+
+/* 待办 */
+.todos-layout { display: flex; height: 100%; min-height: 0; }
+.task-pane { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.quick-add { display: flex; flex-direction: column; gap: 6px; }
+.quick-extra { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.task-list { min-width: 0; }
+.task-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px; min-width: 0; }
+.task-main { flex: 1; min-width: 0; }
+.task-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.task-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 2px; }
+.task-actions { display: flex; align-items: center; gap: 2px; }
+.subtasks { margin-top: 6px; padding-left: 4px; }
+.subtask-row { display: flex; align-items: center; gap: 6px; min-height: 32px; }
+.subtask-add { padding: 4px 6px 2px; max-width: 320px; }
+.completed-block { margin-top: 10px; }
+.completed-head { display: flex; align-items: center; gap: 6px; }
+.note-text { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 700px) {
+  .task-pane { padding: 8px; }
+  .task-row { flex-wrap: wrap; }
+  .task-actions { margin-left: auto; }
+  .note-text { max-width: 100%; }
+}
+
+/* Univer */
+.univer-host { flex: 1; min-height: 0; overflow: hidden; }
+.univer-host .univer-app { height: 100%; }

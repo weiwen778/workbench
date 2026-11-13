@@ -12,7 +12,7 @@ from ..models import DataField, DataRecord, DataTable
 
 MAX_ROWS = 100_000
 MAX_GROUPS = 2000
-DIMENSION_TYPES = {'short_text', 'select', 'checkbox', 'date'}
+DIMENSION_TYPES = {'short_text', 'long_text', 'select', 'checkbox', 'date'}
 
 
 class ProgressCondition(BaseModel):

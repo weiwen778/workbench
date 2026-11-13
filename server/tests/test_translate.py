@@ -75,8 +75,21 @@ def configure(auth, upstream, provider="baidu", enable=True, path="/baidu"):
 def test_connections_start_unconfigured(auth):
     body = auth.get("/api/v1/translation-connections").json()
     assert body["credential_key_ready"] is True
-    assert {i["provider"] for i in body["items"]} == {"baidu", "youdao", "deepseek"}
-    assert all(i["configured"] is False for i in body["items"])
+    assert {i["provider"] for i in body["items"]} == {
+        "baidu", "youdao", "deepseek", "zhipu", "openai", "deepl", "mymemory", "libretranslate",
+    }
+    # MyMemory is keyless and usable without credentials; the rest start unconfigured.
+    assert {i["provider"] for i in body["items"] if i["configured"]} == {"mymemory"}
+
+
+def test_partial_credentials_are_rejected_before_saving(auth):
+    resp = auth.put(
+        "/api/v1/translation-connections/youdao",
+        json={"config": {"app_key": "k1234567"}, "enabled": True},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["code"] == "PROVIDER_NOT_CONFIGURED"
+    assert "secret" in resp.json()["details"]["missing"]
 
 
 def test_language_catalog_follows_provider(auth):
@@ -132,15 +145,6 @@ def test_save_masks_credentials(auth, upstream):
 
     listed = auth.get("/api/v1/translation-connections").json()["items"][0]
     assert "secret123456" not in json.dumps(listed)
-
-
-def test_enable_requires_full_credentials(auth, upstream):
-    resp = auth.put(
-        "/api/v1/translation-connections/youdao",
-        json={"config": {"app_key": "k1234567"}, "enabled": True},
-    )
-    assert resp.status_code == 409
-    assert resp.json()["code"] == "PROVIDER_NOT_CONFIGURED"
 
 
 def test_translate_and_history(auth, upstream):

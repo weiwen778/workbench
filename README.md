@@ -1,200 +1,206 @@
-# 个人工作台（Workbench v2.1）
+# 个人工作台（Workbench）
 
 > 仓库：<https://github.com/weiwen778/workbench_element>
 
-单用户的店铺／社媒工作台：打卡、待办、数据表、笔记、便签、翻译、回收站。
+单用户、自托管的个人工作台：打卡、数据可视化、表格、待办、笔记、便利贴、网址导航、翻译、图片处理、Agent 接入、备份与恢复。
 
-- 前端：Vue 3 + TypeScript + Element Plus 2.14（Vite 构建）；数据图表采用 ECharts + Vue ECharts
-- 后端：FastAPI + SQLAlchemy 2 + Alembic
-- 数据库：开发/测试用 SQLite，生产用 PostgreSQL
-- 部署：Docker Compose（PostgreSQL + API + Nginx）
+当前主线是 `web-react/` 中的 **React + MUI** 前端；旧 Element Plus 版源码保留在 `web/src/`，仅用于对照和回滚。后端与数据模型保持兼容。
 
-需求基线：`docs/个人工作台_PRD_v2.1.md`（PRD v2.1，Element Plus 版）
-本轮改进与验证：[可靠性与性能改进](docs/可靠性与性能改进.md)。旧发布检查、交付报告与验收对照保留为历史记录。
+## 功能
 
-## 数据可视化
+- **打卡**：店铺/社媒项目、分类、日/周/月事项、历史快照、批量导入、完成情况统计。
+- **数据可视化**：多个看板；指标卡、柱状图、折线图、饼图、任务进度；支持统计列、分组、日期范围、下钻到源表格和 AI 生成图表。
+- **表格**：MUI X DataGrid；列宽/列显示持久化、水平/垂直居中、行高、斑马纹、列间分隔线、固定操作列、内联编辑、排序、筛选、选择、分页、公式/关联/汇总/透视、Excel 导入导出。
+- **待办**：清单、子任务、截止日期、完成/取消、静默刷新、回收站恢复。
+- **笔记 / 便利贴 / 网址**：文件夹与标签、分类导航、搜索、Markdown 笔记、卡片/列表视图。
+- **翻译**：多翻译服务、快捷键、历史记录、收藏、语言交换、本地偏好设置。
+- **图片处理**：纯前端 Canvas 处理；裁剪、旋转、缩放、调色、去底、水印标注、拼图、切图、格式转换、压缩与 ZIP 批量导出，图片不上传。
+- **Agent 接入**：访问令牌、权限范围、变更暂存区、审核合并、活动审计。
+- **系统**：任务中心、回收站、操作记录、服务器监控、加密备份与恢复。
 
-导航顺序为打卡 → 数据可视化 → 表格 → 待办 → 笔记。数据可视化下可新建多个店铺看板，每个看板是独立子项和独立页面；「全部看板」仅显示目录。界面采用 Notion 风格的灰白配色和浅蓝交互色，使用项目自有的「工字印」SVG 标识。
+## 技术栈
 
-经营可视化入口已加入左侧「数据可视化」，也可在表格页点击「可视化」。支持关联现有表格生成指标卡、柱状图、折线图和饼图，选择统计列、分组列、汇总方式和日期范围；配置保存在账号，原表或 Agent 回写后可刷新查看最新结果。详见[数据可视化说明](docs/数据可视化.md)。
+| 层 | 技术 |
+| --- | --- |
+| 前端 | React 18、TypeScript、Vite、MUI 6、MUI X DataGrid / Charts 7 |
+| 后端 | FastAPI、SQLAlchemy 2、Alembic、Pydantic v2 |
+| 数据库 | 本地/测试支持 SQLite；生产使用 PostgreSQL |
+| 部署 | Docker Compose（PostgreSQL + API + Nginx） |
+| 测试 | pytest、Playwright |
 
-## 设置与页面层级
+## 快速开始
 
-页面名称统一在顶部显示；设置按外观、导航、账号、Agent、翻译、回收站和系统信息分类，支持搜索与手机布局。详见[设置与页面层级说明](docs/设置与页面层级.md)。
-
-## 增强表格
-
-支持网格编辑、区域复制粘贴/填充、保存视图、关联与公式、联动汇总/透视、修改历史，以及独立电子表格和常见 Excel 互通。详细功能、数据边界和复测方法见[表格增强说明](docs/表格增强.md)。独立的虚拟表功能已下线；既有历史数据保留兼容处理。
-
-## Agent 业务接入与暂存审核
-
-「设置 → Agent 接入」默认授予全部业务读取和变更暂存权限，覆盖表格/字段、待办、笔记、便利贴、打卡、看板、书签、文件与导入导出。令牌只显示一次，可设置有效期并随时撤销。
-
-Agent 使用 `Authorization: Bearer <令牌>` 调用 `/api/v1/agent`，无需账号密码或浏览器登录。新增、修改、删除均返回 `202 pending`，只有用户在设置的暂存区审核合并后才执行。支持中文字段差异、审核备注、冲突检查、独立批次拆分和批内创建结果引用；令牌无法自行审批或管理账号。原批次拆分后返回 `split` 与关联暂存 ID，不能误报为原请求全部执行成功。
-
-接入说明：[Agent 接入](docs/Agent接入.md)；实现边界：[Agent 暂存设计](docs/Agent暂存设计.md)。接口文档 `/api/docs` 列出业务参数，Agent 路径在普通业务路径前加入 `/agent`。远程接入使用 HTTPS 或 SSH 隧道。
-
-## 搜索、任务与备份
-
-顶部「搜索」跨模块定位内容，「任务中心」查看后台导入导出、备份、进度、取消与重试；可切换到操作记录。列表按页读取，看板缓存按源数据版本失效。待办与清单删除后可在回收站恢复。
-
-「设置 → 系统与备份」默认每 24 小时创建加密完整备份、保留最近 7 份，并在清理旧备份前校验新备份。恢复密钥需与备份分开保存到其他安全位置。恢复工具只接受空数据库和空附件目录，完整步骤见[备份与恢复](docs/备份与恢复.md)。
-
-后台任务当前使用单工作进程；不要让同一数据库的多个 API 实例同时运行任务工作器。详情和性能实测见[可靠性与性能改进](docs/可靠性与性能改进.md)。
-
-## 快速开始（WSL / Linux）
+### 本地运行（WSL / Linux / macOS）
 
 ```bash
-cd /home/weiwen/workbench_element
+git clone https://github.com/weiwen778/workbench_element.git
+cd workbench_element
 
-# 1. 后端依赖（首次）
+# 1. 后端依赖
 cd server
-uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python -r requirements.txt
-cp .env.example .env          # 本地开发：SQLite，按需填 WB_ENCRYPTION_KEY
+python3.12 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cp .env.example .env
+# 编辑 .env：至少修改 WB_ADMIN_PASSWORD，并生成 WB_ENCRYPTION_KEY
+# 生成密钥：
+# python3 -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"
 
-# 2. 前端依赖（首次）
-cd ../web && npm ci && npm run build
+# 2. 前端依赖与构建
+cd ../web-react
+npm ci
+npm run build          # 产物输出到 ../web/dist
 
-# 3. 启动（前端取 web/dist，API 同源 18080）
-cd ../server && .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 18080
+# 3. 启动（API 同源托管前端）
+cd ../server
+.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 18080
 ```
 
-也可以直接用辅助脚本：
+打开 <http://127.0.0.1:18080>。首次启动会自动建表，并用 `WB_ADMIN_USERNAME` / `WB_ADMIN_PASSWORD` 创建唯一管理员。
+
+本地辅助脚本：
 
 ```bash
 scripts/dev-server.sh start     # 启动
 scripts/dev-server.sh stop      # 停止
+scripts/dev-server.sh status    # 状态
 scripts/dev-server.sh reset     # 清空开发库与附件后重启
 ```
 
-首次启动会用 `WB_ADMIN_USERNAME` / `WB_ADMIN_PASSWORD` 创建唯一管理员（本机默认 `admin` / `admin12345`，生产必须改）。
-
-## 开发模式
+### Docker Compose
 
 ```bash
-# 终端 1
+cp .env.example .env
+# 必改：WB_DB_PASSWORD、WB_ADMIN_USERNAME、WB_ADMIN_PASSWORD、
+#       WB_ENCRYPTION_KEY、WB_PUBLIC_BASE_URL
+docker compose up -d --build
+```
+
+- Web 默认对外 `${WB_HTTP_PORT:-18743}`，容器内监听 80。
+- API 与数据库只绑定 `127.0.0.1`，不对公网开放。
+- 数据卷：`wb_pgdata`（数据库）、`wb_storage`（附件）。
+- API 启动前执行 `alembic upgrade head`。
+- 生产环境会拒绝默认管理员密码、缺失主密钥和 SQLite 数据库。
+
+生产部署、备份与恢复细节见 [备份与恢复](docs/备份与恢复.md) 和 `deploy/`。
+
+## 模拟数据
+
+`scripts/demo_year.py` 可以生成一套**带明确标识、可删除**的一年使用数据，覆盖表格、看板、打卡、待办、笔记、便利贴、网址、翻译记录和 Agent 活动。
+
+```bash
+cd server
+
+# 生成（默认截至 2026-10-31；可传 --as-of YYYY-MM-DD）
+.venv/bin/python ../scripts/demo_year.py seed
+
+# 查看状态和清理标记
+.venv/bin/python ../scripts/demo_year.py status
+
+# 删除这一批数据（使用 status 输出中的 marker）
+.venv/bin/python ../scripts/demo_year.py remove --confirm DEMO-YEAR-20261031
+```
+
+注意：
+
+- 数据写入第一个管理员账号，所有对象带 `【模拟】` 前缀或 `DEMO-YEAR-*` 标识。
+- 不会调用外部 API，不会覆盖原有数据。
+- 导入前建议先备份数据库；脚本清单保存在 `.run/demo-year/manifest.json`（Git 忽略）。
+- 旧的 `scripts/demo_year_bookmarks.py` 仅用于给已存在的模拟数据集补充网址；新执行 `seed` 已包含网址。
+
+## 开发
+
+```bash
+# 终端 1：后端热重载
 cd server && .venv/bin/uvicorn app.main:app --reload --port 18080
-# 终端 2
-cd web && npm run dev    # http://127.0.0.1:5173，已代理 /api 到 18080
+
+# 终端 2：前端开发服务器
+cd web-react && npm run dev    # http://127.0.0.1:5174，/api 代理到 18080
+```
+
+常用命令：
+
+```bash
+cd web-react
+npm run typecheck     # TypeScript
+npm run build         # 生产构建 + Brotli/Gzip 预压缩
 ```
 
 ## 测试
 
 ```bash
-# 后端完整回归；测试库与开发库隔离
+# 后端测试（使用隔离测试库）
 cd server && .venv/bin/python -m pytest -q
 
 # 前端类型与构建
-cd web && npm run typecheck && npm run build
+cd web-react && npm run typecheck && npm run build
 
-# 浏览器端真实操作冒烟（需先启动服务；会向开发库写入演示数据）
-cd e2e && npm install && node ui-smoke.mjs
-# 截图输出到 docs/screenshots/
+# 浏览器端完整流程（需先启动服务）
+cd e2e
+npm ci
+WB_E2E_PASSWORD='你的管理员密码' node react-smoke.mjs
+WB_E2E_PASSWORD='你的管理员密码' node react-smoke-crud.mjs
+WB_E2E_PASSWORD='你的管理员密码' node react-redesign.mjs
+WB_E2E_PASSWORD='你的管理员密码' node react-full.mjs
 ```
 
-重新生成可阅读的交付报告：
+React E2E 脚本默认连接 `http://127.0.0.1:18080`，默认管理员 `admin`。可通过环境变量覆盖：
 
 ```bash
-python3 scripts/gen-report.py    # 生成 docs/交付报告.html
+WB_BASE=http://127.0.0.1:18080
+WB_E2E_PASSWORD=...
+WB_OUTPUT=../.run/react-smoke
 ```
 
-PostgreSQL 回归可设置 `WB_TEST_DATABASE_URL`。为防止误删业务库，测试仅接受回环地址且数据库名以 `workbench_element_test` 开头；用例会重建该测试库的表，切勿指定业务数据库。
+截图默认输出到 `.run/react-smoke/`。旧的 Element Plus E2E 脚本仍保留在 `e2e/`，使用独立测试库和 18746/18747 端口，避免影响开发数据。
 
-## 生产部署
-
-```bash
-cp .env.example .env
-# 必改：WB_DB_PASSWORD、WB_ADMIN_USERNAME、WB_ADMIN_PASSWORD、WB_ENCRYPTION_KEY、WB_PUBLIC_BASE_URL
-python3 -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"   # 生成主密钥
-docker compose up -d --build
-```
-
-- Web 对外 `${WB_HTTP_PORT:-18743}`，容器内监听 80；
-- API 与数据库只绑定 `127.0.0.1`，不对公网开放；
-- 数据卷：`wb_pgdata`（数据库）、`wb_storage`（附件）；
-- API 容器启动前执行 `alembic upgrade head`；
-- Nginx 用 `resolver` + 变量 `proxy_pass`，API 容器重建后无需重启 Web。
-
-生产启动会拒绝缺失的主密钥、默认管理员密码和 SQLite 数据库。管理员环境变量只在空库首次启动时创建账号，之后改环境变量不会覆盖已有账号。密码和翻译密钥只保存在服务器私有 `.env`，不提交 Git。
-
-同机试运行时可设置 `WB_BIND_ADDRESS=127.0.0.1`、`WB_HTTP_PORT=18744`、`WB_API_PORT=18081`、`WB_DB_PORT=55434`，避开已有服务。正式入口使用 18743；只开放 Web 端口。
-
-国内服务器下载 Python 依赖较慢时，可运行 `docker compose build --build-arg APT_MIRROR=mirrors.aliyun.com --build-arg PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple api`，随后再启动 Compose。
-
-备份：`bash deploy/backup.sh /私有备份目录`（数据库 + 附件 + 配置）。备份期间短暂停止 API 保持数据和附件一致，退出时自动恢复运行。恢复：`bash deploy/restore.sh /完整备份目录`，按提示输入数据库名；恢复会替换当前数据库及附件，应先在隔离环境演练。主密钥必须与备份保持一致。备份包含敏感配置，禁止上传到 Git。
-
-生产 API 每小时清理到期回收站、导入导出任务及无引用暂存文件。有效引用附件保留。PDF 使用本地 PDF.js 阅读器，支持分页、缩放与适宽，worker、字体和 CMap 随构建部署，无需第三方 CDN。
+PostgreSQL 回归可设置 `WB_TEST_DATABASE_URL`。测试只接受回环地址，数据库名必须以 `workbench_element_test` 开头；用例会重建该测试库的表，切勿指向业务数据库。
 
 ## 目录结构
 
+```text
+server/
+  app/                 FastAPI 应用（routers / services / models）
+  migrations/          Alembic 迁移
+  tests/               pytest
+web-react/
+  src/                 React + MUI 前端源码
+  scripts/             构建辅助（预压缩等）
+  Dockerfile           前端镜像构建
+web/
+  src/                 旧 Vue 3 + Element Plus 前端（仅对照）
+  dist/                前端构建产物（Git 忽略，由后端托管）
+  public/              静态资源
+e2e/                   Playwright 端到端测试与 fixtures
+scripts/               开发服务、模拟数据、报告生成
+deploy/                Nginx 配置、备份与恢复脚本
+docs/                  PRD、设计说明、交付与验收记录
 ```
-server/app            FastAPI 应用
-  routers/            接口层（auth / checkins / todos / tables / transfers / files / notes / memos / translate / trash）
-  services/           业务服务（周期、实例、字段校验、动态查询、翻译适配、加密、回收站）
-  models.py           SQLAlchemy 模型
-server/migrations     Alembic 迁移
-server/tests          pytest（116 项）
-web/src               Vue 3 前端（views 11 页、components 3 个复用组件、styles/theme.css）
-e2e                   Playwright 冒烟脚本
-deploy                Nginx 配置、备份与恢复脚本
-docs                  PRD、交付报告、验收对照、待办、截图
-scripts               开发服务脚本、报告生成脚本
-```
 
-## 设计约定（改样式前先读）
+## 设计约定
 
-`web/src/styles/theme.css` 分五段：`--wb-*` 设计变量 → `--el-*` 映射 → 全局基础 → 少量组件补丁 → 暗色只覆盖 `--wb-*`。
-引入顺序固定为 `element-plus/dist/index.css` → `theme-chalk/dark/css-vars.css` → `theme.css`（最后）。
-优先改变量，其次组件选择器，scoped 内用 `:deep()`，`!important` 视为错误信号。
+- 视觉统一使用 MUI 主题与 `sx`：`web-react/src/app/theme.ts` 只保留明暗模式和品牌色。
+- 表格统一走 `web-react/src/ui/common.tsx` 的 `DataTable`，内部是 MUI X DataGrid，已启用中文语言包。
+- 列宽与列显示按表格保存在浏览器 `localStorage`；跨设备同步需要另接账号视图配置。
+- 图片处理全部在浏览器本地完成；ZIP 使用 `fflate`；笔记使用 CodeMirror。
+- DataGrid 的列宽、行高、固定操作列、对齐方式、隐藏列和排序都在通用组件内处理，页面不要重复实现。
 
-## 待办与笔记分类导航
+## 文档
 
-主侧栏的「待办」「笔记」可展开，清单、文件夹与表格一样显示为子项。待办地址为 `/todos/:listId`；笔记地址为 `/notes/:folderId`，全部笔记为 `/notes`，未分类为 `/notes/uncategorized`。刷新保留当前分类。分类的新建入口位于侧栏，重命名和删除位于内容区标题旁的「…」菜单。删除笔记文件夹会将笔记移至未分类。
+- [数据可视化](docs/数据可视化.md)
+- [表格增强](docs/表格增强.md)
+- [Agent 接入](docs/Agent接入.md) / [Agent 暂存设计](docs/Agent暂存设计.md)
+- [备份与恢复](docs/备份与恢复.md)
+- [图片处理](docs/图片处理.md)
+- [设置与页面层级](docs/设置与页面层级.md)
+- [可靠性与性能改进](docs/可靠性与性能改进.md)
 
-笔记列表上方保留搜索和标签筛选。切换分类、模块或笔记，以及新建另一篇笔记前，会先保存当前草稿；保存失败时停留在原页。手机端可返回笔记列表，折叠侧栏时可通过图标弹出分类列表。
+## 安全
 
-分类导航回归使用独立的空测试库与测试管理员账号：`cd e2e && WB_BASE=http://127.0.0.1:18746 node folder-navigation.mjs`；可用 `CHROME_PATH` 指定浏览器。覆盖分类创建、重命名、删除、刷新、未分类移动、保存失败和保存中继续输入、手机与折叠导航。
+- 不要提交 `server/.env`、`.run/`、`storage/`、`data/`、备份文件和恢复密钥；这些已在 `.gitignore` 中忽略。
+- 生产环境必须使用随机的 `WB_ENCRYPTION_KEY`、强管理员密码和 PostgreSQL。
+- 翻译服务凭据使用 Fernet 加密保存；接口返回时只显示掩码。
+- 备份包含敏感配置，必须与恢复密钥分开存放在安全位置。
 
-## 图片处理
+## 许可证
 
-主导航「图片处理」提供纯前端的裁剪、缩放、旋转翻转、调色、纯色去底、水印标注、拼图、格式转换、压缩与批量 ZIP 导出。图片不上传，无新增图片后端接口或第三方处理服务。刷新或离开页面会清空素材，请先导出。详细功能、限制与浏览器回归见 [图片处理说明](docs/图片处理.md)。
-
-## 打卡导航名称
-
-「店铺打卡」「社媒打卡」子项右侧的铅笔按钮支持重命名（1–40 字）。名称保存到当前账号，刷新或重新登录后保留；侧栏、手机导航、折叠菜单和页面标题同步更新。名称只影响显示，不改变打卡分类、地址与记录。已有账号升级数据库后保留原名称，迁移版本为 `c03a81df2742`。浏览器验证可在独立测试服务上运行 `cd e2e && WB_BASE=http://127.0.0.1:18746 node checkin-labels.mjs`（可用 `CHROME_PATH` 指定浏览器）。
-
-## 便利贴分类导航
-
-主侧栏「便利贴」可展开为「全部便利贴」「未分类」及现有分类，桌面、折叠菜单、手机导航一致。当前分类保存在地址栏，刷新可恢复选择；包含斜杠、空格或其他特殊字符的分类也可正常访问。新建便利贴默认归入当前分类；编辑框仍支持选择或输入新的分类，保存后会同步到侧栏。删除、移动、从回收站恢复后会刷新分类列表。页面内保留搜索，去掉重复的分类筛选下拉框。
-
-没有新增分类实体或数据库迁移，分类仍来自已有便利贴。浏览器回归可在独立的空测试服务上运行 `cd e2e && WB_BASE=http://127.0.0.1:18746 node memo-navigation.mjs`，可设置 `CHROME_PATH`；测试会向隔离库写入便利贴，截图保存在 `.run/memo-navigation-e2e`。
-
-侧栏分组使用手风琴展开：打卡、数据可视化、表格、待办、笔记和便利贴同时最多展开一个；再次点击当前分组可收起。展开状态仅保留在当前页面会话内，刷新后全部收起，不再读取或写入旧版展开状态。折叠为图标栏时，弹出的子项菜单也同时最多显示一个。
-
-## 上线性能与审查
-
-2026-10-31 的修复、容量边界、191 项回归及可复现压测步骤见 [上线性能与代码审查](docs/上线性能与代码审查-2026-10-31.md)。原始公开指标不含测试密钥或业务数据。
-
-## 全局动效
-
-侧栏展开、页面进入、弹窗菜单、按钮反馈与待办完成采用 120～180ms 的轻量动效，自动遵循系统的减少动态效果设置。规则及验证见 [全局动效](docs/全局动效.md)。
-
-
-### 虚拟表功能已下线
-
-已移除虚拟表的新建、规则编辑、查看入口及专用 API，表格列表仅展示普通表格。历史虚拟表数据保留，不执行删除；内部读取兼容逻辑保留以支持已有引用。普通表格、公式、关联、汇总和电子表格功能不受影响。
-
-## 名称和分类管理
-
-店铺／社媒账号管理列表支持修改名称、平台和删除；删除停止打卡并隐藏账号，任务和历史记录保留。打卡分类支持重命名，删除有任务的分类时需选择接收分类，历史快照保留。便利贴、网址页顶部的「管理分类」支持添加、重命名和删除；删除分类将内容移到未分类，不删除内容。
-
-## 组件选型
-
-已有成熟组件时优先复用，减少自定义绘制和生命周期管理。数据可视化采用 ECharts 6.1.0 与 Vue ECharts 8.3.2，按需注册折线、柱状、饼图及图例、提示、缩放功能，替代原有手工 SVG 图表；保留现有看板配置、多指标共用纵轴、空值断线和具体数值表。
-
-分栏使用 Element Plus Splitter；图片裁剪使用 Cropper.js，ZIP 使用 fflate；笔记正文使用 CodeMirror；表格汇总/透视使用 VTable PivotTable。迁移边界及回归说明见 [成熟组件替换记录](docs/成熟组件替换记录.md)。
-
-## 大量模拟数据
-
-本地已生成带「【模拟20261103】」前缀的数据：5 张表共 50000 行，含 10000 行 × 200 列压力测试表，并包含店铺／社媒、打卡、待办、笔记、便利贴和 3 个看板。生成脚本为 scripts/seed_mock_data.py，支持独立 SQLite 预演和同批次重复执行保护。用法与备份说明见 [大量模拟数据](docs/大量模拟数据.md)。
+本项目未附开源许可证，默认保留所有权利。

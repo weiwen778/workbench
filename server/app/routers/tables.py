@@ -172,9 +172,16 @@ def list_tables(db: Session = Depends(get_db)):
             .group_by(DataRecord.table_id)
         ).all()
     )
-    field_counts = dict(
-        db.execute(select(DataField.table_id, func.count(DataField.id)).group_by(DataField.table_id)).all()
-    )
+    field_counts = {}
+    field_previews: dict[int, list[dict]] = {}
+    for table_id, name, kind in db.execute(
+        select(DataField.table_id, DataField.name, DataField.type)
+        .order_by(DataField.table_id, DataField.sort_order, DataField.id)
+    ).all():
+        field_counts[table_id] = field_counts.get(table_id, 0) + 1
+        preview = field_previews.setdefault(table_id, [])
+        if len(preview) < 4:
+            preview.append({"name": name, "type": kind})
     return [
         {
             "id": t.id,
@@ -183,7 +190,10 @@ def list_tables(db: Session = Depends(get_db)):
             "kind": t.kind,
             "record_count": None if t.kind=="virtual" else counts.get(t.id, 0),
             "field_count": field_counts.get(t.id, 0),
+            "fields_preview": field_previews.get(t.id, []),
             "schema_version": t.schema_version,
+            "created_at": iso_z(t.created_at),
+            "updated_at": iso_z(t.updated_at),
         }
         for t in tables
     ]

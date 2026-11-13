@@ -78,7 +78,7 @@ services:
   web:
     build:
       context: .
-      dockerfile: web/Dockerfile
+      dockerfile: web-react/Dockerfile
     restart: unless-stopped
     depends_on:
       api:

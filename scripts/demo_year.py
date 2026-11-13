@@ -35,7 +35,10 @@ from app.services.dashboard import Widget, DateRange, aggregate, validate_source
 from app.services.fields import validate_record
 from app.services.periods import iter_periods
 
-assert settings.is_sqlite and settings.env!='production','This utility is for the local SQLite workspace only'
+LOCAL_DB = settings.is_sqlite or '127.0.0.1' in settings.database_url or 'localhost' in settings.database_url
+assert LOCAL_DB, 'This utility is only for the local workspace database'
+if settings.env == 'production':
+    print('WARNING: local workspace is marked production; seeding clearly labelled, removable data.')
 ASOF=args.as_of
 END=ASOF-timedelta(days=1)
 START=END-timedelta(days=364)
@@ -264,10 +267,37 @@ class Seeder:
             day=START+timedelta(days=70+int(i*294/119))
             r=RNG.choice([r for r in records if r.created_at<=stamp(day,18)])
             self.add(AgentActivity(token_id=token.id,method='PATCH',path=f'/api/v1/agent/records/{r.id}',created_at=stamp(day,18)))
+    def bookmarks(self):
+        categories={name:self.add(BookmarkCategory(name=PREFIX+name)) for name in ['运营后台','数据工具','内容平台','学习资料','协作工具']}
+        self.db.flush()
+        specs=[
+            ('运营后台','天猫商家中心','https://myseller.taobao.com/','查看店铺经营、订单与活动报名'),
+            ('运营后台','抖音电商罗盘','https://compass.jinritemai.com/','直播与短视频成交、流量和人群分析'),
+            ('运营后台','京东商家后台','https://shop.jd.com/','商品、订单、库存与售后处理'),
+            ('运营后台','拼多多商家后台','https://mms.pinduoduo.com/','活动报名、推广与发货管理'),
+            ('数据工具','生意参谋','https://sycm.taobao.com/','店铺流量、转化与竞争分析'),
+            ('数据工具','巨量算数','https://trendinsight.oceanengine.com/','行业趋势、关键词与内容热点'),
+            ('内容平台','小红书创作中心','https://creator.xiaohongshu.com/','笔记发布、数据与选题灵感'),
+            ('内容平台','视频号助手','https://channels.weixin.qq.com/','视频号内容发布与直播管理'),
+            ('学习资料','阿里妈妈营销学院','https://www.alimama.com/','投放方法与活动策略学习'),
+            ('学习资料','淘宝大学','https://daxue.taobao.com/','电商运营课程与案例'),
+            ('协作工具','飞书','https://www.feishu.cn/','团队文档、表格与周会协作'),
+            ('协作工具','Notion','https://www.notion.so/','复盘模板与知识库整理'),
+            ('协作工具','稿定设计','https://www.gaoding.com/','活动主图、详情页与内容素材'),
+            ('数据工具','快递100','https://www.kuaidi100.com/','物流时效查询与异常件跟进'),
+            ('运营后台','微信公众平台','https://mp.weixin.qq.com/','公众号内容与用户消息管理'),
+        ]
+        for i,(category,title,url,description) in enumerate(specs):
+            day=START+timedelta(days=18+i*23)
+            self.add(Bookmark(
+                title=PREFIX+title,url=url,category=categories[category].name,icon_url='',description=description,
+                created_at=stamp(day,10),updated_at=stamp(min(day+timedelta(days=RNG.randint(0,30)),END),15),
+            ))
+
     def run(self):
         self.user=self.db.scalar(select(User).order_by(User.id).limit(1))
         assert self.user,'The local workspace must already have an administrator'
-        self.business(); self.products(); self.campaigns(); self.exceptions(); self.checkins(); self.todos(); self.notes_and_memos(); self.content_and_history()
+        self.business(); self.products(); self.campaigns(); self.exceptions(); self.checkins(); self.todos(); self.notes_and_memos(); self.content_and_history(); self.bookmarks()
         self.db.flush()
         result=aggregate(self.db,[Widget.model_validate(w) for w in self.entities['dashboards'][0].widgets],DateRange())
         assert all(r['status']=='ok' for r in result),result
@@ -313,6 +343,11 @@ def remove(manifest):
             if obj.name.startswith(PREFIX) and not db.scalar(select(func.count()).select_from(NoteTagLink).where(NoteTagLink.tag_id==obj.id)): db.delete(obj)
         for obj in db.scalars(select(Memo).where(Memo.id.in_(ids.get('memos',[])))):
             if marker in obj.content: db.delete(obj)
+        for obj in db.scalars(select(Bookmark).where(Bookmark.id.in_(ids.get('bookmarks',[])))):
+            if obj.title.startswith(PREFIX): db.delete(obj)
+        db.flush()
+        for obj in db.scalars(select(BookmarkCategory).where(BookmarkCategory.id.in_(ids.get('bookmark_categories',[])))):
+            if obj.name.startswith(PREFIX) and not db.scalar(select(func.count()).select_from(Bookmark).where(Bookmark.category==obj.name)): db.delete(obj)
         for obj in db.scalars(select(WorkTarget).where(WorkTarget.id.in_(ids.get('work_targets',[])))):
             if marker not in (obj.note or ''): continue
             rules=list(db.scalars(select(CheckinRule).where(CheckinRule.target_id==obj.id)))
