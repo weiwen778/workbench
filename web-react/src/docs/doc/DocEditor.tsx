@@ -14,6 +14,7 @@ import { downloadBlob, baseName } from '@/convert/files'
 import { exportNote } from '@/utils/note-export'
 import MarkdownEditor, { type MarkdownEditorHandle } from '@/components/MarkdownEditor'
 import ProjectActions from '@/docs/ProjectActions'
+import { useUnloadWarning } from '@/docs/useUnloadWarning'
 import { uploadProjectFile, type ProjectDetail } from '@/docs/api'
 import '@/docs/doc/doc.css'
 
@@ -97,8 +98,36 @@ function blobFromDataUrl(dataUrl: string): Blob {
   return new Blob([bytes], { type: mime })
 }
 
+const UPLOAD_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
+
+async function uploadableImage(dataUrl: string): Promise<{ blob: Blob; extension: string }> {
+  const source = blobFromDataUrl(dataUrl)
+  if (UPLOAD_IMAGE_TYPES.has(source.type)) {
+    return { blob: source, extension: source.type.split('/')[1].replace('jpeg', 'jpg') }
+  }
+  const url = URL.createObjectURL(source)
+  try {
+    const image = new Image()
+    image.src = url
+    await image.decode()
+    const canvas = document.createElement('canvas')
+    canvas.width = image.naturalWidth
+    canvas.height = image.naturalHeight
+    const context = canvas.getContext('2d')
+    if (!context || !canvas.width || !canvas.height) throw new Error('图片无法转换为 PNG')
+    context.drawImage(image, 0, 0)
+    const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
+      (value) => value ? resolve(value) : reject(new Error('图片无法转换为 PNG')), 'image/png',
+    ))
+    return { blob, extension: 'png' }
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
 export default function DocEditor() {
   const [markdown, setMarkdown] = useState('')
+  useUnloadWarning(Boolean(markdown.trim()))
   const [title, setTitle] = useState('未命名文档')
   const [format, setFormat] = useState('markdown')
   const [current, setCurrent] = useState<ProjectDetail | null>(null)
@@ -155,8 +184,8 @@ export default function DocEditor() {
     for (let index = 0; index < matches.length; index += 1) {
       const match = matches[index]
       const dataUrl = match[2]
-      const subtype = match[3].replace('jpeg', 'jpg').replace('svg+xml', 'svg')
-      const attachment = await uploadProjectFile(new File([blobFromDataUrl(dataUrl)], `image-${index + 1}.${subtype}`, { type: `image/${match[3]}` }))
+      const image = await uploadableImage(dataUrl)
+      const attachment = await uploadProjectFile(new File([image.blob], `image-${index + 1}.${image.extension}`, { type: image.blob.type }))
       text = text.split(dataUrl).join(attachment.url)
     }
     if (text !== markdown) setMarkdown(text)

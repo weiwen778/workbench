@@ -46,26 +46,28 @@ def user_payload(user: User) -> dict:
     }
 
 
-def _recent_failures(db: Session, username: str) -> int:
+def _recent_failures(db: Session, username: str, ip: str | None = None) -> int:
     since = utcnow() - timedelta(seconds=settings.login_lock_seconds)
-    return (
-        db.scalar(
-            select(func.count(LoginAttempt.id)).where(
-                LoginAttempt.username == username,
-                LoginAttempt.success.is_(False),
-                LoginAttempt.created_at >= since,
-            )
-        )
-        or 0
-    )
+    conditions = [
+        LoginAttempt.username == username,
+        LoginAttempt.success.is_(False),
+        LoginAttempt.created_at >= since,
+    ]
+    if ip is not None:
+        conditions.append(LoginAttempt.ip == ip)
+    return db.scalar(select(func.count(LoginAttempt.id)).where(*conditions)) or 0
 
 
 @router.post("/auth/login")
 def login(payload: LoginIn, request: Request, response: Response, db: Session = Depends(get_db)):
     ip = (request.client.host if request.client else "")[:64] or None
     username = payload.username.strip()
-
-    if _recent_failures(db, username) >= settings.login_max_failures:
+    ip_failures = _recent_failures(db, username, ip)
+    account_failures = _recent_failures(db, username)
+    # Per-address lock stops normal brute force; the wider account ceiling
+    # still slows a botnet without letting five anonymous requests lock out
+    # the only administrator.
+    if ip_failures >= settings.login_max_failures or account_failures >= max(20, settings.login_max_failures * 4):
         raise ApiError(
             "LOGIN_RATE_LIMITED",
             f"连续登录失败次数过多，请 {settings.login_lock_seconds // 60} 分钟后再试",

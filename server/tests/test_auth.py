@@ -104,8 +104,20 @@ def test_login_lockout_applies_across_proxy_addresses(auth):
     from app.models import LoginAttempt
 
     with SessionLocal() as session:
-        for index in range(5):
-            session.add(LoginAttempt(username='admin', ip=f'198.51.100.{index}', success=False))
+        for index in range(20):
+            session.add(LoginAttempt(username='admin', ip=f'198.51.{index // 250}.{index % 250}', success=False))
+        session.commit()
+    response = auth.post('/api/v1/auth/login', json={'username': 'admin', 'password': 'admin12345'})
+    assert response.status_code == 429, response.text
+
+
+def test_five_failures_from_one_address_still_lock(auth):
+    from app.db import SessionLocal
+    from app.models import LoginAttempt
+
+    with SessionLocal() as session:
+        for _ in range(5):
+            session.add(LoginAttempt(username='admin', ip='testclient', success=False))
         session.commit()
     response = auth.post('/api/v1/auth/login', json={'username': 'admin', 'password': 'admin12345'})
     assert response.status_code == 429, response.text

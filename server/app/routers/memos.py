@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -130,7 +130,11 @@ def reorder_memos(data: MemoOrder, db: Session = Depends(get_db)):
     for position, memo_id in zip(positions, unique_ids):
         memos[position] = by_id[memo_id]
     for index, memo in enumerate(memos):
-        memo.sort_order = index
+        if memo.sort_order == index:
+            continue
+        # Bulk update keeps the user-visible "updated" time untouched: manual
+        # ordering is not a content edit.
+        db.execute(update(Memo).where(Memo.id == memo.id).values(sort_order=index, updated_at=memo.updated_at))
     db.commit()
     return {'ok': True}
 

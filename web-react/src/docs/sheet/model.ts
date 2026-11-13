@@ -521,10 +521,15 @@ function decodeText(buffer: ArrayBuffer): string {
 function makeSheet(name: string, rows: any[][]): SheetModel {
   const sheet: SheetModel = { name: name.slice(0, 31) || 'Sheet1', cells: {}, rowCount: 1, colCount: 1 }
   const width = rows.reduce((max, row) => Math.max(max, row.length), 0)
+  if (rows.length > MAX_ROWS) throw new Error(`表格超过 ${MAX_ROWS.toLocaleString()} 行上限，请先拆分`)
+  if (width > MAX_COLS) throw new Error(`表格超过 ${MAX_COLS} 列上限，请先拆分`)
+  let cellCount = 0
   for (let row = 0; row < rows.length; row += 1) {
     for (let col = 0; col < width; col += 1) {
       const value = rows[row]?.[col]
       if (value === null || value === undefined || value === '') continue
+      cellCount += 1
+      if (cellCount > MAX_CELLS) throw new Error(`表格超过 ${MAX_CELLS.toLocaleString()} 个单元格上限，请先拆分`)
       const text = String(value)
       const isNumber = typeof value === 'number' || (/^-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(text) && !/^0\d+/.test(text))
       sheet.cells[a1(row, col)] = { value: isNumber ? Number(value) : value, type: isNumber ? 'n' : 's' }

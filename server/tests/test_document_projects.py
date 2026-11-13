@@ -123,6 +123,22 @@ def test_document_project_can_share_attachment_with_same_user_copy(auth, db):
         file_obj = session.get(FileObject, file_id)
         assert file_obj.status == 'staged'
 
+def test_document_project_rejects_expired_staged_file(auth, db):
+    from datetime import timedelta
+    from app.models import utcnow
+
+    file_id = _upload(auth)
+    with SessionLocal() as session:
+        file_obj = session.get(FileObject, file_id)
+        file_obj.expires_at = utcnow() - timedelta(seconds=1)
+        session.commit()
+    response = auth.post('/api/v1/document-projects', json={
+        'kind': 'pdf', 'title': '过期附件', 'state': {}, 'attachment_ids': [file_id],
+    })
+    assert response.status_code == 422, response.text
+    assert response.json()['code'] == 'ATTACHMENT_UNAVAILABLE'
+
+
 def test_document_project_cannot_attach_another_users_file(auth, db):
     file_id = _upload(auth)
     project = auth.post('/api/v1/document-projects', json={

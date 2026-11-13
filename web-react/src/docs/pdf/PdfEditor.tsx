@@ -29,6 +29,7 @@ import {
   type FormField, type PageNumberOptions, type PdfAnnotation, type PdfPageModel, type PdfSource, type WatermarkOptions,
 } from '@/docs/pdf/pdf-utils'
 import { getPdfJs } from '@/docs/pdf/pdf-utils'
+import { useUnloadWarning } from '@/docs/useUnloadWarning'
 import '@/docs/pdf/pdf.css'
 
 type Tool = 'select' | 'highlight' | 'draw' | 'text' | 'check' | 'signature' | 'redact'
@@ -56,6 +57,7 @@ export default function PdfEditor() {
   const [sourcesMeta, setSourcesMeta] = useState<SourceMeta[]>([])
   const sourcesRef = useRef(new Map<string, PdfSource>())
   const [pages, setPages] = useState<PdfPageModel[]>([])
+  useUnloadWarning(pages.length > 0)
   const [annotations, setAnnotations] = useState<PdfAnnotation[]>([])
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null)
   const [zoom, setZoom] = useState(1)

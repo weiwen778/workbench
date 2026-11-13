@@ -108,9 +108,9 @@ def _resolve(file_id: int, db: Session, user: User) -> tuple[FileObject, Path]:
 
 
 def _ensure_readable(obj: FileObject, db: Session, user: User) -> None:
+    if obj.owner_id is not None and obj.owner_id != user.id:
+        raise ApiError("FILE_UNAVAILABLE", "文件已过期或无权访问", 410)
     if obj.status == "staged":
-        if obj.owner_id is not None and obj.owner_id != user.id:
-            raise ApiError("FILE_UNAVAILABLE", "文件已过期或无权访问", 410)
         if obj.expires_at is not None and obj.expires_at > utcnow():
             return
     for ref in db.scalars(select(FileRef).where(FileRef.file_id == obj.id)).all():

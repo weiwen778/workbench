@@ -362,3 +362,18 @@ def test_base_url_rejects_non_public_http_targets(auth):
     )
     assert response.status_code == 400, response.text
     assert response.json()["code"] == "UPSTREAM_URL_REJECTED"
+
+
+def test_base_url_rejects_private_https_and_dns_failure(auth):
+    private = auth.put(
+        "/api/v1/translation-connections/baidu",
+        json={"config": {"app_id": "a1234567", "secret": "b1234567", "base_url": "https://169.254.169.254"}},
+    )
+    assert private.status_code == 400, private.text
+    assert private.json()["code"] == "UPSTREAM_URL_REJECTED"
+    missing = auth.put(
+        "/api/v1/translation-connections/baidu",
+        json={"config": {"app_id": "a1234567", "secret": "b1234567", "base_url": "https://does-not-exist.invalid"}},
+    )
+    assert missing.status_code == 400, missing.text
+    assert missing.json()["code"] == "UPSTREAM_DNS_FAILED"

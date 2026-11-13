@@ -13,6 +13,7 @@ import { confirmDialog, promptDialog, toast } from '@/ui/feedback'
 import { downloadBlob } from '@/convert/files'
 import { getFileBytes, type ProjectDetail } from '@/docs/api'
 import ProjectActions from '@/docs/ProjectActions'
+import { useUnloadWarning } from '@/docs/useUnloadWarning'
 import {
   MAX_FILE_BYTES, MAX_ROWS, MAX_COLS, addSheet, cellDisplay, cellInput, deleteColumn, deleteRow,
   deleteSheet, exportWorkbook, findAndReplace, insertColumn, insertRow, readWorkbookFile, recalculate,
@@ -32,6 +33,7 @@ function isPanelVisible(element: HTMLElement | null) {
 
 export default function SheetEditor() {
   const [workbook, setWorkbook] = useState<WorkbookModel | null>(null)
+  useUnloadWarning(Boolean(workbook))
   const [title, setTitle] = useState('未命名工作簿')
   const [current, setCurrent] = useState<ProjectDetail | null>(null)
   const [loading, setLoading] = useState(false)
