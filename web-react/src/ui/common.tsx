@@ -91,6 +91,7 @@ export function DataTable<T>({
   onRowClick,
   maxHeight,
   size = 'small',
+  autoRowHeight = false,
   columnDividers = false,
   striped = false,
   centerX = false,
@@ -113,6 +114,7 @@ export function DataTable<T>({
   onRowClick?: (row: T, index: number) => void
   maxHeight?: number | string
   size?: 'small' | 'medium'
+  autoRowHeight?: boolean
   columnDividers?: boolean
   striped?: boolean
   centerX?: boolean
@@ -210,7 +212,8 @@ export function DataTable<T>({
         onColumnVisibilityModelChange={onColumnVisibilityChange ? (model) => onColumnVisibilityChange(model) : undefined}
         scrollbarSize={8}
         autoHeight={!effectiveHeight}
-        rowHeight={rowHeightValue}
+        getRowHeight={autoRowHeight ? () => 'auto' as const : undefined}
+        rowHeight={autoRowHeight ? undefined : rowHeightValue}
         columnHeaderHeight={headerHeightValue}
         sortingMode={onSort ? 'server' : 'client'}
         sortModel={onSort && sortKey ? [{ field: sortKey, sort: sortDirection }] : []}
@@ -234,9 +237,12 @@ export function DataTable<T>({
             ...(columnDividers ? { borderRight: '1px solid', borderRightColor: 'divider' } : {}),
             ...(centerX ? { textAlign: 'center' } : {}),
             ...(centerY ? {} : { lineHeight: '1.5 !important', paddingTop: '4px !important' }),
+            ...(autoRowHeight ? { py: 1, whiteSpace: 'normal', lineHeight: 1.45, alignItems: 'center' } : {}),
           },
           '& .MuiDataGrid-row--lastVisible .MuiDataGrid-cell': { borderBottom: 0 },
           '& .MuiDataGrid-columnHeaderTitle': { fontSize: 12.5, fontWeight: 600 },
+          // 排序入口保留列菜单和工具栏，隐藏表头里的排序箭头/按钮，避免重复
+          '& .MuiDataGrid-columnHeader .MuiDataGrid-iconButtonContainer': { display: 'none' },
           '& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within': { outline: 'none' },
           '& .MuiDataGrid-scrollbar--horizontal': { height: '8px !important' },
           '& .MuiDataGrid-scrollbar--horizontal > div': { height: '8px !important' },

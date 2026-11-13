@@ -4,12 +4,11 @@ from pydantic import BaseModel,Field
 from sqlalchemy import select,func,or_,cast,String,exists
 from sqlalchemy.orm import Session
 from ..db import get_db
-from ..deps import get_current_user
+from ..deps import get_admin_user, get_current_user
 from ..models import BackgroundJob,OperationLog,User,Todo,TodoList,Note,Memo,Bookmark,DataTable,DataRecord,DataField,AgentChange
 from ..errors import ApiError
 from ..services import jobs,backups
 from ..utils import iso_z
-from .agent_changes import review_user
 from .transfers import ExportIn
 from ..config import settings
 router=APIRouter(tags=['工作台工具'])
@@ -63,25 +62,25 @@ def retry_task(id:int,user=Depends(get_current_user),db:Session=Depends(get_db))
     return jobs.payload(jobs.enqueue(db,user.id,job.kind,job.title,job.payload))
 
 @router.get('/backups')
-def backup_list(user=Depends(review_user)):
+def backup_list(user=Depends(get_admin_user)):
     return {'items':backups.list_backups(),'enabled':settings.backup_enabled,'interval_hours':settings.backup_interval_hours,'keep':settings.backup_keep}
 
 @router.post('/backups',status_code=202)
-def backup_create(user=Depends(review_user),db:Session=Depends(get_db)):
+def backup_create(user=Depends(get_admin_user),db:Session=Depends(get_db)):
     return jobs.payload(jobs.enqueue(db,user.id,'backup','手动完整备份',{}))
 
 @router.get('/backups/recovery-key')
-def recovery_key(user=Depends(review_user)):
+def recovery_key(user=Depends(get_admin_user)):
     return FileResponse(backups.key_file(),media_type='application/octet-stream',filename='workbench-recovery.key',headers={'Cache-Control':'no-store'})
 
 @router.get('/backups/{name}/download')
-def backup_download(name:str,user=Depends(review_user)):
+def backup_download(name:str,user=Depends(get_admin_user)):
     path=backups.archive_path(name)
     if not path.is_file():raise ApiError('NOT_FOUND','备份不存在',404)
     return FileResponse(path,media_type='application/octet-stream',filename=path.name,headers={'Cache-Control':'no-store'})
 
 @router.post('/backups/{name}/verify',status_code=202)
-def backup_verify(name:str,user=Depends(review_user),db:Session=Depends(get_db)):
+def backup_verify(name:str,user=Depends(get_admin_user),db:Session=Depends(get_db)):
     if not backups.archive_path(name).is_file():raise ApiError('NOT_FOUND','备份不存在',404)
     return jobs.payload(jobs.enqueue(db,user.id,'backup_verify','校验备份',{'backup_id':name}))
 

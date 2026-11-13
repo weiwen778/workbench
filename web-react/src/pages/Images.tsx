@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Box, Button, Checkbox, FormControl, IconButton, InputLabel, MenuItem, Select,
   Stack, TextField, ToggleButton, ToggleButtonGroup, Typography,
@@ -9,6 +10,9 @@ import {
   Lock, LockOpen, Palette, Picture, Plus, RoundedCorner, TextFields, Tune, WaterDrop,
 } from '@/icons'
 import { confirmDialog, toast } from '@/ui/feedback'
+import WhiteboardPicker from '@/components/WhiteboardPicker'
+import type { InsertItem } from '@/whiteboard/insert'
+import { insertFileId } from '@/whiteboard/scene'
 import {  } from '@/ui/common'
 import {
   clone, collageSize, defaults, download, encodeImage, extension, orientedSize, outputSize,
@@ -85,6 +89,7 @@ function ToolSection({ icon, title, defaultOpen = false, children }: {
 const imageCache: { assets: ImageAsset[]; selectedId: number } = { assets: [], selectedId: 0 }
 
 export default function ImagesPage() {
+  const navigate = useNavigate()
   const [assets, setAssets] = useState<ImageAsset[]>(() => imageCache.assets)
   const [selectedId, setSelectedId] = useState(() => (
     imageCache.assets.some((asset) => asset.id === imageCache.selectedId) ? imageCache.selectedId : imageCache.assets[0]?.id || 0
@@ -92,6 +97,9 @@ export default function ImagesPage() {
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState('')
   const [lastExport, setLastExport] = useState('')
+  const [sending, setSending] = useState(false)
+  const [wbOpen, setWbOpen] = useState(false)
+  const [wbItems, setWbItems] = useState<InsertItem[] | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [tab, setTab] = useState(0)
   const [markMode, setMarkMode] = useState<'brush' | 'rectangle' | 'mosaic'>('brush')
@@ -151,6 +159,7 @@ export default function ImagesPage() {
     const added: ImageAsset[] = []
     try {
       let current = assets
+      let totalPixels = current.reduce((sum, asset) => sum + (asset.image.naturalWidth || 0) * (asset.image.naturalHeight || 0), 0)
       for (const file of files) {
         if (!file.type.startsWith('image/') && !/\.(png|apng|jpe?g|jpe|jfif|webp|gif|bmp|svg|avif|ico)$/i.test(file.name)) { failures.push(`${file.name}：不是支持的图片`); continue }
         if (current.length + added.length >= 30) { failures.push('最多添加 30 张图片'); break }
@@ -162,6 +171,8 @@ export default function ImagesPage() {
           await image.decode()
           if (disposed.current) { URL.revokeObjectURL(url); return }
           if (!image.naturalWidth || !image.naturalHeight || image.naturalWidth * image.naturalHeight > 40_000_000) throw new Error('图片为空或超过 4000 万像素')
+          if (totalPixels + image.naturalWidth * image.naturalHeight > 120_000_000) throw new Error('累计像素超过 1.2 亿，请先移除部分图片')
+          totalPixels += image.naturalWidth * image.naturalHeight
           const initial = defaults()
           added.push({ id: nextId.current++, name: file.name || `截图-${nextId.current}.png`, file, image, url, options: initial, checked: true, history: [JSON.stringify(initial)], historyIndex: 0 })
         } catch (error) {
@@ -533,6 +544,41 @@ export default function ImagesPage() {
     toast.success(`已应用到 ${targets.length} 张图片`)
   }
 
+  const sendToWhiteboard = async () => {
+    const source = checked.length ? checked : (active ? [active] : [])
+    if (!source.length) { toast.warning('请先选择要发送到白板的图片'); return }
+    if (busy || sending) return
+    setSending(true)
+    try {
+      const items: InsertItem[] = []
+      for (const asset of source) {
+        const canvas = renderImage(asset.image, asset.options)
+        try {
+          const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+          if (!blob) throw new Error('图片渲染失败')
+          const dataURL = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(String(reader.result || ''))
+            reader.onerror = () => reject(reader.error || new Error('图片读取失败'))
+            reader.readAsDataURL(blob)
+          })
+          items.push({
+            kind: 'image', id: insertFileId(), dataURL, mimeType: 'image/png',
+            width: canvas.width, height: canvas.height, name: asset.name,
+          })
+        } finally {
+          canvas.width = canvas.height = 1
+        }
+      }
+      setWbItems(items)
+      setWbOpen(true)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '图片准备失败，请重试')
+    } finally {
+      setSending(false)
+    }
+  }
+
   const exportBatch = async () => {
     if (!checked.length) return
     const queue = checked.map((asset, index) => ({ image: asset.image, options: clone(asset.options), name: fileName(asset, index) }))
@@ -560,8 +606,10 @@ export default function ImagesPage() {
   if (!assets.length) {
     return (
       <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', p: 2, gap: 1.5 }}>
-        <Stack direction="row" spacing={1}>
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
           <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => fileInput.current?.click()}>添加图片</Button>
+          <Button size="small" startIcon={<Palette fontSize="small" />} onClick={() => navigate('/color')}>取色 / 对比度</Button>
+          <Button size="small" startIcon={<Brush fontSize="small" />} disabled={(!active && checked.length === 0) || busy || sending} onClick={() => void sendToWhiteboard()}>发送到白板</Button>
           <input ref={fileInput} type="file" accept={IMAGE_ACCEPT} multiple hidden onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ''; void addFiles(files) }} />
           <Typography sx={{ fontSize: 12, color: 'text.secondary', alignSelf: 'center' }}>本地处理 · 图片不上传</Typography>
         </Stack>
@@ -588,6 +636,8 @@ export default function ImagesPage() {
         <input ref={fileInput} type="file" accept={IMAGE_ACCEPT} multiple hidden onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ''; void addFiles(files) }} />
         <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
           <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} disabled={busy} onClick={() => fileInput.current?.click()}>添加图片</Button>
+          <Button size="small" startIcon={<Palette fontSize="small" />} onClick={() => navigate('/color')}>取色 / 对比度</Button>
+          <Button size="small" startIcon={<Brush fontSize="small" />} disabled={(!active && checked.length === 0) || busy || sending} onClick={() => void sendToWhiteboard()}>发送到白板</Button>
           <Typography sx={{ fontSize: 12, color: 'text.secondary' }}><Picture sx={{ fontSize: 14, verticalAlign: -2, mr: 0.5 }} />本地处理 · 图片不上传</Typography>
         </Stack>
         <div className="spacer" />
@@ -1012,6 +1062,7 @@ export default function ImagesPage() {
           </Box>
         </Box>
       </Box>
+      <WhiteboardPicker open={wbOpen} items={wbItems} sourceLabel="图片处理结果" onClose={() => setWbOpen(false)} />
     </Box>
   )
 }

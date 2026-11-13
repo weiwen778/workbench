@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_db
-from ..deps import get_current_user
+from ..deps import get_admin_user, get_current_user
 from ..errors import ApiError
 from ..models import TranslationConnection, TranslationFavorite, TranslationHistory, utcnow
 from ..services import providers as prov
@@ -163,7 +163,7 @@ def list_connections(db: Session = Depends(get_db)):
 
 
 @router.put("/translation-connections/{provider}")
-def save_connection(provider: str, payload: ConnectionIn, db: Session = Depends(get_db)):
+def save_connection(provider: str, payload: ConnectionIn, user=Depends(get_admin_user), db: Session = Depends(get_db)):
     conn = _conn(db, provider)
     if payload.config is not None:
         allowed = set(FIELDS[provider]) | {"base_url"}
@@ -174,6 +174,18 @@ def save_connection(provider: str, payload: ConnectionIn, db: Session = Depends(
                 current = decrypt_config(conn.encrypted_config)
             except ApiError:
                 current = {}
+        if "base_url" in clean and clean["base_url"] != current.get("base_url"):
+            try:
+                prov.validate_base_url(clean["base_url"])
+            except prov.UpstreamError as error:
+                raise ApiError(error.code, error.message, error.status)
+            secret_field = {"baidu": "secret", "youdao": "secret", "deepl": "api_key"}.get(provider, "api_key")
+            if secret_field in FIELDS[provider] and not clean.get(secret_field):
+                raise ApiError(
+                    "CREDENTIAL_REENTRY_REQUIRED",
+                    "修改服务地址时请重新填写该服务的密钥，避免旧密钥被发送到新地址",
+                    422, {"fields": [secret_field]},
+                )
         current.update(clean)
         missing = [f for f in REQUIRED[provider] if not current.get(f)]
         if missing and not (provider == "zhipu" and _ai_key(db)):
@@ -205,7 +217,7 @@ def save_connection(provider: str, payload: ConnectionIn, db: Session = Depends(
 
 
 @router.delete("/translation-connections/{provider}")
-def clear_connection(provider: str, db: Session = Depends(get_db)):
+def clear_connection(provider: str, user=Depends(get_admin_user), db: Session = Depends(get_db)):
     conn = _conn(db, provider)
     conn.encrypted_config = None
     conn.enabled = False
@@ -217,7 +229,7 @@ def clear_connection(provider: str, db: Session = Depends(get_db)):
 
 
 @router.post("/translation-connections/{provider}/test")
-def test_connection(provider: str, db: Session = Depends(get_db)):
+def test_connection(provider: str, user=Depends(get_admin_user), db: Session = Depends(get_db)):
     conn = _conn(db, provider)
     config = _effective_config(db, conn)
     if not config and provider not in KEYLESS:

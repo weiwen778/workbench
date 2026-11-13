@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
+import socket
 import time
 from urllib.parse import urlparse
 
@@ -68,13 +70,33 @@ def check_limit(provider: str, text: str) -> None:
         )
 
 
+def validate_base_url(url: str) -> str:
+    raw = (url or "").strip()
+    if not raw:
+        return raw
+    if len(raw) > 2048 or any(ord(ch) < 32 for ch in raw):
+        raise UpstreamError("UPSTREAM_URL_REJECTED", "服务地址不合法", 400)
+    parsed = urlparse(raw)
+    local = parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+    if local and not settings.allow_insecure_upstream:
+        raise UpstreamError("UPSTREAM_URL_REJECTED", "服务地址不能指向本机", 400)
+    if parsed.scheme != "https":
+        if not (settings.allow_insecure_upstream and local):
+            raise UpstreamError("UPSTREAM_URL_REJECTED", "服务地址必须是 HTTPS", 400)
+    if parsed.username is not None or parsed.password is not None:
+        raise UpstreamError("UPSTREAM_URL_REJECTED", "服务地址不能包含账号密码", 400)
+    if not local:
+        try:
+            infos = socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM)
+        except (socket.gaierror, ValueError, TypeError):
+            raise UpstreamError("UPSTREAM_DNS_FAILED", "无法解析翻译服务地址", 400)
+        if not infos or any(not ipaddress.ip_address(info[4][0]).is_global for info in infos):
+            raise UpstreamError("UPSTREAM_URL_REJECTED", "翻译服务地址不能指向内网或保留地址", 400)
+    return raw
+
+
 def _masked_base(url: str) -> str:
-    parsed = urlparse(url)
-    if parsed.scheme == "https":
-        return url
-    if settings.allow_insecure_upstream and parsed.hostname in {"127.0.0.1", "localhost"}:
-        return url
-    raise UpstreamError("UPSTREAM_URL_REJECTED", "服务地址必须是 HTTPS", 400)
+    return validate_base_url(url)
 
 
 def _post(url: str, **kwargs) -> dict:

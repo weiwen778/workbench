@@ -166,7 +166,7 @@ export default function AppLayout() {
     const onKey = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && !event.altKey && !event.shiftKey && !event.defaultPrevented) {
         const target = event.target as HTMLElement | null
-        if (target?.closest('input,textarea,[contenteditable=true],.univer-host')) return
+        if (target?.closest('input,textarea,[contenteditable=true],.univer-host,.excalidraw')) return
         event.preventDefault()
         setSearchOpen(true)
       }
@@ -206,6 +206,7 @@ export default function AppLayout() {
       if (key === 'uncategorized') return '未分类笔记'
       return data.noteFolders.find((folder) => String(folder.id) === key)?.name || '笔记'
     }
+    if (path.startsWith('/whiteboards/')) return '白板'
     return ({
       '/checkins': '打卡',
       '/visualizations': '数据可视化',
@@ -214,6 +215,12 @@ export default function AppLayout() {
       '/todos': '待办',
       '/translate': '翻译',
       '/images': '图片处理',
+      '/convert': '格式转换',
+      '/color': '取色与可读性检查',
+      '/codes': '二维码与条码',
+      '/feeds': '信息聚合',
+      '/docs': '文档工作台',
+      '/whiteboards': '白板',
       '/bookmarks': '网址导航',
     } as Record<string, string>)[path] || 'Nexus'
   }, [location.pathname, location.search, data, session.user])

@@ -8,7 +8,7 @@ import {
   Check, Delete, InfoFilled, Menu, Moon, Search, Setting, Sunny, Todo, Translate,
 } from '@/icons'
 import { apiError, copyText, http } from '@/api/client'
-import { logout, setTheme, useSession } from '@/session'
+import { logout, setCheckinLabel, setTheme, setThemeColor, useSession } from '@/session'
 import { confirmDialog, promptDialog, toast } from '@/ui/feedback'
 import { FieldRow } from '@/ui/common'
 import TrashView from './Trash'
@@ -19,7 +19,8 @@ const groups = [
   {
     name: '偏好设置',
     items: [
-      { key: 'appearance', label: '外观', icon: Sunny, description: '调整工作台的明暗主题。', keywords: '主题 深色 浅色' },
+      { key: 'appearance', label: '外观', icon: Sunny, description: '调整工作台的明暗主题和强调色。', keywords: '主题 深色 浅色 颜色 强调色' },
+      { key: 'navigation', label: '导航与命名', icon: Menu, description: '修改两类打卡在侧栏和页面中的名称。', keywords: '打卡 店铺 社媒 命名 导航' },
     ],
   },
   {
@@ -57,37 +58,39 @@ export default function SettingsPage({ section: explicitSection }: { section?: s
 
   return (
     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '200px minmax(0,1fr)' }, minHeight: 'calc(100vh - 44px)', width: '100%' }}>
-      <Box component="aside" aria-label="设置分类" sx={{ p: { xs: 2, md: '24px 14px' }, borderRight: { md: (theme) => `1px solid ${theme.palette.divider}` }, borderBottom: { xs: (theme) => `1px solid ${theme.palette.divider}`, md: 0 }, borderColor: 'divider', position: { md: 'sticky' }, top: 0 }}>
-        <TextField fullWidth size="small" value={search} placeholder="搜索设置" aria-label="搜索设置" onChange={(event) => setSearch(event.target.value)} InputProps={{ startAdornment: <Search sx={{ fontSize: 17, mr: 0.5, color: 'text.secondary' }} /> }} sx={{ mb: 1 }} />
-        {groups.map((group) => {
-          const items = filtered.filter((item) => group.items.some((entry) => entry.key === item.key))
-          if (!items.length) return null
-          return (
-            <Box key={group.name} sx={{ mt: 2 }}>
-              <Typography variant="overline" color="text.secondary" sx={{ px: 2, display: 'block' }}>{group.name}</Typography>
-              <List disablePadding>
-                {items.map((item) => {
-                  const Icon = item.icon
-                  return (
-                    <ListItemButton
-                      key={item.key}
-                      selected={section === item.key}
-                      onClick={() => navigate(item.key === 'appearance' ? '/settings' : `/settings/${item.key}`)}
-                    >
-                      <ListItemIcon sx={{ minWidth: 36 }}><Icon /></ListItemIcon>
-                      <ListItemText primary={item.label} primaryTypographyProps={{ variant: 'body2' }} />
-                    </ListItemButton>
-                  )
-                })}
-              </List>
-            </Box>
-          )
-        })}
-        {!filtered.length ? <Typography sx={{ fontSize: 12, color: 'text.secondary', p: 1 }}>没有匹配的设置</Typography> : null}
-        <Stack direction="row" spacing={1.25} alignItems="center" sx={{ borderTop: 1, borderColor: 'divider', pt: 2.25, mt: 2.75, px: 1 }}>
-          <Box sx={{ width: 32, height: 32, borderRadius: 1, bgcolor: 'action.hover', display: 'grid', placeItems: 'center', fontSize: 15, fontWeight: 600 }}>{session.user?.username?.slice(0, 1).toUpperCase()}</Box>
-          <Box><Typography sx={{ fontSize: 13, fontWeight: 500 }}>{session.user?.username}</Typography><Typography sx={{ fontSize: 12, color: 'text.secondary' }}>个人工作台</Typography></Box>
-        </Stack>
+      <Box component="aside" aria-label="设置分类" sx={{ borderRight: { md: (theme) => `1px solid ${theme.palette.divider}` }, borderBottom: { xs: (theme) => `1px solid ${theme.palette.divider}`, md: 0 }, borderColor: 'divider', minWidth: 0 }}>
+        <Box sx={{ p: { xs: 2, md: '24px 14px' }, position: { md: 'sticky' }, top: 0, maxHeight: { md: 'calc(100vh - 44px)' }, overflowY: { md: 'auto' } }}>
+          <TextField fullWidth size="small" value={search} placeholder="搜索设置" aria-label="搜索设置" onChange={(event) => setSearch(event.target.value)} InputProps={{ startAdornment: <Search sx={{ fontSize: 17, mr: 0.5, color: 'text.secondary' }} /> }} sx={{ mb: 1 }} />
+          {groups.map((group) => {
+            const items = filtered.filter((item) => group.items.some((entry) => entry.key === item.key))
+            if (!items.length) return null
+            return (
+              <Box key={group.name} sx={{ mt: 2 }}>
+                <Typography variant="overline" color="text.secondary" sx={{ px: 2, display: 'block' }}>{group.name}</Typography>
+                <List disablePadding>
+                  {items.map((item) => {
+                    const Icon = item.icon
+                    return (
+                      <ListItemButton
+                        key={item.key}
+                        selected={section === item.key}
+                        onClick={() => navigate(item.key === 'appearance' ? '/settings' : `/settings/${item.key}`)}
+                      >
+                        <ListItemIcon sx={{ minWidth: 36 }}><Icon /></ListItemIcon>
+                        <ListItemText primary={item.label} primaryTypographyProps={{ variant: 'body2' }} />
+                      </ListItemButton>
+                    )
+                  })}
+                </List>
+              </Box>
+            )
+          })}
+          {!filtered.length ? <Typography sx={{ fontSize: 12, color: 'text.secondary', p: 1 }}>没有匹配的设置</Typography> : null}
+          <Stack direction="row" spacing={1.25} alignItems="center" sx={{ borderTop: 1, borderColor: 'divider', pt: 2.25, mt: 2.75, px: 1 }}>
+            <Box sx={{ width: 32, height: 32, borderRadius: 1, bgcolor: 'action.hover', display: 'grid', placeItems: 'center', fontSize: 15, fontWeight: 600 }}>{session.user?.username?.slice(0, 1).toUpperCase()}</Box>
+            <Box><Typography sx={{ fontSize: 13, fontWeight: 500 }}>{session.user?.username}</Typography><Typography sx={{ fontSize: 12, color: 'text.secondary' }}>个人工作台</Typography></Box>
+          </Stack>
+        </Box>
       </Box>
 
       <Box component="main" sx={{ p: { xs: 2, md: '24px 28px' }, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -98,6 +101,7 @@ export default function SettingsPage({ section: explicitSection }: { section?: s
         {feedback ? <Alert severity={feedbackError ? 'error' : 'success'} onClose={() => setFeedback('')}>{feedback}</Alert> : null}
 
         {section === 'appearance' ? <AppearanceSection notify={notify} /> : null}
+        {section === 'navigation' ? <NavigationSection notify={notify} /> : null}
         {section === 'account' ? <AccountSection notify={notify} /> : null}
         {section === 'agents' ? <AgentsSection /> : null}
         {section === 'ai' ? <AiSection notify={notify} /> : null}
@@ -115,6 +119,10 @@ function AppearanceSection({ notify }: { notify: (message: string, error?: boole
     try { await setTheme(value); notify('主题已保存到账号。') }
     catch (error) { notify(apiError(error).message + '，已恢复原主题。', true) }
   }
+  const changeColor = async (value: string) => {
+    try { await setThemeColor(value); notify('强调色已保存到账号。') }
+    catch (error) { notify(apiError(error).message + '，已恢复原强调色。', true) }
+  }
   return (
     <>
       <Card>
@@ -130,7 +138,47 @@ function AppearanceSection({ notify }: { notify: (message: string, error?: boole
           <ToggleButton value="dark"><Moon sx={{ mr: 1 }} />深色</ToggleButton>
         </ToggleButtonGroup>
       </Card>
+      <Card>
+        <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 1 }}>强调色</Typography>
+        <Stack direction="row" spacing={1.25} alignItems="center">
+          <Box component="input" type="color" aria-label="强调色" value={session.themeColor} disabled={session.appearanceSaving}
+            onChange={(event) => void changeColor(event.target.value)}
+            sx={{ width: 42, height: 34, p: 0, border: 1, borderColor: 'divider', borderRadius: 1, bgcolor: 'transparent', cursor: 'pointer' }} />
+          <Typography sx={{ fontSize: 12, color: 'text.secondary', fontFamily: 'monospace' }}>{session.themeColor}</Typography>
+        </Stack>
+      </Card>
     </>
+  )
+}
+
+function NavigationSection({ notify }: { notify: (message: string, error?: boolean) => void }) {
+  const session = useSession()
+  const [shops, setShops] = useState(session.user?.checkin_shop_label || '店铺打卡')
+  const [social, setSocial] = useState(session.user?.checkin_social_label || '社媒打卡')
+  const [saving, setSaving] = useState(false)
+  const save = async () => {
+    if (!shops.trim() || !social.trim()) { notify('名称不能为空', true); return }
+    setSaving(true)
+    try {
+      await setCheckinLabel('shops', shops)
+      await setCheckinLabel('social', social)
+      notify('导航名称已保存。')
+    } catch (error) { notify(apiError(error).message, true) }
+    finally { setSaving(false) }
+  }
+  return (
+    <Card>
+      <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 1 }}>导航与命名</Typography>
+      <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 1.5 }}>名称会同步到侧栏、顶部标题和打卡页面。</Typography>
+      <Stack spacing={1.25} sx={{ maxWidth: 420 }}>
+        <TextField size="small" label="店铺打卡名称" value={shops} onChange={(event) => setShops(event.target.value)} inputProps={{ maxLength: 40 }} />
+        <TextField size="small" label="社媒打卡名称" value={social} onChange={(event) => setSocial(event.target.value)} inputProps={{ maxLength: 40 }} />
+        <Stack direction="row" spacing={1}>
+          <Button size="small" variant="contained" disabled={saving} onClick={() => void save()}>{saving ? '保存中…' : '保存'}</Button>
+          <Button size="small" disabled={saving} onClick={() => { setShops('店铺打卡'); setSocial('社媒打卡') }}>恢复默认</Button>
+        </Stack>
+      </Stack>
+    </Card>
   )
 }
 

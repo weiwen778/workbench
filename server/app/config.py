@@ -61,6 +61,22 @@ class Settings(BaseSettings):
     # 仅测试环境使用：允许翻译服务指向 http:// 本机地址
     allow_insecure_upstream: bool = False
 
+    # 信息聚合：公开热榜与 RSS/Atom。刷新由 Nexus 进程内的轻量调度器负责。
+    feed_enabled: bool = True
+    feed_dailyhot_base_url: str = "https://api-hot.imsyy.top"
+    feed_google_trends_url: str = "https://trends.google.com/trending/rss?geo=US"
+    feed_hot_interval_seconds: int = Field(default=900, ge=60, le=86400)
+    feed_rss_interval_seconds: int = Field(default=1800, ge=60, le=86400)
+    feed_scheduler_interval_seconds: int = Field(default=60, ge=10, le=3600)
+    feed_timeout_seconds: float = Field(default=12.0, gt=1, le=60)
+    feed_max_bytes: int = Field(default=2_000_000, ge=100_000, le=20_000_000)
+    feed_max_redirects: int = Field(default=5, ge=0, le=10)
+    feed_retry_max_seconds: int = Field(default=3600, ge=60, le=86400)
+    feed_max_subscriptions: int = Field(default=50, ge=1, le=500)
+    feed_max_entries: int = Field(default=500, ge=50, le=5000)
+    feed_translation_batch: int = Field(default=20, ge=1, le=50)
+    feed_translation_concurrency: int = Field(default=3, ge=1, le=8)
+
     max_bytes_baidu: int = 6000
     max_chars_youdao: int = 5000
     max_chars_deepseek: int = 4000

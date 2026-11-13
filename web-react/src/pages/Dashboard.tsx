@@ -1,23 +1,26 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link as RouterLink, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel, InputLabel,
   Avatar, Card, CardActionArea, IconButton, Link, List, ListItem, ListItemButton, ListItemText, Menu, MenuItem, Paper, Select, Stack, TextField, Tooltip,
-  ToggleButton, ToggleButtonGroup, Typography,
+  ToggleButton, ToggleButtonGroup, Typography, useTheme,
 } from '@mui/material'
 import { Divider } from '@mui/material'
+import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
+import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates, useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import Star from '@mui/icons-material/Star'
 import StarBorder from '@mui/icons-material/StarBorder'
 import GridView from '@mui/icons-material/GridView'
 import ViewList from '@mui/icons-material/ViewList'
-import { AutoAwesome, ChevronDown, DashboardIcon, MoreFilled, Plus, Refresh, Search } from '@/icons'
+import { AutoAwesome, ChevronDown, DashboardIcon, DragIndicator, MoreFilled, Plus, Refresh, Search } from '@/icons'
 import { apiError, http } from '@/api/client'
 import { confirmDialog, promptDialog, toast } from '@/ui/feedback'
 import { EmptyHint, FieldRow, Page, PageBody, PageToolbar } from '@/ui/common'
 import DashboardChart from '@/components/DashboardChart'
 import DashboardAiDialog from '@/components/DashboardAiDialog'
 import ProgressEditor from '@/components/ProgressEditor'
-import { aggregationLabels, chartLabels, type DashboardBoard, type DashboardResult, type DashboardWidget, type ProgressConfig } from '@/dashboard'
+import { aggregationLabels, chartLabels, chartPalette, type DashboardBoard, type DashboardResult, type DashboardWidget, type ProgressConfig } from '@/dashboard'
 
 const emptyProgress = (): ProgressConfig => ({
   mode: 'tasks', display: 'bar', completed: { field: '', op: 'eq', value: true },
@@ -49,7 +52,61 @@ function relativeTime(value?: string) {
   return new Date(value).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
 }
 
+type DragHandleState = {
+  attributes: Record<string, any>
+  listeners: Record<string, any> | undefined
+  setActivatorNodeRef: (node: HTMLElement | null) => void
+}
+
+const DragHandleContext = createContext<DragHandleState | null>(null)
+
+function WidgetDragHandle({ label }: { label: string }) {
+  const handle = useContext(DragHandleContext)
+  if (!handle) return null
+  return (
+    <Box
+      ref={handle.setActivatorNodeRef}
+      {...handle.attributes}
+      {...handle.listeners}
+      aria-label={`拖动排序：${label}`}
+      title="拖动排序"
+      sx={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        width: 22, height: 22, borderRadius: 0.75, color: 'text.disabled', cursor: 'grab',
+        touchAction: 'none', '&:hover': { bgcolor: 'action.hover', color: 'text.secondary' },
+        '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 1 },
+        '&:active': { cursor: 'grabbing' },
+      }}
+    >
+      <DragIndicator sx={{ fontSize: 17 }} />
+    </Box>
+  )
+}
+
+function SortableWidget({ id, disabled, gridColumn, children }: { id: string; disabled?: boolean; gridColumn: any; children: ReactNode }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: Boolean(disabled) })
+  return (
+    <DragHandleContext.Provider value={{ attributes, listeners, setActivatorNodeRef }}>
+      <Paper
+        ref={setNodeRef}
+        variant="outlined"
+        style={{
+          transform: CSS.Transform.toString(transform),
+          transition,
+          zIndex: isDragging ? 3 : undefined,
+          position: 'relative',
+          opacity: isDragging ? 0.65 : 1,
+        }}
+        sx={{ gridColumn, minWidth: 0, p: 2, boxShadow: isDragging ? '0 18px 36px -16px rgba(26,36,38,0.35)' : undefined }}
+      >
+        {children}
+      </Paper>
+    </DragHandleContext.Provider>
+  )
+}
+
 export default function DashboardPage() {
+  const theme = useTheme()
   const params = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -92,8 +149,25 @@ export default function DashboardPage() {
   const lastRequestedAt = useRef(0)
 
   const current = boards.find((board) => board.id === activeId) || null
+  const boardsRef = useRef(boards)
+  boardsRef.current = boards
+  const lastRefreshRef = useRef(lastRefresh)
+  lastRefreshRef.current = lastRefresh
+  const [dataRefreshKey, setDataRefreshKey] = useState(0)
+  // 只有影响汇总结果的数据配置才触发重新取数；排序、配色、标题等不触发
+  const dataSignature = useMemo(() => JSON.stringify((current?.widgets || []).map((widget) => ({
+    id: widget.id, kind: widget.kind, table_id: widget.table_id,
+    aggregation: widget.aggregation, value_field: widget.value_field, value_fields: widget.value_fields,
+    group_field: widget.group_field, date_field: widget.date_field, date_bucket: widget.date_bucket,
+    sort: widget.sort, limit: widget.limit, progress: widget.progress,
+  })).sort((a, b) => a.id.localeCompare(b.id))), [current])
   const metricCount = current?.widgets.filter((widget) => widget.kind === 'metric').length || 0
   const metricSpan = 12 / Math.min(4, Math.max(1, metricCount))
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
 
   const tableName = (id: number) => tables.find((table) => table.id === id)?.name || '来源表格'
   const numericFields = fields.filter((field) => ['number', 'formula', 'rollup'].includes(field.type))
@@ -112,7 +186,7 @@ export default function DashboardPage() {
   }, [period, customFrom, customTo])
 
   const fetchData = useCallback(async () => {
-    const board = boards.find((item) => item.id === activeId)
+    const board = boardsRef.current.find((item) => item.id === activeId)
     if (!board) return
     const sequence = ++requestId.current
     setRefreshing(true); lastRequestedAt.current = Date.now()
@@ -123,9 +197,9 @@ export default function DashboardPage() {
       setResults(Object.fromEntries(data.widgets.map((result: DashboardResult) => [result.id, result])))
       setLastRefresh(data.generated_at); setLoadError('')
     } catch (error) {
-      if (sequence === requestId.current) setLoadError(`刷新失败：${apiError(error).message}${lastRefresh ? '；当前保留上次成功刷新的数据。' : ''}`)
+      if (sequence === requestId.current) setLoadError(`刷新失败：${apiError(error).message}${lastRefreshRef.current ? '；当前保留上次成功刷新的数据。' : ''}`)
     } finally { if (sequence === requestId.current) setRefreshing(false) }
-  }, [boards, activeId, dateParams, lastRefresh])
+  }, [activeId, dateParams])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -133,12 +207,13 @@ export default function DashboardPage() {
       const [boardsResponse, tablesResponse] = await Promise.all([http.get('/dashboards'), http.get('/tables')])
       setBoards(boardsResponse.data); setTables(tablesResponse.data)
       setResults({}); setLastRefresh(''); setLoadError('')
+      setDataRefreshKey((key) => key + 1)
     } catch (error) { setLoadError(apiError(error).message) }
     finally { setLoading(false) }
   }, [])
 
   useEffect(() => { void load() }, [load])
-  useEffect(() => { if (activeId) void fetchData() }, [activeId, fetchData])
+  useEffect(() => { if (activeId) void fetchData() }, [activeId, fetchData, dataSignature, dataRefreshKey])
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -261,7 +336,9 @@ export default function DashboardPage() {
 
   const kindChanged = (kind: DashboardWidget['kind']) => {
     setForm((prev) => {
-      let next = { ...prev, kind }
+      // bar 与 line 共用同一组系列颜色，其他类型切换时清空，避免旧颜色错配到新分类
+      const keepColors = ['bar', 'line'].includes(prev.kind) && ['bar', 'line'].includes(kind)
+      let next = { ...prev, kind, ...(keepColors ? {} : { colors: [] }) }
       if (kind === 'progress') {
         next = { ...next, aggregation: 'count', value_field: null, value_fields: [], group_field: null, progress: initializeProgress(prev.progress, fields) }
         return next
@@ -285,6 +362,32 @@ export default function DashboardPage() {
     group_field: form.group_field || null,
   })
 
+  const defaultColors = chartPalette(theme.palette.primary.main)
+  const colorTargets: { label: string }[] = (() => {
+    if (form.kind === 'metric') return [{ label: '数值颜色' }]
+    if (form.kind === 'progress') return [{ label: '进度颜色' }]
+    if (form.kind === 'pie') {
+      const labels = (previewResult?.points || []).map((point) => point.label).filter(Boolean)
+      return labels.length ? labels.map((label) => ({ label })) : [{ label: '主色' }]
+    }
+    const names = (previewResult?.series || []).map((series) => series.name).filter(Boolean)
+    const fieldNames = (form.value_fields?.length ? form.value_fields : [form.value_field])
+      .filter((key): key is string => Boolean(key))
+      .map((key) => fields.find((field) => field.key === key)?.name || '')
+      .filter(Boolean)
+    const labels = names.length ? names : fieldNames
+    return labels.length ? labels.map((label) => ({ label })) : [{ label: '主色' }]
+  })()
+  const colorValue = (index: number) => form.colors?.[index] || defaultColors[index % defaultColors.length]
+  const setColor = (index: number, value: string) => setForm((prev) => {
+    const colors = [...(prev.colors || [])]
+    while (colors.length < index) colors.push(defaultColors[colors.length % defaultColors.length])
+    colors[index] = value
+    return { ...prev, colors }
+  })
+  // 颜色只影响本地预览渲染，不必触发重新汇总
+  const previewSignature = useMemo(() => JSON.stringify({ ...form, colors: [] }), [form])
+
   const previewReady = Boolean(form.table_id) && !fieldsLoading && !fieldError && (
     form.kind === 'progress'
       ? Boolean(form.progress)
@@ -305,7 +408,7 @@ export default function DashboardPage() {
     return () => window.clearTimeout(timer)
     // draft/dateParams 依赖当前 form、字段和页面时间范围，这里显式跟随即可。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editorOpen, previewReady, form, fields, fieldsLoading, fieldError])
+  }, [editorOpen, previewReady, previewSignature, fields, fieldsLoading, fieldError])
 
   const saveWidget = async () => {
     if (!current) return
@@ -322,6 +425,20 @@ export default function DashboardPage() {
     const merged = [...current.widgets, ...widgets].slice(0, 24)
     const saved = await saveBoard(merged)
     if (!saved) throw new Error('保存失败')
+  }
+
+  const onWidgetDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!current || saving || !over || active.id === over.id) return
+    const from = current.widgets.findIndex((widget) => widget.id === active.id)
+    const to = current.widgets.findIndex((widget) => widget.id === over.id)
+    if (from < 0 || to < 0) return
+    const previous = current.widgets
+    const reordered = arrayMove(previous, from, to)
+    // 先乐观更新，保存失败再回滚
+    setBoards((prev) => prev.map((board) => board.id === current.id ? { ...board, widgets: reordered } : board))
+    const saved = await saveBoard(reordered)
+    if (!saved) setBoards((prev) => prev.map((board) => board.id === current.id ? { ...board, widgets: previous } : board))
   }
 
   const widgetCommand = async (command: string, widget: DashboardWidget, index: number) => {
@@ -666,41 +783,52 @@ export default function DashboardPage() {
                 暂无图表
               </EmptyHint>
             ) : (
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0,1fr))', gap: 2, alignItems: 'start' }}>
-                {current.widgets.map((widget, index) => {
-                  const result = results[widget.id]
-                  const span = widget.kind === 'metric' ? (metricCount === 1 ? 12 : metricSpan) : 6
-                  return (
-                    <Paper key={widget.id} variant="outlined" sx={{ gridColumn: { xs: 'span 12', md: `span ${widget.wide ? 12 : span}` }, minWidth: 0, p: 2 }}>
-                      <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
-                        <Typography sx={{ fontSize: 14, fontWeight: 600, overflowWrap: 'anywhere' }}>{widget.title}</Typography>
-                        <IconButton size="small" aria-label={`${widget.title}的操作`} disabled={saving} onClick={(event) => setWidgetMenu({ el: event.currentTarget, widget, index })}>
-                          <MoreFilled fontSize="small" />
-                        </IconButton>
-                      </Stack>
-                      <Menu anchorEl={widgetMenu?.el} open={Boolean(widgetMenu)} onClose={() => setWidgetMenu(null)}>
-                        <MenuItem onClick={() => widgetMenu && void widgetCommand('edit', widgetMenu.widget, widgetMenu.index)}>编辑图表</MenuItem>
-                        <MenuItem disabled={index === 0} onClick={() => widgetMenu && void widgetCommand('up', widgetMenu.widget, widgetMenu.index)}>上移</MenuItem>
-                        <MenuItem disabled={index === current.widgets.length - 1} onClick={() => widgetMenu && void widgetCommand('down', widgetMenu.widget, widgetMenu.index)}>下移</MenuItem>
-                        <MenuItem divider onClick={() => widgetMenu && void widgetCommand('delete', widgetMenu.widget, widgetMenu.index)}>移除图表</MenuItem>
-                      </Menu>
-                      <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 1, lineHeight: 1.7 }}>
-                        <Link component={RouterLink} to={`/data/${widget.table_id}`} color="text.secondary" underline="hover">{result?.table_name || tableName(widget.table_id)}</Link>
-                        {' · '}{widget.kind === 'progress' ? (widget.progress?.mode === 'quantity' ? '数值累计进度' : '任务完成进度') : aggregationLabels[widget.aggregation]}{widget.unit ? `（${widget.unit}）` : ''}
-                      </Typography>
-                      {result ? <DashboardChart widget={widget} result={result} /> : <Typography sx={{ py: 3.75, color: 'text.secondary', fontSize: 13 }}>{refreshing ? '正在汇总…' : '等待刷新数据'}</Typography>}
-                      {result?.status === 'ok' ? (
-                        <Stack direction="row" flexWrap="wrap" gap={1.5} sx={{ mt: 1.25, fontSize: 12, color: 'text.secondary' }}>
-                          {widget.kind !== 'metric' ? <span>{result.matched_rows} 条记录</span> : null}
-                          {result.ignored_rows ? <span>{result.ignored_rows} 条空值或无效数值未参与计算</span> : null}
-                          {(result.groups_total || 0) > widget.limit ? <span>{widget.kind === 'pie' ? `前 ${widget.limit} 组，其余合并为其他` : widget.kind === 'line' && result.group_type === 'date' ? `显示最近 ${widget.limit} 组` : `显示前 ${widget.limit} / ${result.groups_total} 组`}</span> : null}
-                          {result.date_filter_unavailable ? <Box component="span" sx={{ color: 'warning.main' }}>未设日期列，展示全部时间</Box> : null}
-                        </Stack>
-                      ) : null}
-                    </Paper>
-                  )
-                })}
-              </Box>
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(event) => void onWidgetDragEnd(event)}>
+                <SortableContext items={current.widgets.map((widget) => widget.id)} strategy={rectSortingStrategy}>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0,1fr))', gap: 2, alignItems: 'start' }}>
+                    {current.widgets.map((widget, index) => {
+                      const result = results[widget.id]
+                      const span = widget.kind === 'metric' ? (metricCount === 1 ? 12 : metricSpan) : 6
+                      return (
+                        <SortableWidget key={widget.id} id={widget.id} disabled={saving} gridColumn={{ xs: 'span 12', md: `span ${widget.wide ? 12 : span}` }}>
+                          <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+                            <Stack direction="row" alignItems="center" gap={0.5} sx={{ minWidth: 0 }}>
+                              <WidgetDragHandle label={widget.title} />
+                              <Typography sx={{ fontSize: 14, fontWeight: 600, overflowWrap: 'anywhere' }}>{widget.title}</Typography>
+                            </Stack>
+                            <IconButton size="small" aria-label={`${widget.title}的操作`} disabled={saving} onClick={(event) => setWidgetMenu({ el: event.currentTarget, widget, index })}>
+                              <MoreFilled fontSize="small" />
+                            </IconButton>
+                          </Stack>
+                          <Menu
+                            anchorEl={widgetMenu?.widget.id === widget.id ? widgetMenu.el : null}
+                            open={widgetMenu?.widget.id === widget.id}
+                            onClose={() => setWidgetMenu(null)}
+                          >
+                            <MenuItem onClick={() => widgetMenu && void widgetCommand('edit', widgetMenu.widget, widgetMenu.index)}>编辑图表</MenuItem>
+                            <MenuItem disabled={index === 0} onClick={() => widgetMenu && void widgetCommand('up', widgetMenu.widget, widgetMenu.index)}>上移</MenuItem>
+                            <MenuItem disabled={index === current.widgets.length - 1} onClick={() => widgetMenu && void widgetCommand('down', widgetMenu.widget, widgetMenu.index)}>下移</MenuItem>
+                            <MenuItem divider onClick={() => widgetMenu && void widgetCommand('delete', widgetMenu.widget, widgetMenu.index)}>移除图表</MenuItem>
+                          </Menu>
+                          <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 1, lineHeight: 1.7 }}>
+                            <Link component={RouterLink} to={`/data/${widget.table_id}`} color="text.secondary" underline="hover">{result?.table_name || tableName(widget.table_id)}</Link>
+                            {' · '}{widget.kind === 'progress' ? (widget.progress?.mode === 'quantity' ? '数值累计进度' : '任务完成进度') : aggregationLabels[widget.aggregation]}{widget.unit ? `（${widget.unit}）` : ''}
+                          </Typography>
+                          {result ? <DashboardChart widget={widget} result={result} /> : <Typography sx={{ py: 3.75, color: 'text.secondary', fontSize: 13 }}>{refreshing ? '正在汇总…' : '等待刷新数据'}</Typography>}
+                          {result?.status === 'ok' ? (
+                            <Stack direction="row" flexWrap="wrap" gap={1.5} sx={{ mt: 1.25, fontSize: 12, color: 'text.secondary' }}>
+                              {widget.kind !== 'metric' ? <span>{result.matched_rows} 条记录</span> : null}
+                              {result.ignored_rows ? <span>{result.ignored_rows} 条空值或无效数值未参与计算</span> : null}
+                              {(result.groups_total || 0) > widget.limit ? <span>{widget.kind === 'pie' ? `前 ${widget.limit} 组，其余合并为其他` : widget.kind === 'line' && result.group_type === 'date' ? `显示最近 ${widget.limit} 组` : `显示前 ${widget.limit} / ${result.groups_total} 组`}</span> : null}
+                              {result.date_filter_unavailable ? <Box component="span" sx={{ color: 'warning.main' }}>未设日期列，展示全部时间</Box> : null}
+                            </Stack>
+                          ) : null}
+                        </SortableWidget>
+                      )
+                    })}
+                  </Box>
+                </SortableContext>
+              </DndContext>
             )}
             <Stack direction="row" justifyContent="flex-end">
               <Button size="small" color="error" onClick={removeBoard}>删除此看板</Button>
@@ -823,6 +951,32 @@ export default function DashboardPage() {
                   </Typography>
                 </>
               ) : null}
+
+              <Box>
+                <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.75 }}>
+                  <Typography sx={{ fontSize: 12, color: 'text.secondary', flex: 1 }}>数据颜色</Typography>
+                  {form.colors?.length ? <Button size="small" onClick={() => setForm({ ...form, colors: [] })}>恢复默认</Button> : null}
+                </Stack>
+                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 0.75, maxHeight: 132, overflow: 'auto' }}>
+                  {colorTargets.map((target, index) => (
+                    <Stack
+                      key={`${target.label}-${index}`} direction="row" alignItems="center" spacing={0.75}
+                      sx={{ minWidth: 0, px: 0.75, py: 0.5, border: 1, borderColor: 'divider', borderRadius: 1 }}
+                    >
+                      <Box
+                        component="input" type="color" value={colorValue(index)} aria-label={`${target.label}颜色`}
+                        onChange={(event) => setColor(index, event.target.value)}
+                        sx={{ width: 26, height: 26, p: 0, border: 0, borderRadius: 0.75, bgcolor: 'transparent', cursor: 'pointer', flexShrink: 0 }}
+                      />
+                      <Typography noWrap title={target.label} sx={{ fontSize: 12, minWidth: 0 }}>{target.label}</Typography>
+                      <Typography sx={{ fontSize: 10.5, color: 'text.disabled', ml: 'auto', flexShrink: 0 }}>{colorValue(index).toUpperCase()}</Typography>
+                    </Stack>
+                  ))}
+                </Box>
+                <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.5 }}>
+                  {form.kind === 'pie' ? '按分类顺序取色；不设置时使用默认配色。' : form.kind === 'metric' || form.kind === 'progress' ? '不设置时跟随主题主色。' : '柱状图和折线图按系列顺序取色；不设置时使用默认配色。'}
+                </Typography>
+              </Box>
 
               <Accordion disableGutters sx={{ border: 1, borderColor: 'divider', borderRadius: 1, '&:before': { display: 'none' } }}>
                 <AccordionSummary expandIcon={<ChevronDown fontSize="small" />}>

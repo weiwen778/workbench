@@ -250,3 +250,18 @@ def test_record_search_matches_values_not_internal_field_keys(auth):
     found=auth.get('/api/v1/search',params={'q':'987654321','kind':'records'}).json()
     assert found['total']==1 and '金额：987654321' in found['items'][0]['excerpt']
     assert key not in found['items'][0]['excerpt']
+
+
+def test_backups_are_admin_only(auth, db):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.models import User
+    from app.security import hash_password
+    db.add(User(username='backup-viewer', password_hash=hash_password('viewer12345')))
+    db.commit()
+    with TestClient(app) as other:
+        other.get('/api/v1/health')
+        login = other.post('/api/v1/auth/login', json={'username': 'backup-viewer', 'password': 'viewer12345'})
+        assert login.status_code == 200, login.text
+        assert other.get('/api/v1/backups').status_code == 403
+        assert other.get('/api/v1/backups/recovery-key').status_code == 403

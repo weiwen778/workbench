@@ -77,6 +77,11 @@ export default function TranslatePage() {
   const [historyTotal, setHistoryTotal] = useState(0)
   const [historyQuery, setHistoryQuery] = useState('')
   const [historyProvider, setHistoryProvider] = useState('')
+  const historyQueryRef = useRef(historyQuery)
+  const historyProviderRef = useRef(historyProvider)
+  const historyRequest = useRef(0)
+  historyQueryRef.current = historyQuery
+  historyProviderRef.current = historyProvider
   const [page, setPage] = useState(1)
   const pageSize = 20
   const [detail, setDetail] = useState<any | null>(null)
@@ -114,14 +119,16 @@ export default function TranslatePage() {
   }, [])
 
   const loadHistory = useCallback(async (target = page) => {
+    const request = ++historyRequest.current
     try {
       const params: Record<string, any> = { page: target, page_size: pageSize }
-      if (historyQuery.trim()) params.q = historyQuery.trim()
-      if (historyProvider) params.provider = historyProvider
+      if (historyQueryRef.current.trim()) params.q = historyQueryRef.current.trim()
+      if (historyProviderRef.current) params.provider = historyProviderRef.current
       const { data } = await http.get('/translation-history', { params })
+      if (request !== historyRequest.current) return
       setHistory(data.items); setHistoryTotal(data.total); setPage(target)
     } catch (error) { toast.error(apiError(error).message) }
-  }, [page, historyQuery, historyProvider])
+  }, [page, pageSize])
 
   const loadFavorites = async () => {
     try { setFavorites((await http.get('/translation-favorites')).data.items) }
@@ -431,12 +438,12 @@ export default function TranslatePage() {
             <Typography sx={{ fontSize: 13, fontWeight: 600 }}>历史</Typography>
             <TextField
               size="small" value={historyQuery} placeholder="搜索原文或译文" sx={{ width: 190 }}
-              onChange={(event) => { setHistoryQuery(event.target.value); if (historyTimer.current) window.clearTimeout(historyTimer.current); historyTimer.current = window.setTimeout(() => void loadHistory(1), 300) }}
+              onChange={(event) => { const value = event.target.value; historyQueryRef.current = value; setHistoryQuery(value); if (historyTimer.current) window.clearTimeout(historyTimer.current); historyTimer.current = window.setTimeout(() => void loadHistory(1), 300) }}
               InputProps={{ startAdornment: <Search sx={{ fontSize: 16, mr: 0.5, color: 'text.secondary' }} /> }}
             />
             <FormControl size="small" sx={{ width: 150 }}>
               <InputLabel shrink>服务</InputLabel>
-              <Select label="服务" displayEmpty value={historyProvider} onChange={(event) => { setHistoryProvider(event.target.value); window.setTimeout(() => void loadHistory(1), 0) }}>
+              <Select label="服务" displayEmpty value={historyProvider} onChange={(event) => { const value = event.target.value; historyProviderRef.current = value; setHistoryProvider(value); void loadHistory(1) }}>
                 <MenuItem value="">全部服务</MenuItem>
                 {connections.map((connection) => <MenuItem key={connection.provider} value={connection.provider}>{connection.name}</MenuItem>)}
               </Select>

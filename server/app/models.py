@@ -284,6 +284,7 @@ class FileObject(Base):
     __tablename__ = "files"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
     storage_key: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
     original_name: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -392,8 +393,157 @@ class Memo(Base, TimestampMixin):
     content: Mapped[str] = mapped_column(String(2000), nullable=False)
     category: Mapped[str | None] = mapped_column(String(80), index=True)
     color: Mapped[str] = mapped_column(String(16), default="default")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, index=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
+
+
+# ---------------------------------------------------------------- 白板
+
+
+class Whiteboard(Base, TimestampMixin):
+    __tablename__ = "whiteboards"
+    __table_args__ = (Index("ix_whiteboards_user_updated", "user_id", "updated_at", "id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(120), default="未命名白板", nullable=False)
+    scene: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+
+class WhiteboardAsset(Base):
+    __tablename__ = "whiteboard_assets"
+
+    # Excalidraw fileIds are content hashes, so the same screenshot can collide
+    # across accounts. Assets are therefore keyed by (owner, fileId).
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    storage_key: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+    content_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+# ---------------------------------------------------------------- 信息聚合
+
+
+class FeedSnapshot(Base):
+    """Shared cache/status for one public hot source."""
+
+    __tablename__ = "feed_snapshots"
+
+    source_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    entries: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    provider: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    provider_note: Mapped[str] = mapped_column(String(300), default="", nullable=False)
+    upstream_updated_at: Mapped[datetime | None] = mapped_column(DateTime)
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_error: Mapped[str | None] = mapped_column(String(1000))
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    etag: Mapped[str | None] = mapped_column(String(500))
+    last_modified: Mapped[str | None] = mapped_column(String(500))
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class FeedSubscription(Base, TimestampMixin):
+    """Per-user RSS/Atom subscription; deleted rows are retained for favourites."""
+
+    __tablename__ = "feed_subscriptions"
+    __table_args__ = (
+        UniqueConstraint("user_id", "url_key", name="uq_feed_subscription_user_url"),
+        Index("ix_feed_subscriptions_due", "enabled", "deleted_at", "next_attempt_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    url_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), default="订阅源", nullable=False)
+    feed_kind: Mapped[str] = mapped_column(String(16), default="rss", nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    default_key: Mapped[str | None] = mapped_column(String(40))
+    etag: Mapped[str | None] = mapped_column(String(500))
+    last_modified: Mapped[str | None] = mapped_column(String(500))
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_error: Mapped[str | None] = mapped_column(String(1000))
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class FeedEntry(Base):
+    """One item inside a subscription, with per-account read/favourite state."""
+
+    __tablename__ = "feed_entries"
+    __table_args__ = (
+        UniqueConstraint("subscription_id", "entry_key", name="uq_feed_entry_subscription_key"),
+        Index("ix_feed_entries_subscription_order", "subscription_id", "published_at", "discovered_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    subscription_id: Mapped[int] = mapped_column(
+        ForeignKey("feed_subscriptions.id", ondelete="CASCADE"), index=True
+    )
+    entry_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    external_id: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    title: Mapped[str] = mapped_column(String(1000), nullable=False)
+    url: Mapped[str] = mapped_column(String(2048), default="", nullable=False)
+    summary: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    language: Mapped[str] = mapped_column(String(16), default="", nullable=False)
+    link_kind: Mapped[str] = mapped_column(String(16), default="article", nullable=False)
+    discussion_url: Mapped[str] = mapped_column(String(2048), default="", nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime)
+    discovered_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime)
+    favorite_at: Mapped[datetime | None] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+
+class FeedTranslation(Base):
+    """Shared title-translation cache keyed by source text and target language."""
+
+    __tablename__ = "feed_translations"
+    __table_args__ = (
+        UniqueConstraint("text_hash", "target_lang", name="uq_feed_translation_text_lang"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    text_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    target_lang: Mapped[str] = mapped_column(String(16), nullable=False)
+    source_text: Mapped[str] = mapped_column(Text, nullable=False)
+    target_text: Mapped[str] = mapped_column(Text, nullable=False)
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    model: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+
+# ---------------------------------------------------------------- 文档工作台
+
+
+class DocumentProject(Base, TimestampMixin):
+    """A saved local-first PDF / spreadsheet / document editing project."""
+
+    __tablename__ = "document_projects"
+    __table_args__ = (
+        Index("ix_document_projects_user_kind_updated", "user_id", "kind", "updated_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)  # pdf | sheet | document
+    title: Mapped[str] = mapped_column(String(200), default="未命名项目", nullable=False)
+    state: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
 
 # ---------------------------------------------------------------- 翻译

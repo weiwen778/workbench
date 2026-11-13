@@ -47,8 +47,8 @@ export default function AttachmentPreview({ open, file, onClose }: { open: boole
       try {
         const response = await http.get(`/files/${file.id}/content`, { responseType: 'arraybuffer' })
         if (current !== sequence.current) return
-        const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist')
-        const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default
+        const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist/legacy/build/pdf.mjs')
+        const workerUrl = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default
         GlobalWorkerOptions.workerSrc = workerUrl
         const task = getDocument({
           data: new Uint8Array(response.data),

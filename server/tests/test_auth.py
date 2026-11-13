@@ -89,6 +89,28 @@ def test_logout_revokes_session(auth):
     assert auth.get("/api/v1/auth/me").status_code == 401
 
 
+def test_logout_revokes_copied_cookie(auth):
+    from app.config import settings
+
+    token = auth.cookies.get(settings.cookie_name)
+    assert token
+    assert auth.post("/api/v1/auth/logout").status_code == 200
+    auth.cookies.set(settings.cookie_name, token, path="/")
+    assert auth.get("/api/v1/auth/me").status_code == 401
+
+
+def test_login_lockout_applies_across_proxy_addresses(auth):
+    from app.db import SessionLocal
+    from app.models import LoginAttempt
+
+    with SessionLocal() as session:
+        for index in range(5):
+            session.add(LoginAttempt(username='admin', ip=f'198.51.100.{index}', success=False))
+        session.commit()
+    response = auth.post('/api/v1/auth/login', json={'username': 'admin', 'password': 'admin12345'})
+    assert response.status_code == 429, response.text
+
+
 def test_checkin_navigation_labels_persist_without_affecting_other_preferences(auth):
     initial = auth.get('/api/v1/preferences').json()
     assert initial['checkin_shop_label'] == '店铺打卡'

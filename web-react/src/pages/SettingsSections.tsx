@@ -239,7 +239,7 @@ export function AgentsSection() {
         </SectionTitle>
         {tokens.length ? (
           <DataTable
-            rows={tokens} loading={loading} empty="还没有令牌" maxHeight={320}
+            rows={tokens} loading={loading} empty="还没有令牌" maxHeight={320} autoRowHeight
             columns={[
               {
                 key: 'name', label: 'Agent', width: 190,
@@ -250,7 +250,11 @@ export function AgentsSection() {
                   </Box>
                 ),
               },
-              { key: 'scopes', label: '权限', width: 260, render: (row) => row.scopes.map((scope: string) => <Chip key={scope} size="small" label={grantLabels[scope] || scope} sx={{ mr: 0.5, mb: 0.25 }} />) },
+              { key: 'scopes', label: '权限', width: 260, render: (row) => (
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, py: 0.25 }}>
+                  {row.scopes.map((scope: string) => <Chip key={scope} size="small" label={grantLabels[scope] || scope} />)}
+                </Box>
+              ) },
               {
                 key: 'expires_at', label: '有效期', width: 150,
                 render: (row) => {

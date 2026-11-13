@@ -11,10 +11,12 @@ export default function LoginPage() {
   const [form, setForm] = useState({ username: '', password: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const redirectParam = params.get('redirect') || '/checkins'
+  const redirect = redirectParam.startsWith('/') && !redirectParam.startsWith('//') ? redirectParam : '/checkins'
 
   useEffect(() => {
-    if (session.loaded && session.user) navigate('/checkins', { replace: true })
-  }, [session.loaded, session.user, navigate])
+    if (session.loaded && session.user) navigate(redirect, { replace: true })
+  }, [session.loaded, session.user, navigate, redirect])
 
   const submit = async (event?: React.FormEvent) => {
     event?.preventDefault()
@@ -22,7 +24,6 @@ export default function LoginPage() {
     setLoading(true); setError('')
     try {
       await login(form.username.trim(), form.password)
-      const redirect = params.get('redirect') || '/checkins'
       navigate(redirect, { replace: true })
     } catch (err) {
       setError(apiError(err).message)

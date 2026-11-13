@@ -1,21 +1,23 @@
+import { memo } from 'react'
 import { Box, Button, LinearProgress, Typography, useTheme } from '@mui/material'
 import { Direction } from '@/icons'
 import { useNavigate } from 'react-router-dom'
-import { aggregationLabels, formatDashboardNumber, type DashboardResult, type DashboardWidget, type ProgressValue } from '@/dashboard'
+import { aggregationLabels, chartPalette, formatDashboardNumber, isHexColor, type DashboardResult, type DashboardWidget, type ProgressValue } from '@/dashboard'
 import { useSession } from '@/session'
 import { BarChart, LineChart, PieChart } from '@mui/x-charts'
 
-export default function DashboardChart({ widget, result }: { widget: DashboardWidget; result: DashboardResult }) {
+export default memo(function DashboardChart({ widget, result }: { widget: DashboardWidget; result: DashboardResult }) {
   const theme = useTheme()
   if (result.status === 'error') {
     return <Box sx={{ minHeight: 130, display: 'grid', placeItems: 'center', color: 'error.main', p: 2.5, textAlign: 'center', fontSize: 13 }}>{result.message}</Box>
   }
   if (widget.kind === 'progress') return <TaskProgress widget={widget} result={result} />
+  const customColors = (widget.colors || []).filter(isHexColor)
   if (widget.kind === 'metric') {
     return (
       <Box sx={{ pt: 1.75 }}>
         <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, overflowWrap: 'anywhere' }}>
-          <Box component="strong" sx={{ fontSize: 'clamp(24px, 11cqw, 40px)', whiteSpace: 'nowrap', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{formatDashboardNumber(result.value, widget.decimals)}</Box>
+          <Box component="strong" sx={{ fontSize: 'clamp(24px, 11cqw, 40px)', whiteSpace: 'nowrap', fontWeight: 600, fontVariantNumeric: 'tabular-nums', ...(customColors[0] ? { color: customColors[0] } : {}) }}>{formatDashboardNumber(result.value, widget.decimals)}</Box>
           <Typography component="span" sx={{ fontSize: 12, color: 'text.secondary' }}>{widget.unit}</Typography>
         </Box>
         <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 1.25 }}>{aggregationLabels[widget.aggregation]} · {result.matched_rows ?? 0} 条记录</Typography>
@@ -45,7 +47,10 @@ export default function DashboardChart({ widget, result }: { widget: DashboardWi
   const shortLabel = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) ? value.slice(2) : Array.from(value).length > 8 ? Array.from(value).slice(0, 7).join('') + '…' : value
   const compact = (value: number) => Math.abs(value) >= 1e8 ? `${formatDashboardNumber(value / 1e8, 1)}亿` : Math.abs(value) >= 1e4 ? `${formatDashboardNumber(value / 1e4, 1)}万` : formatDashboardNumber(value, 1)
   const format = (value: string | number | null | undefined) => formatDashboardNumber(value, widget.decimals)
-  const palette = [primary, '#448361', '#d9730d', '#9065b0', '#c14c8a', '#cb912f', '#9f6b53', '#787774']
+  const palette = chartPalette(primary)
+  const pickColor = (index: number) => customColors[index] || palette[index % palette.length]
+  const seriesColors = seriesData.map((_, index) => pickColor(index))
+  const pieColors = labels.map((_, index) => pickColor(index))
   const seriesKeys = seriesData.map((_, index) => `series${index}`)
   const dataset = labels.map((label, index) => ({
     label,
@@ -63,7 +68,7 @@ export default function DashboardChart({ widget, result }: { widget: DashboardWi
   const chart = widget.kind === 'pie' ? (
     <PieChart
       height={300}
-      colors={palette}
+      colors={pieColors}
       series={[{
         type: 'pie',
         data: labels.map((label, index) => ({ id: index, value: Math.max(0, seriesData[0]?.values[index] ?? 0), label })),
@@ -83,7 +88,7 @@ export default function DashboardChart({ widget, result }: { widget: DashboardWi
       yAxis={[{ valueFormatter: compact }]}
       series={seriesData.map((series, index) => ({ dataKey: seriesKeys[index], label: series.name, valueFormatter }))}
       height={300}
-      colors={palette}
+      colors={seriesColors}
       grid={{ horizontal: true }}
       legend={legend}
       sx={chartSx}
@@ -95,7 +100,7 @@ export default function DashboardChart({ widget, result }: { widget: DashboardWi
       yAxis={[{ valueFormatter: compact }]}
       series={seriesData.map((series, index) => ({ dataKey: seriesKeys[index], label: series.name, valueFormatter, connectNulls: false }))}
       height={300}
-      colors={palette}
+      colors={seriesColors}
       grid={{ horizontal: true }}
       legend={legend}
       sx={chartSx}
@@ -126,13 +131,14 @@ export default function DashboardChart({ widget, result }: { widget: DashboardWi
       </Box>
     </Box>
   )
-}
+})
 
 function TaskProgress({ widget, result }: { widget: DashboardWidget; result: DashboardResult }) {
   const navigate = useNavigate()
   const session = useSession()
   if (!result.progress) return null
   const progress = result.progress
+  const accent = (widget.colors || []).find(isHexColor)
   const unit = widget.unit || (widget.progress?.mode === 'tasks' ? '项' : '')
   const format = (value: string) => formatDashboardNumber(value, widget.decimals)
   const percent = (value: ProgressValue) => value.percentage === null ? '—' : `${formatDashboardNumber(value.percentage, 1)}%`
@@ -159,9 +165,9 @@ function TaskProgress({ widget, result }: { widget: DashboardWidget; result: Das
             {widget.progress?.mode === 'tasks' && widget.progress.due_field ? ` · 逾期未完成 ${progress.overdue_rows} 项` : ''}
           </Typography>
         </Box>
-        {widget.progress?.display !== 'circle' ? <Typography sx={{ fontSize: 25, fontWeight: 600, color: 'primary.main' }}>{percent(progress)}</Typography> : null}
+        {widget.progress?.display !== 'circle' ? <Typography sx={{ fontSize: 25, fontWeight: 600, color: accent || 'primary.main' }}>{percent(progress)}</Typography> : null}
       </Box>
-      <LinearProgress variant="determinate" value={clamped(progress)} sx={{ height: 12, borderRadius: 6, bgcolor: 'action.hover' }} />
+      <LinearProgress variant="determinate" value={clamped(progress)} sx={{ height: 12, borderRadius: 6, bgcolor: 'action.hover', ...(accent ? { '& .MuiLinearProgress-bar': { bgcolor: accent } } : {}) }} />
       {result.progress_groups?.length ? (
         <Box sx={{ display: 'grid', gap: 2, borderTop: 1, borderColor: 'divider', pt: 2.25, mt: 2.75 }}>
           {result.progress_groups.map((group, index) => (
@@ -172,7 +178,7 @@ function TaskProgress({ widget, result }: { widget: DashboardWidget; result: Das
                   {format(group.actual)} / {format(group.target)} {unit} · {percent(group)} <Direction sx={{ fontSize: 14 }} />
                 </Box>
               </Box>
-              <LinearProgress variant="determinate" value={clamped(group)} sx={{ height: 7, borderRadius: 4, bgcolor: 'action.hover' }} />
+              <LinearProgress variant="determinate" value={clamped(group)} sx={{ height: 7, borderRadius: 4, bgcolor: 'action.hover', ...(accent ? { '& .MuiLinearProgress-bar': { bgcolor: accent } } : {}) }} />
             </Box>
           ))}
         </Box>

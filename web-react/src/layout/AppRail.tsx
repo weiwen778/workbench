@@ -5,9 +5,14 @@ import {
 } from '@mui/material'
 import {
   ChecklistRtl, EventAvailable, Image, Insights, Logout, MenuBook, Person, Settings,
-  StickyNote2, TableChart, Translate,
+  StickyNote2, SwapHoriz, TableChart, Translate,
 } from '@mui/icons-material'
 import LinkIcon from '@mui/icons-material/Link'
+import PaletteIcon from '@mui/icons-material/Palette'
+import QrCode2Icon from '@mui/icons-material/QrCode2'
+import BrushIcon from '@mui/icons-material/Brush'
+import NewspaperIcon from '@mui/icons-material/Newspaper'
+import DescriptionIcon from '@mui/icons-material/Description'
 import { logout, useSession } from '@/session'
 import { preloadPath } from '@/router/preload'
 
@@ -18,9 +23,15 @@ const mainItems = [
   { key: 'notes', label: '笔记', path: '/notes', icon: MenuBook },
   { key: 'memos', label: '便利贴', path: '/memos', icon: StickyNote2 },
   { key: 'visualizations', label: '看板', path: '/visualizations', icon: Insights },
+  { key: 'feeds', label: '信息聚合', path: '/feeds', icon: NewspaperIcon },
+  { key: 'docs', label: '文档工作台', path: '/docs', icon: DescriptionIcon },
   { key: 'bookmarks', label: '网址', path: '/bookmarks', icon: LinkIcon },
   { key: 'translate', label: '翻译', path: '/translate', icon: Translate },
   { key: 'images', label: '图片处理', path: '/images', icon: Image },
+  { key: 'convert', label: '格式转换', path: '/convert', icon: SwapHoriz },
+  { key: 'color', label: '取色对比', path: '/color', icon: PaletteIcon },
+  { key: 'codes', label: '二维码条码', path: '/codes', icon: QrCode2Icon },
+  { key: 'whiteboards', label: '白板', path: '/whiteboards', icon: BrushIcon },
 ]
 
 export default function AppRail() {

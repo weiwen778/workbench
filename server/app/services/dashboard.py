@@ -2,6 +2,7 @@
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation, localcontext
 from typing import Literal
+import re
 import uuid
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -60,7 +61,16 @@ class Widget(BaseModel):
     decimals: int = Field(default=2, ge=0, le=6)
     unit: str = Field(default='', max_length=12)
     wide: bool = False
+    colors: list[str] = Field(default_factory=list, max_length=32)
     progress: ProgressConfig | None = None
+
+    @field_validator('colors')
+    @classmethod
+    def valid_colors(cls, values):
+        for value in values:
+            if not re.fullmatch(r'#[0-9a-fA-F]{6}', value):
+                raise ValueError('颜色格式应为 #RRGGBB')
+        return values
 
     @model_validator(mode='after')
     def valid_series(self):

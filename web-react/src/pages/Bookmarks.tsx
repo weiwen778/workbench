@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Box, Button, Card, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem,
   Stack, TextField, Tooltip, Typography,
@@ -16,6 +16,8 @@ type Item = { id: number; url: string; title: string; icon_url: string; category
 export default function BookmarksPage() {
   const location = useLocation()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const focusId = searchParams.get('focus')
   const queryCategory = new URLSearchParams(location.search).get('category') || '__all'
 
   const [items, setItems] = useState<Item[]>([])
@@ -79,6 +81,18 @@ export default function BookmarksPage() {
       : { url: '', title: '', icon_url: '', category: queryCategory.startsWith('__') ? '' : queryCategory, description: '' })
     setDialog(true)
   }
+
+  const focusOpened = useRef<number | null>(null)
+  useEffect(() => {
+    if (!focusId) return
+    const id = Number(focusId)
+    const item = items.find((entry) => entry.id === id)
+    if (item && focusOpened.current !== id) {
+      focusOpened.current = id
+      openForm(item)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId, items])
 
   const parseTitle = async (manual = true) => {
     const target = normalizeUrl()

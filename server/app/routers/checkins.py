@@ -4,7 +4,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -171,7 +171,7 @@ def history(
         stmt = stmt.where(CheckinInstance.period_start >= start)
     if end:
         stmt = stmt.where(CheckinInstance.period_start <= end)
-    total = len(list(db.scalars(stmt).all()))
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = list(db.scalars(stmt.offset((page - 1) * page_size).limit(page_size)).all())
     refresh_locks(db, rows)
     db.commit()

@@ -1,3 +1,6 @@
+// Excalidraw loads fonts/locales from this path; assets are bundled under public/.
+;(window as Window & { EXCALIDRAW_ASSET_PATH?: string }).EXCALIDRAW_ASSET_PATH = '/excalidraw-assets/'
+
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import '@fontsource-variable/ibm-plex-sans'

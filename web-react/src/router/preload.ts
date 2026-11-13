@@ -8,6 +8,12 @@ const loaders: Array<[string, () => Promise<unknown>]> = [
   ['/memos', () => import('@/pages/Memos')],
   ['/translate', () => import('@/pages/Translate')],
   ['/images', () => import('@/pages/Images')],
+  ['/convert', () => import('@/pages/Convert')],
+  ['/color', () => import('@/pages/Color')],
+  ['/codes', () => import('@/pages/Codes')],
+  ['/feeds', () => import('@/pages/Feeds')],
+  ['/docs', () => import('@/pages/Docs')],
+  ['/whiteboards', () => import('@/pages/Whiteboards')],
   ['/bookmarks', () => import('@/pages/Bookmarks')],
   ['/settings', () => import('@/pages/Settings')],
 ]

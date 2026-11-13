@@ -185,6 +185,7 @@ export default function TablesPage() {
         <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
           <Button size="small" startIcon={<Refresh fontSize="small" />} onClick={() => void load()}>刷新</Button>
           <Button size="small" startIcon={<Upload fontSize="small" />} onClick={() => setImportOpen(true)}>从 Excel 导入</Button>
+          <Button size="small" onClick={() => navigate('/docs?module=sheet')}>打开工作簿</Button>
         </Stack>
         <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
         <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => setCreateOpen(true)}>新建表格</Button>

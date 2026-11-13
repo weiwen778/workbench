@@ -14,6 +14,7 @@ export interface DashboardWidget {
   decimals: number
   unit: string
   wide: boolean
+  colors?: string[]
   progress?: ProgressConfig | null
 }
 
@@ -82,6 +83,11 @@ export interface DashboardResult {
 export const chartLabels: Record<string, string> = {
   metric: '指标卡', bar: '柱状图', line: '折线图', pie: '饼图', progress: '任务进度',
 }
+
+/** 图表默认配色（第一个颜色由主题主色补齐）。 */
+export const CHART_COLORS = ['#448361', '#d9730d', '#9065b0', '#c14c8a', '#cb912f', '#9f6b53', '#787774', '#3f7f9e']
+export const chartPalette = (primary: string) => [primary, ...CHART_COLORS]
+export const isHexColor = (value: string) => /^#[0-9a-fA-F]{6}$/.test(value)
 
 export const aggregationLabels: Record<string, string> = {
   count: '数一数有多少条记录', sum: '加起来（合计）', avg: '算平均值', min: '找最小值', max: '找最大值',

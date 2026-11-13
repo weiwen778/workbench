@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Link,
-  FormControlLabel, Menu, MenuItem, Paper, Select, Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Typography,
+  Menu, MenuItem, Paper, Select, Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material'
 import { Divider } from '@mui/material'
-import { AutoAwesome, Check, ChevronDown, Close, Delete, Edit, InfoFilled, Plus, Refresh, Sort } from '@/icons'
+import { AutoAwesome, ArrowLeft, Check, ChevronDown, Close, Delete, Edit, InfoFilled, Plus, Refresh, Sort } from '@/icons'
 import { apiError, http } from '@/api/client'
 import { confirmDialog, toast } from '@/ui/feedback'
 import { DataTable, EmptyHint, FieldRow, PageBody, PageToolbar, Pager } from '@/ui/common'
@@ -37,6 +37,7 @@ function requestId() {
 export default function TableView({ tableId }: { tableId: number }) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const recordParam = searchParams.get('record')
   const [table, setTable] = useState<any>(null)
   const [fields, setFields] = useState<Field[]>([])
   const [rows, setRows] = useState<any[]>([])
@@ -87,6 +88,7 @@ export default function TableView({ tableId }: { tableId: number }) {
   const [sortDraft, setSortDraft] = useState<any[]>([])
   const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null)
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
+  const [displayAnchor, setDisplayAnchor] = useState<HTMLElement | null>(null)
   const [selection, setSelection] = useState<number[]>([])
   const [recordOpen, setRecordOpen] = useState(false)
   const [editingRecord, setEditingRecord] = useState<any | null>(null)
@@ -141,6 +143,10 @@ export default function TableView({ tableId }: { tableId: number }) {
       if (sorts.length) params.sorts = JSON.stringify(sorts)
       const { data } = await http.get(`/tables/${tableId}/records`, { params })
       if (!viewActive.current || request !== recordsRequest.current) return
+      if (!data.items.length && page > 1) {
+        setPage(data.total > 0 ? Math.max(1, Math.ceil(data.total / pageSize)) : 1)
+        return
+      }
       setRows(data.items); setTotal(data.total)
     } catch (error) {
       if (viewActive.current && request === recordsRequest.current) {
@@ -175,10 +181,10 @@ export default function TableView({ tableId }: { tableId: number }) {
   useEffect(() => { void loadRecords() }, [loadRecords])
 
   useEffect(() => {
-    const record = searchParams.get('record')
+    const record = recordParam
     if (record) void http.get(`/records/${Number(record)}`).then(({ data }) => { setEditingRecord(data); setRecordOpen(true) }).catch((error) => toast.error(apiError(error).message))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [recordParam])
 
   const openCreate = () => {
     if (!fields.length) { toast.warning('这张表格还没有列，先在「列设置」里添加一列'); return }
@@ -359,23 +365,47 @@ export default function TableView({ tableId }: { tableId: number }) {
             <ToggleButton value="compact" aria-label="窄行高" sx={{ px: 1.25, fontSize: 11.5 }}>窄行高</ToggleButton>
             <ToggleButton value="comfortable" aria-label="宽行高" sx={{ px: 1.25, fontSize: 11.5 }}>宽行高</ToggleButton>
           </ToggleButtonGroup>
-          <FormControlLabel control={<Switch size="small" checked={striped} onChange={(event) => toggleStriped(event.target.checked)} />} label={<Typography sx={{ fontSize: 11.5 }}>斑马纹</Typography>} sx={{ ml: 0.5, mr: 0 }} />
-          <FormControlLabel control={<Switch size="small" checked={centerX} onChange={(event) => toggleCenterX(event.target.checked)} />} label={<Typography sx={{ fontSize: 11.5 }}>水平居中</Typography>} sx={{ ml: 0.5, mr: 0 }} />
-          <FormControlLabel control={<Switch size="small" checked={centerY} onChange={(event) => toggleCenterY(event.target.checked)} />} label={<Typography sx={{ fontSize: 11.5 }}>垂直居中</Typography>} sx={{ ml: 0.5, mr: 0 }} />
         </Stack>
         <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
         <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
           <Button size="small" onClick={() => setFiltersOpen(!filtersOpen)} color={filtersOpen ? 'primary' : undefined}>筛选{filters.length ? `(${filters.length})` : ''}</Button>
           <Button size="small" startIcon={<Sort fontSize="small" />} onClick={(event: any) => { setSortDraft(sorts.length ? [...sorts] : []); setSortAnchor(event.currentTarget) }}>排序{sorts.length ? `(${sorts.length})` : ''}</Button>
           <Button size="small" endIcon={<ChevronDown fontSize="small" />} onClick={(event) => setMoreAnchor(event.currentTarget)}>更多操作</Button>
-          <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
-            <MenuItem onClick={() => { setMoreAnchor(null); void reload() }}>刷新</MenuItem>
-            <MenuItem onClick={() => { setMoreAnchor(null); setFieldsOpen(true) }}>列设置</MenuItem>
-            <MenuItem onClick={() => { setMoreAnchor(null); setImportOpen(true) }}>批量导入</MenuItem>
-            <MenuItem onClick={() => { setMoreAnchor(null); setExportOpen(true) }}>导出</MenuItem>
-            <MenuItem onClick={() => { setMoreAnchor(null); setAnalysisOpen(true) }}>汇总与透视</MenuItem>
-            <MenuItem onClick={() => { setMoreAnchor(null); navigate(`/visualizations?table=${tableId}`) }}>用于数据可视化</MenuItem>
-            <MenuItem onClick={() => { setMoreAnchor(null); setDeleteOpen(true) }}>导出备份后删除表格</MenuItem>
+          <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => { setMoreAnchor(null); setDisplayAnchor(null) }}>
+            <MenuItem onMouseEnter={() => setDisplayAnchor(null)} onClick={() => { setMoreAnchor(null); void reload() }}>刷新</MenuItem>
+            <MenuItem onMouseEnter={() => setDisplayAnchor(null)} onClick={() => { setMoreAnchor(null); setFieldsOpen(true) }}>列设置</MenuItem>
+            <MenuItem
+              onMouseEnter={(event) => setDisplayAnchor(event.currentTarget)}
+              onClick={(event) => setDisplayAnchor(event.currentTarget)}
+              sx={{ display: 'flex', justifyContent: 'space-between', gap: 3 }}
+            >
+              显示设置
+              <ArrowLeft sx={{ fontSize: 16, color: 'text.disabled' }} />
+            </MenuItem>
+            <MenuItem onMouseEnter={() => setDisplayAnchor(null)} onClick={() => { setMoreAnchor(null); setImportOpen(true) }}>批量导入</MenuItem>
+            <MenuItem onMouseEnter={() => setDisplayAnchor(null)} onClick={() => { setMoreAnchor(null); setExportOpen(true) }}>导出</MenuItem>
+            <MenuItem onMouseEnter={() => setDisplayAnchor(null)} onClick={() => { setMoreAnchor(null); setAnalysisOpen(true) }}>汇总与透视</MenuItem>
+            <MenuItem onMouseEnter={() => setDisplayAnchor(null)} onClick={() => { setMoreAnchor(null); navigate(`/visualizations?table=${tableId}`) }}>用于数据可视化</MenuItem>
+            <MenuItem onMouseEnter={() => setDisplayAnchor(null)} onClick={() => { setMoreAnchor(null); setDeleteOpen(true) }}>导出备份后删除表格</MenuItem>
+          </Menu>
+          <Menu
+            anchorEl={displayAnchor} open={Boolean(displayAnchor)} onClose={() => setDisplayAnchor(null)}
+            anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+          >
+            <MenuItem disabled sx={{ opacity: 1, fontSize: 11, color: 'text.secondary', minHeight: 26 }}>显示设置</MenuItem>
+            <MenuItem onClick={() => toggleStriped(!striped)}>
+              <Switch size="small" checked={striped} onClick={(event) => event.stopPropagation()} onChange={(event) => toggleStriped(event.target.checked)} sx={{ mr: 1 }} />
+              <Typography sx={{ fontSize: 12.5 }}>斑马纹</Typography>
+            </MenuItem>
+            <MenuItem onClick={() => toggleCenterX(!centerX)}>
+              <Switch size="small" checked={centerX} onClick={(event) => event.stopPropagation()} onChange={(event) => toggleCenterX(event.target.checked)} sx={{ mr: 1 }} />
+              <Typography sx={{ fontSize: 12.5 }}>水平居中</Typography>
+            </MenuItem>
+            <MenuItem onClick={() => toggleCenterY(!centerY)}>
+              <Switch size="small" checked={centerY} onClick={(event) => event.stopPropagation()} onChange={(event) => toggleCenterY(event.target.checked)} sx={{ mr: 1 }} />
+              <Typography sx={{ fontSize: 12.5 }}>垂直居中</Typography>
+            </MenuItem>
           </Menu>
           <Menu anchorEl={sortAnchor} open={Boolean(sortAnchor)} onClose={() => setSortAnchor(null)}>
             <Box sx={{ p: 1.5, width: 340 }}>
@@ -528,6 +558,7 @@ export default function TableView({ tableId }: { tableId: number }) {
                     ),
                   },
                 ]}
+                sx={{ '& .MuiDataGrid-cell[data-field="__select"]': { fontSize: 0 } }}
               />
             </Box>
             <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 0.5 }}>

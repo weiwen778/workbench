@@ -35,6 +35,10 @@ class MemoPatch(BaseModel):
     version: int | None = None
 
 
+class MemoOrder(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=200)
+
+
 def payload(m: Memo) -> dict:
     return {
         "id": m.id,
@@ -65,7 +69,7 @@ def list_memos(
     page_size: Annotated[int,Query(ge=1,le=100)] = 50,
     db: Session = Depends(get_db),
 ):
-    stmt = select(Memo).where(Memo.deleted_at.is_(None)).order_by(Memo.updated_at.desc(),Memo.id.desc())
+    stmt = select(Memo).where(Memo.deleted_at.is_(None)).order_by(Memo.sort_order.asc(),Memo.updated_at.desc(),Memo.id.desc())
     if category == "__uncategorized__":
         stmt = stmt.where((Memo.category.is_(None)) | (Memo.category == ""))
     elif category:
@@ -111,6 +115,26 @@ def create_category(data: CategoryIn, db: Session = Depends(get_db)):
     return {"name": name}
 
 
+@router.put('/memos/order')
+def reorder_memos(data: MemoOrder, db: Session = Depends(get_db)):
+    unique_ids = list(dict.fromkeys(data.ids))
+    memos = list(db.scalars(select(Memo).where(Memo.deleted_at.is_(None)).order_by(
+        Memo.sort_order.asc(), Memo.updated_at.desc(), Memo.id.desc())).all())
+    by_id = {memo.id: memo for memo in memos}
+    if any(memo_id not in by_id for memo_id in unique_ids):
+        raise ApiError('NOT_FOUND', '部分便利贴不存在或已删除', 404)
+    # 把请求里的便利贴放回它们当前占用的位置，再统一重排为连续序号，
+    # 这样其他分类/分页里的相对顺序不变，也能修复历史数据里重复的 sort_order。
+    wanted = set(unique_ids)
+    positions = [index for index, memo in enumerate(memos) if memo.id in wanted]
+    for position, memo_id in zip(positions, unique_ids):
+        memos[position] = by_id[memo_id]
+    for index, memo in enumerate(memos):
+        memo.sort_order = index
+    db.commit()
+    return {'ok': True}
+
+
 @router.get('/memos/{memo_id}')
 def one_memo(memo_id:int,db:Session=Depends(get_db)):
     memo=db.get(Memo,memo_id)
@@ -127,11 +151,13 @@ def create_memo(payload_in: MemoIn, db: Session = Depends(get_db)):
         raise ApiError("INVALID_COLOR", "便利贴颜色不合法", 422)
     if len(content) > 2000:
         raise ApiError("MEMO_TOO_LONG", "正文最多 2000 个字符", 422)
+    lowest = db.scalar(select(func.min(Memo.sort_order)).where(Memo.deleted_at.is_(None)))
     memo = Memo(
         title=(payload_in.title or "").strip(),
         content=content,
         category=_clean_category(payload_in.category),
         color=payload_in.color,
+        sort_order=(lowest - 1) if lowest is not None else 0,
     )
     db.add(memo)
     db.commit()

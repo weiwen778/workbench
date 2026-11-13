@@ -343,3 +343,22 @@ def test_history_pagination(auth, upstream, db):
     assert len(page1["items"]) == 20
     page2 = auth.get("/api/v1/translation-history?page=2").json()
     assert len(page2["items"]) == 5
+
+
+def test_base_url_change_requires_secret_reentry(auth, upstream):
+    assert configure(auth, upstream).status_code == 200
+    response = auth.put(
+        "/api/v1/translation-connections/baidu",
+        json={"config": {"base_url": "https://127.0.0.1/new-endpoint"}},
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "CREDENTIAL_REENTRY_REQUIRED"
+
+
+def test_base_url_rejects_non_public_http_targets(auth):
+    response = auth.put(
+        "/api/v1/translation-connections/baidu",
+        json={"config": {"app_id": "a1234567", "secret": "b1234567", "base_url": "http://169.254.169.254"}},
+    )
+    assert response.status_code == 400, response.text
+    assert response.json()["code"] == "UPSTREAM_URL_REJECTED"

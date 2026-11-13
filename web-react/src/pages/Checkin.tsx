@@ -42,6 +42,7 @@ export default function CheckinPage() {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyItems, setHistoryItems] = useState<any[]>([])
   const [historyTotal, setHistoryTotal] = useState(0)
+  const [historyPage, setHistoryPage] = useState(1)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyStatus, setHistoryStatus] = useState('all')
   const [historyFrom, setHistoryFrom] = useState('')
@@ -137,7 +138,12 @@ export default function CheckinPage() {
   }
 
   useEffect(() => { if (manageOpen) void loadManage() }, [manageOpen])
-  useEffect(() => { if (historyOpen) void loadHistory() }, [historyOpen])
+  useEffect(() => {
+    if (!historyOpen) return
+    setHistoryPage(1)
+    void loadHistory(1, false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyOpen, historyStatus, historyFrom, historyTo])
 
   const createTarget = async () => {
     if (!newTarget.name.trim()) { toast.warning('请填写名称'); return }
@@ -256,14 +262,15 @@ export default function CheckinPage() {
     }
   }
 
-  const loadHistory = async () => {
+  const loadHistory = async (targetPage = historyPage, append = false) => {
     setHistoryLoading(true)
     try {
-      const reqParams: Record<string, any> = { kind: 'all', period, status: historyStatus }
+      const reqParams: Record<string, any> = { kind: 'all', period, status: historyStatus, page: targetPage, page_size: 50 }
       if (historyFrom && historyTo) { reqParams.date_from = historyFrom; reqParams.date_to = historyTo }
       if (targetId) reqParams.target_id = targetId
       const { data } = await http.get('/checkin-instances/history', { params: reqParams })
-      setHistoryItems(data.items); setHistoryTotal(data.total)
+      setHistoryItems((current) => append ? [...current, ...data.items] : data.items)
+      setHistoryTotal(data.total); setHistoryPage(data.page)
     } catch (error) { toast.error(apiError(error).message) }
     finally { setHistoryLoading(false) }
   }
@@ -539,7 +546,7 @@ export default function CheckinPage() {
           </FormControl>
           <TextField size="small" type="date" label="起始日期" InputLabelProps={{ shrink: true }} value={historyFrom} onChange={(event) => setHistoryFrom(event.target.value)} />
           <TextField size="small" type="date" label="结束日期" InputLabelProps={{ shrink: true }} value={historyTo} onChange={(event) => setHistoryTo(event.target.value)} />
-          <Button size="small" startIcon={<Refresh fontSize="small" />} onClick={() => void loadHistory()}>刷新</Button>
+          <Button size="small" startIcon={<Refresh fontSize="small" />} onClick={() => void loadHistory(1, false)}>刷新</Button>
         </Stack>
         <DataTable
           rows={historyItems}
@@ -554,7 +561,12 @@ export default function CheckinPage() {
             { key: 'completed_at', label: '完成时间', width: 110, render: (row) => row.completed_at ? formatShort(row.completed_at) : '—' },
           ]}
         />
-        {historyTotal > historyItems.length ? <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 1 }}>共 {historyTotal} 条，当前显示 {historyItems.length} 条</Typography> : null}
+        {historyTotal > historyItems.length ? (
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>
+            <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>共 {historyTotal} 条，当前显示 {historyItems.length} 条</Typography>
+            <Button size="small" disabled={historyLoading} onClick={() => void loadHistory(historyPage + 1, true)}>加载更多</Button>
+          </Stack>
+        ) : null}
       </Drawer>
     </Page>
   )

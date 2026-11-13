@@ -14,6 +14,7 @@ from ..errors import ApiError
 from ..models import LoginAttempt, User, UserSession, utcnow
 from ..security import (
     hash_password,
+    hash_token,
     new_session_token,
     session_expiry,
     verify_password,
@@ -45,13 +46,12 @@ def user_payload(user: User) -> dict:
     }
 
 
-def _recent_failures(db: Session, username: str, ip: str | None) -> int:
+def _recent_failures(db: Session, username: str) -> int:
     since = utcnow() - timedelta(seconds=settings.login_lock_seconds)
     return (
         db.scalar(
             select(func.count(LoginAttempt.id)).where(
                 LoginAttempt.username == username,
-                LoginAttempt.ip == ip,
                 LoginAttempt.success.is_(False),
                 LoginAttempt.created_at >= since,
             )
@@ -62,10 +62,10 @@ def _recent_failures(db: Session, username: str, ip: str | None) -> int:
 
 @router.post("/auth/login")
 def login(payload: LoginIn, request: Request, response: Response, db: Session = Depends(get_db)):
-    ip = request.client.host if request.client else None
+    ip = (request.client.host if request.client else "")[:64] or None
     username = payload.username.strip()
 
-    if _recent_failures(db, username, ip) >= settings.login_max_failures:
+    if _recent_failures(db, username) >= settings.login_max_failures:
         raise ApiError(
             "LOGIN_RATE_LIMITED",
             f"连续登录失败次数过多，请 {settings.login_lock_seconds // 60} 分钟后再试",
@@ -109,9 +109,14 @@ def login(payload: LoginIn, request: Request, response: Response, db: Session = 
 
 @router.post("/auth/logout")
 def logout(request: Request, response: Response, db: Session = Depends(get_db)):
-    sess = getattr(request.state, "session", None)
-    if sess is not None:
-        sess.revoked_at = utcnow()
+    token = request.cookies.get(settings.cookie_name)
+    if token:
+        db.execute(
+            update(UserSession).where(
+                UserSession.token_hash == hash_token(token),
+                UserSession.revoked_at.is_(None),
+            ).values(revoked_at=utcnow())
+        )
         db.commit()
     response.delete_cookie(settings.cookie_name, path="/")
     return {"ok": True}

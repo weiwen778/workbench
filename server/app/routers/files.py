@@ -15,14 +15,15 @@ from ..config import settings
 from ..db import get_db
 from ..deps import get_current_user
 from ..errors import ApiError
-from ..models import DataRecord, DataTable, DataTransferJob, FileObject, FileRef, Note, NoteRevision, utcnow
+from ..models import DataRecord, DataTable, DataTransferJob, DocumentProject, FileObject, FileRef, Note, NoteRevision, User, utcnow
 from ..utils import iso_z
 
 router = APIRouter(tags=["files"], dependencies=[Depends(get_current_user)])
 
 ALLOWED_EXT = {
     ".jpg", ".jpeg", ".png", ".gif", ".webp",
-    ".pdf", ".txt", ".md", ".csv", ".docx", ".xlsx", ".pptx", ".zip",
+    ".pdf", ".txt", ".md", ".csv", ".tsv", ".json", ".html", ".htm",
+    ".docx", ".xlsx", ".xls", ".xlsb", ".ods", ".pptx", ".zip",
 }
 INLINE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf", "text/plain"}
 
@@ -48,7 +49,7 @@ def file_payload(f: FileObject) -> dict:
 
 
 @router.post("/files", status_code=201)
-def upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
+def upload(file: UploadFile = File(...), user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     raw = file.file.read(settings.max_upload_bytes + 1)
     if len(raw) > settings.max_upload_bytes:
         raise ApiError(
@@ -73,6 +74,7 @@ def upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
     (target_dir / storage_key).write_bytes(raw)
 
     obj = FileObject(
+        owner_id=user.id,
         storage_key=storage_key,
         original_name=original,
         content_type=content_type,
@@ -86,27 +88,29 @@ def upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
 
 
 @router.get("/files/{file_id}")
-def metadata(file_id: int, db: Session = Depends(get_db)):
+def metadata(file_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     obj = db.get(FileObject, file_id)
     if not obj:
         raise ApiError("NOT_FOUND", "文件不存在", 404)
-    _ensure_readable(obj, db)
+    _ensure_readable(obj, db, user)
     return file_payload(obj)
 
 
-def _resolve(file_id: int, db: Session) -> tuple[FileObject, Path]:
+def _resolve(file_id: int, db: Session, user: User) -> tuple[FileObject, Path]:
     obj = db.get(FileObject, file_id)
     if not obj:
         raise ApiError("NOT_FOUND", "文件不存在", 404)
-    _ensure_readable(obj, db)
+    _ensure_readable(obj, db, user)
     path = settings.storage_dir / "files" / obj.storage_key
     if not path.exists():
         raise ApiError("FILE_MISSING", "文件已不在存储中", 410)
     return obj, path
 
 
-def _ensure_readable(obj: FileObject, db: Session) -> None:
+def _ensure_readable(obj: FileObject, db: Session, user: User) -> None:
     if obj.status == "staged":
+        if obj.owner_id is not None and obj.owner_id != user.id:
+            raise ApiError("FILE_UNAVAILABLE", "文件已过期或无权访问", 410)
         if obj.expires_at is not None and obj.expires_at > utcnow():
             return
     for ref in db.scalars(select(FileRef).where(FileRef.file_id == obj.id)).all():
@@ -120,16 +124,20 @@ def _ensure_readable(obj: FileObject, db: Session) -> None:
             note = db.get(Note, revision.note_id if revision else ref.owner_id)
             if note and note.deleted_at is None:
                 return
+        elif ref.owner_type == "document_project":
+            project = db.get(DocumentProject, ref.owner_id)
+            if project and project.user_id == user.id:
+                return
     for job in db.scalars(select(DataTransferJob).where(DataTransferJob.file_id == obj.id)).all():
         table = db.get(DataTable, job.table_id) if job.table_id else None
         if (job.expires_at is None or job.expires_at > utcnow()) and (not job.table_id or (table and table.deleted_at is None)):
             return
-    raise ApiError("FILE_UNAVAILABLE", "文件已过期或所属内容已进入回收站", 410)
+    raise ApiError("FILE_UNAVAILABLE", "文件已过期或所属内容已删除", 410)
 
 
 @router.get("/files/{file_id}/content")
-def content(file_id: int, db: Session = Depends(get_db)):
-    obj, path = _resolve(file_id, db)
+def content(file_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    obj, path = _resolve(file_id, db, user)
     inline = obj.content_type in INLINE_TYPES or obj.content_type.startswith("image/")
     return FileResponse(
         path,
@@ -141,8 +149,8 @@ def content(file_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/files/{file_id}/download")
-def download(file_id: int, db: Session = Depends(get_db)):
-    obj, path = _resolve(file_id, db)
+def download(file_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    obj, path = _resolve(file_id, db, user)
     return FileResponse(
         path,
         media_type="application/octet-stream",
@@ -152,9 +160,11 @@ def download(file_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/files/{file_id}")
-def delete_staged(file_id: int, db: Session = Depends(get_db)):
+def delete_staged(file_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     obj = db.get(FileObject, file_id)
     if not obj:
+        raise ApiError("NOT_FOUND", "文件不存在", 404)
+    if obj.owner_id is not None and obj.owner_id != user.id:
         raise ApiError("NOT_FOUND", "文件不存在", 404)
     refs = db.scalar(select(FileRef).where(FileRef.file_id == file_id).limit(1))
     if refs or obj.status == "bound":

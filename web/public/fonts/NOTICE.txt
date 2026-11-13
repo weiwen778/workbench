@@ -1,0 +1,5 @@
+Noto Sans SC subset (NotoSansSC-Regular.ttf)
+Derived from Noto Sans CJK SC, Copyright 2014-2021 Adobe (http://www.adobe.com/),
+with Reserved Font Name Source. Subset: ASCII, GB2312 common Hanzi and common punctuation.
+Licensed under the SIL Open Font License, Version 1.1.
+https://scripts.sil.org/OFL

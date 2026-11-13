@@ -18,6 +18,13 @@ const NotesPage = lazy(() => import('@/pages/Notes'))
 const MemosPage = lazy(() => import('@/pages/Memos'))
 const TranslatePage = lazy(() => import('@/pages/Translate'))
 const ImagesPage = lazy(() => import('@/pages/Images'))
+const ConvertPage = lazy(() => import('@/pages/Convert'))
+const ColorPage = lazy(() => import('@/pages/Color'))
+const CodesPage = lazy(() => import('@/pages/Codes'))
+const FeedsPage = lazy(() => import('@/pages/Feeds'))
+const DocsPage = lazy(() => import('@/pages/Docs'))
+const WhiteboardsPage = lazy(() => import('@/pages/Whiteboards'))
+const WhiteboardEditorPage = lazy(() => import('@/pages/WhiteboardEditor'))
 const BookmarksPage = lazy(() => import('@/pages/Bookmarks'))
 const SettingsPage = lazy(() => import('@/pages/Settings'))
 
@@ -63,13 +70,20 @@ function Root() {
               <Route path="/memos" element={<MemosPage />} />
               <Route path="/translate" element={<TranslatePage />} />
               <Route path="/images" element={<ImagesPage />} />
+              <Route path="/convert" element={<ConvertPage />} />
+              <Route path="/color" element={<ColorPage />} />
+              <Route path="/codes" element={<CodesPage />} />
+              <Route path="/feeds" element={<FeedsPage />} />
+              <Route path="/docs" element={<DocsPage />} />
+              <Route path="/whiteboards" element={<WhiteboardsPage />} />
+              <Route path="/whiteboards/:boardId" element={<WhiteboardEditorPage />} />
               <Route path="/bookmarks" element={<BookmarksPage />} />
               <Route path="/tasks" element={<Navigate to="/checkins" replace />} />
               <Route path="/search" element={<Navigate to="/checkins" replace />} />
               <Route path="/activity" element={<Navigate to="/checkins" replace />} />
               <Route path="/trash" element={<Navigate to="/settings/trash" replace />} />
               <Route path="/settings/trash" element={<SettingsPage section="trash" />} />
-              <Route path="/settings/navigation" element={<Navigate to="/settings" replace />} />
+              <Route path="/settings/navigation" element={<SettingsPage section="navigation" />} />
               <Route path="/settings/:section" element={<SettingsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/checkins" replace />} />

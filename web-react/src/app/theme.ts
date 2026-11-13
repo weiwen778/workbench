@@ -16,6 +16,10 @@ export function buildTheme(mode: 'light' | 'dark', themeColor: string): Theme {
   const legacyDefaults = ['#2383e2', '#1976d2']
   const primary = valid && !legacyDefaults.includes(themeColor.toLowerCase()) ? themeColor : DEFAULT_THEME_COLOR
   const dark = mode === 'dark'
+  // 弹层阴影：默认的 MUI elevation 叠加三层黑阴影，在浅色纸面背景上显得过重
+  const popoverShadow = dark
+    ? '0 8px 24px rgba(0, 0, 0, 0.5)'
+    : '0 8px 24px rgba(26, 36, 38, 0.12)'
 
   return createTheme({
     palette: {
@@ -126,7 +130,7 @@ export function buildTheme(mode: 'light' | 'dark', themeColor: string): Theme {
           },
         },
       },
-      MuiMenu: { styleOverrides: { paper: { borderRadius: 8, border: `1px solid ${dark ? '#2A373B' : '#E7EBE9'}` } } },
+      MuiMenu: { styleOverrides: { paper: { borderRadius: 8, boxShadow: popoverShadow, border: `1px solid ${dark ? '#2A373B' : '#E7EBE9'}` } } },
       MuiMenuItem: { styleOverrides: { root: { fontSize: 12.5, minHeight: 32 } } },
       MuiChip: { styleOverrides: { root: { borderRadius: 4, fontWeight: 500 }, sizeSmall: { height: 21, fontSize: 11 } } },
       MuiTableCell: {

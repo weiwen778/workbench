@@ -232,3 +232,19 @@ def test_note_can_be_moved_to_uncategorized_without_deleting_content(auth):
     folders = auth.get('/api/v1/note-folders').json()
     assert folders['uncategorized'] == 1
     assert folders['folders'][0]['note_count'] == 0
+
+
+def test_memo_manual_order(auth):
+    created = [
+        auth.post("/api/v1/memos", json={"content": f"排序测试{i}", "category": "排序测试"}).json()
+        for i in range(3)
+    ]
+    items = auth.get("/api/v1/memos?category=排序测试").json()
+    assert [item["id"] for item in items] == [created[2]["id"], created[1]["id"], created[0]["id"]]
+
+    wanted = [created[0]["id"], created[1]["id"], created[2]["id"]]
+    assert auth.put("/api/v1/memos/order", json={"ids": wanted}).status_code == 200
+    items = auth.get("/api/v1/memos?category=排序测试").json()
+    assert [item["id"] for item in items] == wanted
+
+    assert auth.put("/api/v1/memos/order", json={"ids": [created[0]["id"], 999999]}).status_code == 404

@@ -47,3 +47,11 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
 
 def current_session(request: Request) -> UserSession:
     return request.state.session
+
+
+def get_admin_user(request: Request, user: User = Depends(get_current_user)) -> User:
+    if request.headers.get("authorization"):
+        raise ApiError("ADMIN_REQUIRED", "该操作只接受管理员网页登录", 403)
+    if user.username != settings.admin_username:
+        raise ApiError("ADMIN_REQUIRED", "只有管理员可以执行该操作", 403)
+    return user
