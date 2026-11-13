@@ -1,6 +1,6 @@
 # 个人工作台（Workbench）
 
-> 仓库：<https://github.com/weiwen778/workbench_element>
+> 仓库：<https://github.com/weiwen778/workbench>
 
 单用户、自托管的个人工作台：打卡、数据可视化、表格、待办、笔记、便利贴、网址导航、翻译、图片处理、Agent 接入、备份与恢复。
 
@@ -33,8 +33,8 @@
 ### 本地运行（WSL / Linux / macOS）
 
 ```bash
-git clone https://github.com/weiwen778/workbench_element.git
-cd workbench_element
+git clone https://github.com/weiwen778/workbench.git
+cd workbench
 
 # 1. 后端依赖
 cd server
