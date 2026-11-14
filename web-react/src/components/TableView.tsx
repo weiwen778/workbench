@@ -495,8 +495,6 @@ export default function TableView({ tableId }: { tableId: number }) {
                   ...fields.map((field) => ({
                     key: field.key, label: field.name, width: field.type === 'long_text' ? 220 : field.type === 'url' ? 200 : field.type === 'number' ? 110 : 130,
                     ellipsis: true, sortable: sortableFields.some((item) => item.key === field.key),
-                    // 数字按位对齐（个位、十位、小数点在一条竖线上），其余列沿用居中/默认
-                    ...(field.type === 'number' ? { align: 'right' as const, headerAlign: 'right' as const } : {}),
                     render: (row: any) => renderCell(field, row),
                   })),
                   {
