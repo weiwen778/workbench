@@ -308,8 +308,8 @@ export default function TableView({ tableId }: { tableId: number }) {
       : display(field, value)
     return (
       <Box
-        onClick={(event) => { event.stopPropagation(); startEdit(row, field) }}
-        title={typeof content === 'string' && content ? content : undefined}
+        onDoubleClick={(event) => { event.stopPropagation(); startEdit(row, field) }}
+        title={typeof content === 'string' && content ? `${content}（双击编辑）` : '双击编辑'}
         sx={{
           minWidth: 0, width: '100%', minHeight: 22, mx: -0.5, px: 0.5, borderRadius: 0.5,
           overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
