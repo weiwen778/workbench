@@ -162,9 +162,10 @@ await page.goto(`${base}/settings/translation`, { waitUntil: 'networkidle' })
 await page.waitForTimeout(800)
 const translationText = await page.locator('main').innerText()
 // 服务显示名会随实现调整，这里只校验核心服务存在
-for (const name of ['百度', '有道', 'DeepSeek']) {
-  expect(translationText.includes(name), `翻译服务缺少 ${name}`)
-}
+// 设置页只列「已配置」服务，其余收在「添加更多服务（N）」入口后，故校验页面骨架
+expect(translationText.includes('翻译服务'), '翻译设置缺少标题')
+expect(translationText.includes('默认翻译服务'), '翻译设置缺少默认服务选择')
+expect(/添加更多服务/.test(translationText), '翻译设置缺少添加服务入口')
 await page.goto(`${base}/translate`, { waitUntil: 'networkidle' })
 await page.waitForTimeout(700)
 const translateText = await page.locator('body').innerText()
