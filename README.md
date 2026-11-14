@@ -4,7 +4,7 @@
 
 单用户、自托管的个人工作台：打卡、数据可视化、表格、待办、笔记、便利贴、网址导航、翻译、图片处理、Agent 接入、备份与恢复。
 
-当前主线是 `web-react/` 中的 **React + MUI** 前端；旧 Element Plus 版源码保留在 `web/src/`，仅用于对照和回滚。后端与数据模型保持兼容。
+当前主线是 `web-react/` 中的 **React + MUI** 前端；旧 Element Plus 源码已移除，`web/` 只保留后端托管的构建产物和静态资源。后端与数据模型保持兼容。
 
 ## 功能
 
@@ -58,7 +58,7 @@ server/app/routers/        FastAPI 路由、鉴权、请求校验
 server/app/services/       业务服务（备份、任务、翻译、信息聚合、查询）
 server/app/models.py       SQLAlchemy 模型
 server/migrations/         Alembic 迁移
-web/                       旧 Vue 3 对照实现与构建产物目录
+web/                       构建产物与静态资源（无 Vue 源码）
 ```
 
 - 浏览器本地处理：图片、PDF、表格、文档、格式转换、二维码/条码在浏览器完成解析/渲染/导出；未保存的文件不上传。
@@ -203,7 +203,7 @@ WB_E2E_PASSWORD=...
 WB_OUTPUT=../.run/react-smoke
 ```
 
-截图默认输出到 `.run/react-smoke/`。旧的 Element Plus E2E 脚本仍保留在 `e2e/`，使用独立测试库和 18746/18747 端口，避免影响开发数据。
+截图默认输出到 `.run/react-smoke/`。`e2e/` 中早期 Element Plus 脚本仅作历史参考，Vue 源码已移除，不再维护；React 入口以 `react-*.mjs` 和 `route-performance.mjs` 为准。
 
 PostgreSQL 回归可设置 `WB_TEST_DATABASE_URL`。测试只接受回环地址，数据库名必须以 `workbench_element_test` 开头；用例会重建该测试库的表，切勿指向业务数据库。
 
@@ -240,9 +240,8 @@ web-react/
   scripts/             构建辅助（预压缩等）
   Dockerfile           前端镜像构建
 web/
-  src/                 旧 Vue 3 + Element Plus 前端（仅对照）
   dist/                前端构建产物（Git 忽略，由后端托管）
-  public/              静态资源
+  public/              静态资源（PDF.js、白板字体、PDF 中文字体）
 e2e/                   Playwright 端到端测试与 fixtures
 scripts/               开发服务、模拟数据、报告生成
 deploy/                Nginx 配置、备份与恢复脚本

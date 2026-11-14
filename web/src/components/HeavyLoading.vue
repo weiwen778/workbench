@@ -1,1 +1,0 @@
-<template><div class="heavy-state" role="status">正在加载组件，首次打开可能需要几秒…</div></template><style scoped>.heavy-state{display:grid;place-items:center;min-height:160px;color:var(--wb-text-secondary);font-size:13px}</style>

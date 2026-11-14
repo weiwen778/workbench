@@ -52,4 +52,4 @@ src/
 
 ## 与旧前端的关系
 
-旧的 Vue 3 + Element Plus 源码仍保留在 `web/src`，仅用于对照和回滚；运行和构建以 `web-react` 为准。确认新前端稳定后，可以删除旧源码，并把 `web-react` 重命名为 `web`。
+旧 Vue 3 + Element Plus 源码已移除，运行和构建以 `web-react` 为准。迁移记录和旧版行为差异见 `MIGRATION.md`；如需回滚，只能从 Git 历史恢复旧提交。

@@ -18,10 +18,10 @@
 
 ## 回滚
 
-旧前端源码保留在 `web/src`。如需回滚：
+旧前端源码已从当前工作树移除；如需回滚，只能从 Git 历史恢复旧提交。当前运行和构建以 `web-react` 为准。
+
+历史旧版流程（仅记录，不再可用）：
 
 ```bash
-cd web && npm ci && npm run build   # 重新生成 Vue 产物到 web/dist
+cd web && npm ci && npm run build
 ```
-
-或使用旧镜像定义 `web/Dockerfile`。
