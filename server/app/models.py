@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     Index,
@@ -233,6 +234,43 @@ class Todo(Base, TimestampMixin):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
     sort_index: Mapped[int] = mapped_column(Integer, default=0)
     version: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class Pet(Base, TimestampMixin):
+    __tablename__ = "pets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    name: Mapped[str] = mapped_column(String(40), default="旺财", nullable=False)
+    species: Mapped[str] = mapped_column(String(16), default="dog", nullable=False)
+    satiety: Mapped[float] = mapped_column(Float, default=70.0, nullable=False)
+    cleanliness: Mapped[float] = mapped_column(Float, default=90.0, nullable=False)
+    mood: Mapped[float] = mapped_column(Float, default=80.0, nullable=False)
+    energy: Mapped[float] = mapped_column(Float, default=80.0, nullable=False)
+    health: Mapped[float] = mapped_column(Float, default=100.0, nullable=False)
+    sleeping: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    sick_since: Mapped[datetime | None] = mapped_column(DateTime)
+    sleep_started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    care_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_care_date: Mapped[date | None] = mapped_column(Date)
+    last_tick_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    last_fed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_washed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_played_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_walked_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_vet_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_treated_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_petted_at: Mapped[datetime | None] = mapped_column(DateTime)
+    poop_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    poop_progress: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    neglect_since: Mapped[datetime | None] = mapped_column(DateTime)
+    pet_bonus_hour: Mapped[datetime | None] = mapped_column(DateTime)
+    pet_bonus_total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    treats: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    daily_bonus_date: Mapped[date | None] = mapped_column(Date)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
 
 # ---------------------------------------------------------------- 数据表

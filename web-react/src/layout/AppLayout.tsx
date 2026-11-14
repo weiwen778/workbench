@@ -259,6 +259,7 @@ export default function AppLayout() {
       '/docs': '文档工作台',
       '/whiteboards': '白板',
       '/bookmarks': '网址导航',
+      '/pet': '宠物',
     } as Record<string, string>)[path] || 'Nexus'
   }, [location.pathname, location.search, data, session.user])
 
