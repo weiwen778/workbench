@@ -72,6 +72,8 @@ try {
   const sprite = page.locator('[data-pet-sprite]')
   await sprite.waitFor()
   assert.ok(await page.locator('[data-pet-room]').count())
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1))
+  assert.equal(await sprite.getAttribute('aria-hidden'), 'true')
   await page.screenshot({ path: '../.run/pet-e2e/room.png' })
 
   await page.setViewportSize({ width: 375, height: 844 })
@@ -84,8 +86,9 @@ try {
   await page.reload()
   await page.locator('[data-pet-sprite]').waitFor()
   const firstFrame = await page.locator('[data-pet-sprite]').getAttribute('data-frame')
+  assert.equal(firstFrame, '0')
   await page.waitForTimeout(700)
-  assert.equal(await page.locator('[data-pet-sprite]').getAttribute('data-frame'), firstFrame)
+  assert.equal(await page.locator('[data-pet-sprite]').getAttribute('data-frame'), '0')
 
   assert.deepEqual(errors, [])
   console.log('PASS: pet adoption, rename, reload, needs panel, feed cooldown, sleep/wake, petting, room, 375px layout and reduced motion.')
