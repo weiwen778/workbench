@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     feed_max_entries: int = Field(default=500, ge=50, le=5000)
     feed_translation_batch: int = Field(default=20, ge=1, le=50)
     feed_translation_concurrency: int = Field(default=3, ge=1, le=8)
+    feed_common_enabled: bool = True
+    feed_runsignup_countries: str = "all"
+    feed_runsignup_concurrency: int = Field(default=8, ge=1, le=16)
+    feed_runsignup_interval_seconds: int = Field(default=21600, ge=3600, le=86400)
+    feed_runsignup_window_days: int = Field(default=90, ge=30, le=365)
 
     max_bytes_baidu: int = 6000
     max_chars_youdao: int = 5000

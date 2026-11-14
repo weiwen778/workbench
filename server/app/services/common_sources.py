@@ -7,12 +7,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import time
 from calendar import monthrange
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit
 
 from bs4 import BeautifulSoup
+
+logger = logging.getLogger(__name__)
 
 from app.config import settings
 from app.services.feed_parsers import FeedParseError, clean_text, parse_datetime, safe_http_url
@@ -249,6 +253,129 @@ def parse_runsignup(html: bytes | str, country: str, start: date, end: date) -> 
             break
     rows.sort(key=lambda row: (row["date"], row["title"]))
     return rows
+
+
+def runsignup_countries() -> tuple[str, ...]:
+    """Return the configured RunSignup country codes."""
+    configured = (settings.feed_runsignup_countries or "").strip()
+    if not configured or configured.lower() == "all":
+        return RUNSIGNUP_COUNTRIES
+    codes = tuple(code.strip().upper() for code in configured.split(",") if code.strip())
+    return tuple(code for code in codes if code in RUNSIGNUP_COUNTRIES)
+
+
+def fetch_runsignup_country(country: str, start: date, end: date, state: str | None = None) -> list[dict]:
+    """Fetch RunSignup race listings for a single country or US state."""
+    params: dict[str, str] = {
+        "country": country,
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+    }
+    if state:
+        params["state"] = state
+    url = f"https://runsignup.com/Races?{urlencode(params)}"
+    response = fetch_public(
+        url,
+        timeout=settings.feed_timeout_seconds,
+        max_bytes=settings.feed_max_bytes,
+        max_redirects=settings.feed_max_redirects,
+        headers={"User-Agent": USER_AGENT},
+    )
+    return parse_runsignup(response.body, country, start, end)
+
+
+def fetch_runsignup_all(
+    start: date,
+    end: date,
+    countries: tuple[str, ...] | None = None,
+    concurrency: int = 8,
+) -> tuple[dict[str, list[dict] | None], int]:
+    """Fetch RunSignup races for many countries concurrently.
+
+    US is expanded into per-state queries; the whole country counts as one
+    failure if any state query fails.
+    """
+    if countries is None:
+        countries = runsignup_countries()
+
+    tasks: list[tuple[str, str | None]] = []
+    for country in countries:
+        if country == "US":
+            for state in RUNSIGNUP_US_STATES:
+                tasks.append(("US", state))
+        else:
+            tasks.append((country, None))
+
+    results: dict[str, list[dict] | None] = {}
+    us_state_rows: list[list[dict]] = []
+    us_failed = False
+    failures = 0
+
+    def _run(country: str, state: str | None) -> tuple[str, str | None, list[dict] | None]:
+        try:
+            rows = fetch_runsignup_country(country, start, end, state=state)
+            return (country, state, rows)
+        except Exception as exc:
+            logger.warning("RunSignup fetch failed for %s%s: %s", country, f"/{state}" if state else "", exc)
+            return (country, state, None)
+
+    with ThreadPoolExecutor(max_workers=concurrency) as executor:
+        future_to_task = {
+            executor.submit(_run, country, state): (country, state)
+            for country, state in tasks
+        }
+        for future in as_completed(future_to_task):
+            country, state, rows = future.result()
+            if country == "US":
+                if rows is None:
+                    if not us_failed:
+                        us_failed = True
+                        failures += 1
+                else:
+                    us_state_rows.append(rows)
+            else:
+                if rows is None:
+                    failures += 1
+                results[country] = rows
+
+    if us_failed:
+        results["US"] = None
+    elif us_state_rows:
+        combined: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+        for rows in us_state_rows:
+            for row in rows:
+                key = (row["date"], row["title"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                combined.append(row)
+        combined.sort(key=lambda row: (row["date"], row["title"]))
+        results["US"] = combined
+
+    return results, failures
+
+
+def merge_runsignup_entries(previous: list[dict], results: dict[str, list[dict] | None]) -> list[dict]:
+    """Merge new per-country results into the previous race list."""
+    by_country: dict[str, list[dict]] = {}
+    for row in previous:
+        by_country.setdefault(row.get("country", ""), []).append(row)
+
+    merged: list[dict] = []
+    for country, old_rows in by_country.items():
+        new_rows = results.get(country)
+        if new_rows is None:
+            merged.extend(old_rows)
+        else:
+            merged.extend(new_rows)
+
+    for country, new_rows in results.items():
+        if country not in by_country and new_rows is not None:
+            merged.extend(new_rows)
+
+    merged.sort(key=lambda row: (row.get("date", ""), row.get("title", "")))
+    return merged[:1000]
 
 
 def fetch_alibaba_rules() -> list[dict]:

@@ -13,6 +13,88 @@ from app.services.common_sources import (
 from app.services.feed_parsers import FeedParseError
 
 
+def test_merge_keeps_failed_country_and_replaces_success(monkeypatch):
+    previous = [
+        {"kind": "race", "date": "2026-11-14", "title": "Old US", "country": "US", "url": "u1", "city": "", "distance": ""},
+        {"kind": "race", "date": "2026-11-15", "title": "Old CA", "country": "CA", "url": "u2", "city": "", "distance": ""},
+    ]
+    results = {
+        "US": [{"kind": "race", "date": "2026-11-14", "title": "New US", "country": "US", "url": "u3", "city": "", "distance": ""}],
+        "CA": None,
+    }
+    merged = common_sources.merge_runsignup_entries(previous, results)
+    assert [row["title"] for row in merged] == ["New US", "Old CA"]
+
+
+def test_merge_clears_country_with_empty_success():
+    previous = [{"kind": "race", "date": "2026-11-14", "title": "Old US", "country": "US", "url": "u1", "city": "", "distance": ""}]
+    merged = common_sources.merge_runsignup_entries(previous, {"US": []})
+    assert merged == []
+
+
+def test_fetch_runsignup_all_isolates_country_failure(monkeypatch):
+    def fake(country, start, end, state=None):
+        if country == "CA":
+            return [{"kind": "race", "date": "2026-11-14", "title": "CA Race", "country": "CA", "url": "u", "city": "", "distance": ""}]
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(common_sources, "fetch_runsignup_country", fake)
+    results, failures = common_sources.fetch_runsignup_all(
+        date(2026, 11, 14), date(2026, 12, 14), countries=("CA", "GB"), concurrency=2,
+    )
+    assert results["CA"][0]["title"] == "CA Race"
+    assert results["GB"] is None
+    assert failures == 1
+
+
+def test_fetch_runsignup_all_queries_us_states(monkeypatch):
+    calls = []
+
+    def fake(country, start, end, state=None):
+        calls.append((country, state))
+        return [{"kind": "race", "date": "2026-11-14", "title": f"US {state}", "country": "US", "url": state, "city": "", "distance": ""}]
+
+    monkeypatch.setattr(common_sources, "fetch_runsignup_country", fake)
+    monkeypatch.setattr(common_sources, "RUNSIGNUP_US_STATES", ("CA", "NY"))
+    results, failures = common_sources.fetch_runsignup_all(
+        date(2026, 11, 14), date(2026, 12, 14), countries=("US",), concurrency=2,
+    )
+    assert set(calls) == {("US", "CA"), ("US", "NY")}
+    assert [row["title"] for row in results["US"]] == ["US CA", "US NY"]
+    assert failures == 0
+
+
+def test_fetch_runsignup_country_uses_start_date_end_date(monkeypatch):
+    captured = {}
+
+    def fake(url, **kwargs):
+        captured["url"] = url
+        return SimpleNamespace(body=b"<html></html>", headers={}, status=200)
+
+    monkeypatch.setattr(common_sources, "fetch_public", fake)
+    common_sources.fetch_runsignup_country("CA", date(2026, 11, 14), date(2026, 12, 14), state="NY")
+    url = captured["url"]
+    assert "country=CA" in url
+    assert "start_date=2026-11-14" in url
+    assert "end_date=2026-12-14" in url
+    assert "state=NY" in url
+    assert "start=2026-11-14" not in url
+    assert "end=2026-12-14" not in url
+
+
+def test_fetch_runsignup_all_counts_us_failure_once(monkeypatch):
+    def fake(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(common_sources, "RUNSIGNUP_US_STATES", ("CA", "NY"))
+    monkeypatch.setattr(common_sources, "fetch_runsignup_country", fake)
+    results, failures = common_sources.fetch_runsignup_all(
+        date(2026, 11, 14), date(2026, 12, 14), countries=("US",), concurrency=2,
+    )
+    assert results["US"] is None
+    assert failures == 1
+
+
 def test_parse_alibaba_uses_latest_order_and_detail_url():
     payload = {"model": [
         {"ruleId": 1001, "ruleTitle": "禁止向欧盟销售食品仿制品", "modifiedTime": 1793931200000,
