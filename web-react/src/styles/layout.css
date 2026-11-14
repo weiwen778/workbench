@@ -17,6 +17,64 @@ body,
   }
 }
 
+/* ---------------------------- 动效（motion/） ---------------------------- */
+
+/* 弹窗进场不再叠自定义缩放关键帧：
+   MUI 自己的 Fade 已经在做透明度过渡，再叠一层 scale 会让弹窗里的文字每帧重采样。 */
+
+/* 抽屉是整块面板横移：提前提到合成层，避免每帧重绘里面的表单和文字 */
+.MuiDrawer-paper {
+  will-change: transform;
+}
+
+/* 抽屉缓动交给 SpringDrawer 的 SlideProps，这里不再全局覆盖：
+   用 !important 改 .MuiDrawer-paper 会把遮罩、hover 等无关过渡一起带偏。 */
+
+/* 加载占位的呼吸方块 */
+@keyframes wb-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.94);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* 白板缩略图：悬停时极轻微倾斜，像被手指按住一角 */
+.wb-thumb {
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* 只倾斜不缩放：缩放肆会重采样缩略图里的文字，看着像在抖 */
+.wb-card:hover .wb-thumb {
+  transform: rotate(-0.8deg);
+}
+
+/* 设置里把动效速度调成「关闭」时，CSS 侧的动画也要一起停 */
+html[data-motion="off"] .MuiDialog-paper,
+html[data-motion="off"] .MuiDrawer-paper,
+html[data-motion="off"] .excalidraw .ToolIcon,
+html[data-motion="off"] .wb-thumb,
+html[data-motion="off"] .wb-pressable {
+  animation: none !important;
+  transition: none !important;
+}
+html[data-motion="off"] .wb-card:hover .wb-thumb {
+  transform: none;
+}
+
+/* 白板工具按压：Excalidraw 自己的工具按钮，按下时轻微内缩 */
+.wb-pressable,
+.excalidraw .ToolIcon {
+  transition: transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.wb-pressable:active,
+.excalidraw .ToolIcon:active {
+  transform: scale(0.94);
+}
+
 .spacer { flex: 1; }
 .toolbar-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .actions-group { display: flex; align-items: center; gap: 4px; }

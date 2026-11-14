@@ -4,20 +4,20 @@ import { Box, CircularProgress, Tab, Tabs, Typography } from '@mui/material'
 import { Page, PageToolbar } from '@/ui/common'
 
 const PdfEditor = lazy(() => import('@/docs/pdf/PdfEditor'))
-const SheetEditor = lazy(() => import('@/docs/sheet/SheetEditor'))
+const SheetEditor = lazy(() => import('@/docs/sheet/WorkbookEditor'))
 const DocEditor = lazy(() => import('@/docs/doc/DocEditor'))
 
 const TABS = [
   { key: 'pdf', label: 'PDF 编辑与处理' },
-  { key: 'sheet', label: '表格处理' },
-  { key: 'doc', label: '文档编辑' },
+  { key: 'sheet', label: '工作簿' },
+  { key: 'doc', label: 'Markdown 文档' },
 ] as const
 
 type ModuleKey = typeof TABS[number]['key']
 
 const loaders: Record<ModuleKey, () => Promise<unknown>> = {
   pdf: () => import('@/docs/pdf/PdfEditor'),
-  sheet: () => import('@/docs/sheet/SheetEditor'),
+  sheet: () => import('@/docs/sheet/WorkbookEditor'),
   doc: () => import('@/docs/doc/DocEditor'),
 }
 

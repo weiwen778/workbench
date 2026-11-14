@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  Box, Button, Card, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem,
+  Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem,
   Stack, TextField, Tooltip, Typography,
 } from '@mui/material'
+import StaggerList, { StaggerItem } from '@/motion/components/StaggerList'
+import LiftCard from '@/motion/components/LiftCard'
 import { MoreFilled, Plus } from '@/icons'
 import { apiError, http } from '@/api/client'
 import { EmptyHint, FieldRow, Page, PageBody, PageToolbar } from '@/ui/common'
@@ -199,10 +201,11 @@ export default function BookmarksPage() {
       <PageBody sx={{ overflow: 'auto' }}>
         {!filtered.length && !loading ? <EmptyHint>{items.length ? '没有找到匹配的网址' : '暂无网址'}</EmptyHint> : null}
 
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 1.5, p: 2.5, alignContent: 'start' }}>
+        <StaggerList sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 1.5, p: 2.5, alignContent: 'start' }}>
         {filtered.map((item) => (
-          <Card key={item.id} variant="outlined" sx={{
-            display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, p: 2,
+          <StaggerItem key={item.id} sx={{ display: 'flex', minWidth: 0 }}>
+          <LiftCard variant="outlined" sx={{
+            flex: 1, display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, p: 2,
             '&:hover': { bgcolor: 'action.hover' },
           }}>
             <Box component="a" href={item.url} target="_blank" rel="noopener noreferrer" title={item.description || item.url} sx={{ display: 'flex', alignItems: 'center', gap: '13px', flex: 1, minWidth: 0, textDecoration: 'none', color: 'text.primary' }}>
@@ -220,9 +223,10 @@ export default function BookmarksPage() {
               <IconButton size="small" aria-label="网址操作" onClick={(event) => setMenu({ el: event.currentTarget, item })} sx={{ fontSize: 18 }}>···</IconButton>
               {results[item.id] ? <Typography sx={{ fontSize: 10, lineHeight: '14px', color: 'text.secondary', whiteSpace: 'nowrap' }} title={results[item.id]}>{shortResult(results[item.id])}</Typography> : null}
             </Box>
-          </Card>
+          </LiftCard>
+          </StaggerItem>
         ))}
-        </Box>
+        </StaggerList>
       </PageBody>
 
       <Menu anchorEl={menu?.el} open={Boolean(menu)} onClose={() => setMenu(null)}>

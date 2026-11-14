@@ -1,10 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import {
-  Box, Button, Card, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, List, ListItem, ListItemButton, ListItemText, Menu, MenuItem, Select,
+  Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, List, ListItem, ListItemButton, ListItemText, Menu, MenuItem, Select,
   Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography, useTheme,
 } from '@mui/material'
 import { Divider } from '@mui/material'
+import LiftCard from '@/motion/components/LiftCard'
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -68,7 +69,7 @@ function SortableMemo({ id, disabled, children }: { id: number; disabled?: boole
         ref={setNodeRef}
         style={{
           transform: CSS.Transform.toString(transform),
-          transition,
+          transition: isDragging ? undefined : 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)',
           zIndex: isDragging ? 3 : undefined,
           position: 'relative',
           opacity: isDragging ? 0.65 : 1,
@@ -325,12 +326,11 @@ export default function MemosPage() {
                 }}>
                   {memos.map((memo) => (
                     <SortableMemo key={memo.id} id={memo.id} disabled={loading || ordering}>
-                      <Card variant="outlined" sx={{
+                      <LiftCard variant="outlined" sx={{
                         height: 230, display: 'flex', flexDirection: 'column', p: 1.5,
                         bgcolor: memoBg(memo.color),
                         borderColor: 'divider',
                         boxShadow: '0 1px 2px rgba(24,39,42,0.03)',
-                        transition: 'border-color .15s, box-shadow .15s',
                         '&:hover': { borderColor: 'text.disabled', boxShadow: '0 4px 12px rgba(24,39,42,0.06)' },
                       }}>
                         <Stack direction="row" alignItems="center" gap={0.5} sx={{ mb: 1.5, minWidth: 0 }}>
@@ -354,7 +354,7 @@ export default function MemosPage() {
                             <Tooltip title="更多"><IconButton size="small" aria-label="更多便利贴操作" onClick={(event) => setCardMenu({ el: event.currentTarget, memo })}><MoreFilled fontSize="small" /></IconButton></Tooltip>
                           </Stack>
                         </Stack>
-                      </Card>
+                      </LiftCard>
                       </SortableMemo>
                   ))}
                 </Box>

@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useState, type ReactNode } from 'react'
-import { Button, Drawer, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material'
+import { Button, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material'
+import SpringDrawer from '@/motion/components/SpringDrawer'
 import { http, apiError } from '@/api/client'
 import { confirmDialog, promptDialog, toast } from '@/ui/feedback'
 import { SectionTitle } from '@/ui/common'
@@ -88,7 +89,7 @@ export default function CategoryManager({ resource, onChanged, buttonSx, trigger
   return (
     <>
       {trigger ? trigger(openDrawer) : <Button size="small" onClick={openDrawer} sx={buttonSx}>管理分类</Button>}
-      <Drawer anchor="right" open={open} onClose={() => setOpen(false)} slotProps={{ paper: { sx: { width: 'min(520px, 100vw)', p: 2.5 } } }}>
+      <SpringDrawer anchor="right" open={open} onClose={() => setOpen(false)} slotProps={{ paper: { sx: { width: 'min(520px, 100vw)', p: 2.5 } } }}>
         <SectionTitle>{label}分类管理</SectionTitle>
         <Stack direction="row" spacing={1} sx={{ mb: 1.5 }}>
           <TextField fullWidth size="small" label="新分类名称" value={newName} inputProps={{ maxLength: 80 }} onChange={(event) => setNewName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void create() }} />
@@ -110,7 +111,7 @@ export default function CategoryManager({ resource, onChanged, buttonSx, trigger
           </TableBody>
         </Table>
         <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 1.5 }}>删除分类后，内容移到未分类。</Typography>
-      </Drawer>
+      </SpringDrawer>
     </>
   )
 }

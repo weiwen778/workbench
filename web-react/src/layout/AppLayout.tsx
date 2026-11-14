@@ -16,6 +16,7 @@ import { readPinnedKeys, readSidebarMode, writePinnedKeys, writeSidebarMode, SID
 import GlobalSearchDialog from '@/components/GlobalSearchDialog'
 import WorkspaceToolsDialog from '@/components/WorkspaceToolsDialog'
 import PageTransition from '@/motion/components/PageTransition'
+import SkeletonPulse from '@/motion/components/SkeletonPulse'
 import { buildGroups, toolItems, type SidebarData } from './nav'
 import { http, apiError } from '@/api/client'
 import { toggleTheme, useSession } from '@/session'
@@ -356,12 +357,7 @@ export default function AppLayout() {
             narrow={narrow}
             style={{ height: scrollable ? 'auto' : '100%', minHeight: scrollable ? '100%' : 0 }}
           >
-            <Suspense fallback={(
-              <Stack direction="row" spacing={1.5} alignItems="center" sx={{ p: 3, color: 'text.secondary' }}>
-                <CircularProgress size={18} />
-                <Typography variant="body2">正在打开…</Typography>
-              </Stack>
-            )}>
+            <Suspense fallback={<SkeletonPulse text="正在打开…" />}>
               <Outlet />
             </Suspense>
           </PageTransition>

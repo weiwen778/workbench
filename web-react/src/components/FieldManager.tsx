@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Drawer,
+  Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle,
   FormControlLabel, IconButton, MenuItem, Select, Stack, TextField, Typography,
 } from '@mui/material'
 import {
@@ -8,6 +8,7 @@ import {
 } from '@dnd-kit/core'
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import SpringDrawer from '@/motion/components/SpringDrawer'
 import { Delete, DragIndicator, Plus } from '@/icons'
 import { apiError, http } from '@/api/client'
 import { confirmDialog, toast } from '@/ui/feedback'
@@ -218,7 +219,7 @@ export default function FieldManager({ open, tableId, fields, onClose, onUpdated
 
   return (
     <>
-      <Drawer anchor="right" open={open} onClose={onClose} slotProps={{ paper: { sx: { width: { xs: '100%', sm: 580 }, p: 2.5 } } }}>
+      <SpringDrawer anchor="right" open={open} onClose={onClose} slotProps={{ paper: { sx: { width: { xs: '100%', sm: 580 }, p: 2.5 } } }}>
         <SectionTitle>列设置</SectionTitle>
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
           <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} disabled={fields.length >= 200} onClick={openAdd}>添加一列</Button>
@@ -249,7 +250,7 @@ export default function FieldManager({ open, tableId, fields, onClose, onUpdated
             </Box>
           </SortableContext>
         </DndContext>
-      </Drawer>
+      </SpringDrawer>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth={form.type === 'formula' ? 'sm' : 'xs'} fullWidth>
         <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>{editing ? '编辑列' : '添加一列'}</DialogTitle>

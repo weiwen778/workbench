@@ -29,6 +29,8 @@
     "@mui/x-data-grid": "^7.29.1",
     "@pdf-lib/fontkit": "^1.1.1",
     "@tanstack/react-query": "^5.107.1",
+    "@univerjs/preset-sheets-core": "^1.5.0",
+    "@univerjs/presets": "^1.5.0",
     "@zxing/library": "^0.21.3",
     "axios": "^1.7.9",
     "codemirror": "6.0.2",
@@ -53,6 +55,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.1",
+    "rxjs": "^7.8.2",
     "turndown": "^7.2.0",
     "turndown-plugin-gfm": "^1.0.2",
     "xlsx": "^0.18.5"

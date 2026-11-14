@@ -6,6 +6,8 @@ import {
   ToggleButton, ToggleButtonGroup, Typography, useTheme,
 } from '@mui/material'
 import { Divider } from '@mui/material'
+import StaggerList, { StaggerItem } from '@/motion/components/StaggerList'
+import LiftCard from '@/motion/components/LiftCard'
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -92,7 +94,8 @@ function SortableWidget({ id, disabled, gridColumn, children }: { id: string; di
         variant="outlined"
         style={{
           transform: CSS.Transform.toString(transform),
-          transition,
+          // 拖拽重排用长尾曲线，松手后归位有回弹感；拖拽中仍走 dnd-kit 的即时跟随
+          transition: isDragging ? undefined : 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)',
           zIndex: isDragging ? 3 : undefined,
           position: 'relative',
           opacity: isDragging ? 0.65 : 1,
@@ -602,12 +605,12 @@ export default function DashboardPage() {
 
             {boards.length ? (
               boardView === 'cards' ? (
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0,1fr))', lg: 'repeat(3, minmax(0,1fr))', xl: 'repeat(4, minmax(0,1fr))' }, gap: 1.5, alignContent: 'start' }}>
+                <StaggerList sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0,1fr))', lg: 'repeat(3, minmax(0,1fr))', xl: 'repeat(4, minmax(0,1fr))' }, gap: 1.5, alignContent: 'start' }}>
                   {visibleBoards.map((board) => {
                     const favorite = boardFavorites.includes(board.id)
                     return (
-                      <Paper
-                        key={board.id}
+                      <StaggerItem key={board.id} sx={{ display: 'flex', minWidth: 0 }}>
+                      <LiftCard
                         variant="outlined"
                         role="button"
                         tabIndex={0}
@@ -651,10 +654,11 @@ export default function DashboardPage() {
                         <Typography sx={{ fontSize: 11.5, color: 'text.disabled', mt: 'auto' }}>
                           {board.widgets.length} 张图表 · 更新于 {relativeTime(board.updated_at)}
                         </Typography>
-                      </Paper>
+                      </LiftCard>
+                      </StaggerItem>
                     )
                   })}
-                </Box>
+                </StaggerList>
               ) : (
                 <List sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, bgcolor: 'background.paper', py: 0 }}>
                   {loading ? (

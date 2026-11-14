@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import {
-  Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Drawer,
+  Alert, Box, Button, Checkbox, DialogActions, DialogContent, DialogTitle,
   FormControl, FormControlLabel, IconButton, InputLabel, MenuItem, Select, Stack, TextField, Typography,
 } from '@mui/material'
+import SpringDrawer from '@/motion/components/SpringDrawer'
 import { Paperclip, Upload } from '@/icons'
 import { apiError, http } from '@/api/client'
 import { toast } from '@/ui/feedback'
@@ -106,7 +107,7 @@ export default function RecordDrawer({
   }
 
   return (
-    <Drawer anchor="right" open={open} onClose={() => !saving && onClose()} slotProps={{ paper: { sx: { width: { xs: '100%', sm: 520 } } } }}>
+    <SpringDrawer anchor="right" open={open} onClose={() => !saving && onClose()} slotProps={{ paper: { sx: { width: { xs: '100%', sm: 520 } } } }}>
       <Box sx={{ p: 2.5, display: 'flex', flexDirection: 'column', height: '100%' }}>
         <Typography sx={{ fontSize: 16, fontWeight: 600, mb: 2 }}>{record ? '编辑这一行' : '添加一行'}</Typography>
         <Box sx={{ flex: 1, overflow: 'auto', pt: 1.25, mt: -1.25 }}>
@@ -195,6 +196,6 @@ export default function RecordDrawer({
         </Stack>
       </Box>
       <AttachmentPreview open={Boolean(preview)} file={preview} onClose={() => setPreview(null)} />
-    </Drawer>
+    </SpringDrawer>
   )
 }

@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Drawer,
+  Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider,
   IconButton, InputAdornment, List, ListItemButton, ListItemIcon, ListItemText, Stack, TextField, Tooltip, Typography,
 } from '@mui/material'
+import SpringDrawer from '@/motion/components/SpringDrawer'
 import PushPin from '@mui/icons-material/PushPin'
 import {
   DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
@@ -42,7 +43,7 @@ export function NavAllDrawer({
   })).filter((group) => group.items.length), [query])
 
   return (
-    <Drawer open={open} onClose={onClose} anchor="left" slotProps={{ paper: { sx: { width: 'min(374px, 100vw)', display: 'flex', flexDirection: 'column' } } }}>
+    <SpringDrawer open={open} onClose={onClose} anchor="left" slotProps={{ paper: { sx: { width: 'min(374px, 100vw)', display: 'flex', flexDirection: 'column' } } }}>
       <Stack direction="row" alignItems="center" spacing={1} sx={{ px: 2, minHeight: 52 }}>
         <Typography sx={{ flex: 1, fontSize: 15, fontWeight: 600 }}>全部功能</Typography>
         <IconButton size="small" aria-label="关闭全部功能" onClick={onClose}><Close fontSize="small" /></IconButton>
@@ -95,7 +96,7 @@ export function NavAllDrawer({
         <Box sx={{ flex: 1 }} />
         <Button size="small" onClick={() => { onClose(); onManage() }}>管理导航</Button>
       </Stack>
-    </Drawer>
+    </SpringDrawer>
   )
 }
 

@@ -9,6 +9,7 @@ import BackupIcon from '@mui/icons-material/Backup'
 import SpeedIcon from '@mui/icons-material/Speed'
 import { apiError } from '@/api/client'
 import { setTheme, useSession } from '@/session'
+import { MOTION_SPEED_OPTIONS, readMotionSpeed, writeMotionSpeed, type MotionSpeed } from '@/motion'
 import { useReducedMotion } from 'framer-motion'
 import { Card, AgentsSection, AiSection, SystemSection, TranslationSection } from './SettingsSections'
 import ContentDisplaySection from './settings/ContentDisplaySection'
@@ -218,10 +219,17 @@ export default function SettingsPage({ section: explicitSection }: { section?: s
 
 function AppearanceSection({ notify }: { notify: (message: string, error?: boolean) => void }) {
   const session = useSession()
+  const [motionSpeed, setMotionSpeed] = useState<MotionSpeed>(() => readMotionSpeed())
   const changeTheme = async (value: 'light' | 'dark') => {
     try { await setTheme(value); notify('主题已保存到账号。') }
     catch (error) { notify(apiError(error).message + '，已恢复原主题。', true) }
   }
+  const changeMotionSpeed = (value: MotionSpeed) => {
+    setMotionSpeed(value)
+    writeMotionSpeed(value)
+    notify(`动效速度已改为「${MOTION_SPEED_OPTIONS.find((item) => item.value === value)?.label}」。`)
+  }
+  const motionHint = MOTION_SPEED_OPTIONS.find((item) => item.value === motionSpeed)?.hint
   return (
     <Stack spacing={2}>
       <Card>
@@ -233,6 +241,22 @@ function AppearanceSection({ notify }: { notify: (message: string, error?: boole
           <ToggleButton value="light"><Sunny sx={{ mr: 1 }} />浅色</ToggleButton>
           <ToggleButton value="dark"><Moon sx={{ mr: 1 }} />深色</ToggleButton>
         </ToggleButtonGroup>
+      </Card>
+
+      <Card>
+        <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.5 }}>动效速度</Typography>
+        <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 1.25 }}>
+          控制页面切换、卡片、抽屉、弹窗等过渡的快慢。觉得画面抖动时选「关闭」最稳。
+        </Typography>
+        <ToggleButtonGroup
+          size="small" exclusive value={motionSpeed}
+          onChange={(_, value: MotionSpeed | null) => value && changeMotionSpeed(value)}
+        >
+          {MOTION_SPEED_OPTIONS.map((option) => (
+            <ToggleButton key={option.value} value={option.value}>{option.label}</ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+        <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 1.25 }}>{motionHint}</Typography>
       </Card>
     </Stack>
   )

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Box, Button, Card, Chip, IconButton, InputAdornment, Menu, MenuItem, Stack, TextField, Tooltip, Typography,
+  Box, Button, Chip, IconButton, InputAdornment, Menu, MenuItem, Stack, TextField, Tooltip, Typography,
 } from '@mui/material'
+import StaggerList, { StaggerItem } from '@/motion/components/StaggerList'
+import LiftCard from '@/motion/components/LiftCard'
 import { Brush, Edit, MoreFilled, Plus, Refresh, Search } from '@/icons'
 import { apiError } from '@/api/client'
 import { useSession } from '@/session'
@@ -160,13 +162,13 @@ export default function WhiteboardsPage() {
             {boards.length ? '没有匹配的白板' : '还没有白板。新建一个，开始画流程图、圈画截图或自由书写。'}
           </EmptyHint>
         ) : (
-          <Box className="scroll-area" sx={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gridAutoRows: 'max-content', gap: 1.5, alignContent: 'start', pb: 1 }}>
+          <StaggerList className="scroll-area" sx={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gridAutoRows: 'max-content', gap: 1.5, alignContent: 'start', pb: 1 }}>
             {filtered.map((board) => (
-              <Card
-                key={board.id} variant="outlined"
+              <StaggerItem key={board.id} sx={{ display: 'flex', minWidth: 0 }}>
+              <LiftCard
+                className="wb-card" variant="outlined"
                 sx={{
-                  display: 'flex', flexDirection: 'column', overflow: 'hidden',
-                  transition: 'border-color .15s, box-shadow .15s',
+                  flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden',
                   '&:hover': { borderColor: 'text.disabled', boxShadow: '0 4px 14px rgba(24,39,42,0.08)' },
                 }}
               >
@@ -176,7 +178,7 @@ export default function WhiteboardsPage() {
                   onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); navigate(`/whiteboards/${board.id}`) } }}
                   sx={{ cursor: 'pointer', outline: 'none', '&:focus-visible': { boxShadow: (theme) => `inset 0 0 0 2px ${theme.palette.primary.main}` } }}
                 >
-                  <Box sx={{
+                  <Box className="wb-thumb" sx={{
                     height: 92, position: 'relative', overflow: 'hidden',
                     bgcolor: (theme) => theme.palette.mode === 'dark' ? '#101719' : '#F6F8F6',
                     backgroundImage: (theme) => `radial-gradient(${theme.palette.mode === 'dark' ? '#263034' : '#DDE4DF'} 1px, transparent 1px)`,
@@ -201,9 +203,10 @@ export default function WhiteboardsPage() {
                   <IconButton size="small" aria-label={`重命名 ${board.title}`} disabled={busyId === board.id} onClick={() => void rename(board)}><Edit sx={{ fontSize: 16 }} /></IconButton>
                   <Tooltip title="更多"><IconButton size="small" aria-label={`更多白板操作 ${board.title}`} disabled={busyId === board.id} onClick={(event) => setBoardMenu({ el: event.currentTarget, board })}><MoreFilled fontSize="small" /></IconButton></Tooltip>
                 </Stack>
-              </Card>
+              </LiftCard>
+              </StaggerItem>
             ))}
-          </Box>
+          </StaggerList>
         )}
       </PageBody>
       <Menu anchorEl={boardMenu?.el || null} open={Boolean(boardMenu)} onClose={() => setBoardMenu(null)}>

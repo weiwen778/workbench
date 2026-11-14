@@ -368,7 +368,7 @@ export default function DocEditor() {
       </Stack>
 
       {loading ? <CircularProgress size={16} sx={{ position: 'absolute', right: 24, top: 18 }} /> : null}
-      {!markdown ? <Alert severity="info" variant="outlined" sx={{ mx: 1.25, mt: 0.5, py: 0.2, fontSize: 11.5 }}>支持导入 DOCX、TXT、Markdown、HTML，并导出 DOCX / HTML / Markdown / TXT / PDF。DOC/RTF/ODT 暂未开放；DOCX 页眉页脚、分页、复杂表格、修订记录可能与 Word 有差异。</Alert> : null}
+      {!markdown ? <Alert severity="info" variant="outlined" sx={{ mx: 1.25, mt: 0.5, py: 0.2, fontSize: 11.5 }}>这是 Markdown 源编辑，不是 Word 原生编辑。可导入 DOCX、TXT、Markdown、HTML，并导出新的 DOCX / HTML / Markdown / TXT / PDF；DOC/RTF/ODT 暂未开放。导入导出会丢失页眉页脚、分页、复杂表格、浮动对象、修订记录与批注。</Alert> : null}
       {error ? <Alert severity="error" sx={{ mx: 1.25, mt: 0.5, py: 0.2, fontSize: 12 }} onClose={() => setError('')}>{error}</Alert> : null}
       {warnings.length ? <Alert severity="warning" variant="outlined" sx={{ mx: 1.25, mt: 0.5, py: 0.2, fontSize: 11.5 }}>{warnings.join('；')}</Alert> : null}
       {draft ? (

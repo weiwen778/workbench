@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
-  Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer,
+  Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
   FormControl, IconButton, InputLabel, Menu, MenuItem, Paper, Popover, Select, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
 import { Divider } from '@mui/material'
+import SpringDrawer from '@/motion/components/SpringDrawer'
+import ProgressRing from '@/motion/components/ProgressRing'
+import Burst from '@/motion/components/Burst'
+import PopCheckedIcon from '@/motion/components/PopCheckedIcon'
 import PushPin from '@mui/icons-material/PushPin'
 import {
   DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
@@ -412,10 +416,16 @@ export default function CheckinPage() {
         <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
         <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
           <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>{periodLabel} {range}</Typography>
-          <Typography sx={{ fontSize: 13 }}>
-            完成 <b>{stats.completed}</b> / {stats.total}
-            <Box component="span" sx={{ color: 'text.secondary', fontSize: 12 }}>（完成率 {stats.rate === null ? '—' : `${stats.rate}%`}）</Box>
-          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Box sx={{ position: 'relative', color: 'primary.main', display: 'flex' }}>
+              <ProgressRing value={(stats.rate ?? 0) / 100} size={26} stroke={3} label={`完成率 ${stats.rate === null ? '—' : `${stats.rate}%`}`} />
+              <Burst trigger={stats.completed} size={30} color="currentColor" />
+            </Box>
+            <Typography sx={{ fontSize: 13 }}>
+              完成 <b>{stats.completed}</b> / {stats.total}
+              <Box component="span" sx={{ color: 'text.secondary', fontSize: 12 }}>（完成率 {stats.rate === null ? '—' : `${stats.rate}%`}）</Box>
+            </Typography>
+          </Stack>
         </Stack>
         <Box className="spacer" />
         <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
@@ -456,6 +466,7 @@ export default function CheckinPage() {
                         size="small"
                         checked={item.completed}
                         disabled={item.locked || busy.has(item.id)}
+                        checkedIcon={<PopCheckedIcon />}
                         onChange={() => void toggle(item)}
                         sx={{ p: 0.5 }}
                       />
@@ -518,7 +529,7 @@ export default function CheckinPage() {
         </Box>
       </Popover>
 
-      <Drawer anchor="right" open={manageOpen} onClose={() => setManageOpen(false)} slotProps={{ paper: { sx: { width: 'min(760px, 100vw)', p: 2.5 } } }}>
+      <SpringDrawer anchor="right" open={manageOpen} onClose={() => setManageOpen(false)} slotProps={{ paper: { sx: { width: 'min(760px, 100vw)', p: 2.5 } } }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
           <Typography sx={{ fontSize: 16, fontWeight: 600 }}>打卡项目与分类</Typography>
           <Button size="small" startIcon={<Upload fontSize="small" />} onClick={() => { setImportError(''); setImportResult(null); setImportOpen(true) }}>导入打卡数据</Button>
@@ -585,7 +596,7 @@ export default function CheckinPage() {
             },
           ]}
         />
-      </Drawer>
+      </SpringDrawer>
 
       <Menu anchorEl={targetMenu?.el || null} open={Boolean(targetMenu)} onClose={() => setTargetMenu(null)}>
         <MenuItem onClick={() => { const row = targetMenu?.row; setTargetMenu(null); if (row) setTargetEdit({ id: row.id, name: row.name, platform: row.platform || '' }) }}>修改</MenuItem>
@@ -656,7 +667,7 @@ export default function CheckinPage() {
         <DialogActions sx={{ px: 3, pb: 2 }}><Button size="small" onClick={() => setImportOpen(false)}>关闭</Button></DialogActions>
       </Dialog>
 
-      <Drawer anchor="right" open={historyOpen} onClose={() => setHistoryOpen(false)} slotProps={{ paper: { sx: { width: 'min(680px, 100vw)', p: 2.5 } } }}>
+      <SpringDrawer anchor="right" open={historyOpen} onClose={() => setHistoryOpen(false)} slotProps={{ paper: { sx: { width: 'min(680px, 100vw)', p: 2.5 } } }}>
         <Typography sx={{ fontSize: 16, fontWeight: 600, mb: 2 }}>打卡历史</Typography>
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
           <FormControl size="small" sx={{ width: 110 }}>
@@ -688,7 +699,7 @@ export default function CheckinPage() {
             <Button size="small" disabled={historyLoading} onClick={() => void loadHistory(historyPage + 1, true)}>加载更多</Button>
           </Stack>
         ) : null}
-      </Drawer>
+      </SpringDrawer>
     </Page>
   )
 }

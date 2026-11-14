@@ -5,6 +5,7 @@ import {
   Menu, MenuItem, Paper, Popover, Select, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
 import { Divider } from '@mui/material'
+import PopCheckedIcon from '@/motion/components/PopCheckedIcon'
 import {
   DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
 } from '@dnd-kit/core'
@@ -311,6 +312,7 @@ export default function TodosPage() {
               data-todo-id={item.id}
               checked={kind === 'completed' ? true : Boolean(item.completed || completing.has(item.id))}
               disabled={!item.can_toggle || toggling.has(item.id)}
+              checkedIcon={<PopCheckedIcon />}
               onChange={() => void toggleCompletion(item)}
             />
           </span>
@@ -332,6 +334,7 @@ export default function TodosPage() {
                 <div key={child.id} className={`subtask-row${completing.has(child.id) ? ' is-completing' : ''}`} data-todo-id={child.id}>
                   <Checkbox
                     size="small" checked={Boolean(child.completed || completing.has(child.id))}
+                    checkedIcon={<PopCheckedIcon />}
                     disabled={toggling.has(child.id)} onChange={() => void toggleCompletion(child)}
                     sx={{ p: 0.4 }}
                   />

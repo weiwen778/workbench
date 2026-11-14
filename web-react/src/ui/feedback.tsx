@@ -3,15 +3,15 @@ import { useSyncExternalStore } from 'react'
 import {
   Alert,
   Button,
-  Dialog,
   DialogActions,
   DialogContent,
   DialogContentText,
   DialogTitle,
-  Snackbar,
   Stack,
   TextField,
 } from '@mui/material'
+import PopDialog from '@/motion/components/PopDialog'
+import ToastStack from '@/motion/components/ToastStack'
 
 /* ------------------------------- Toasts ------------------------------- */
 
@@ -48,22 +48,7 @@ export function Toaster() {
     () => toasts,
     () => toasts,
   )
-  return (
-    <>
-      {items.map((item, index) => (
-        <Snackbar
-          key={item.id}
-          open
-          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-          sx={{ mt: `${index * 56}px`, zIndex: (theme) => theme.zIndex.snackbar + index }}
-        >
-          <Alert severity={item.type} variant="filled" onClose={() => dismissToast(item.id)} sx={{ minWidth: 280 }}>
-            {item.text}
-          </Alert>
-        </Snackbar>
-      ))}
-    </>
-  )
+  return <ToastStack items={items} onDismiss={dismissToast} />
 }
 
 /* ------------------------------- Dialogs ------------------------------ */
@@ -158,7 +143,7 @@ export function DialogHost() {
   }
 
   return (
-    <Dialog open maxWidth="xs" fullWidth onClose={() => closeDialog(current.kind === 'confirm' ? false : null)}>
+    <PopDialog open maxWidth="xs" fullWidth onClose={() => closeDialog(current.kind === 'confirm' ? false : null)}>
       <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>{options.title || (isPrompt ? '请输入' : '确认操作')}</DialogTitle>
       <DialogContent>
         {options.message ? (
@@ -196,7 +181,7 @@ export function DialogHost() {
           {options.confirmText || '确定'}
         </Button>
       </DialogActions>
-    </Dialog>
+    </PopDialog>
   )
 }
 

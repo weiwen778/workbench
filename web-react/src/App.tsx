@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { CssBaseline, ThemeProvider } from '@mui/material'
 import { MotionConfig } from 'framer-motion'
+import { MotionSpeedProvider, defaultTransition, useMotionSpeed } from '@/motion'
 import { buildTheme } from '@/app/theme'
 import { queryClient } from '@/query/client'
 import { loadSession, useSession } from '@/session'
@@ -40,6 +41,8 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 }
 
 function Root() {
+  // 订阅速度设置：改完之后 MotionConfig 的默认过渡要跟着重算
+  useMotionSpeed()
   const session = useSession()
   const theme = useMemo(() => buildTheme(session.theme, session.themeColor), [session.theme, session.themeColor])
 
@@ -51,7 +54,7 @@ function Root() {
   }, [session.loaded, session.user?.id])
 
   return (
-    <MotionConfig reducedMotion="user" transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}>
+    <MotionConfig reducedMotion="user" transition={defaultTransition()}>
       <ThemeProvider theme={theme}>
         <CssBaseline />
         <BrowserRouter>
@@ -105,5 +108,9 @@ function Root() {
 }
 
 export default function App() {
-  return <Root />
+  return (
+    <MotionSpeedProvider>
+      <Root />
+    </MotionSpeedProvider>
+  )
 }

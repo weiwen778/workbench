@@ -5,9 +5,12 @@ import { useNavigate } from 'react-router-dom'
 import { aggregationLabels, chartPalette, formatDashboardNumber, isHexColor, type DashboardResult, type DashboardWidget, type ProgressValue } from '@/dashboard'
 import { useSession } from '@/session'
 import { BarChart, LineChart, PieChart } from '@mui/x-charts'
+import ChartFrame, { useChartSkipAnimation } from '@/motion/components/ChartFrame'
+import CountUp from '@/motion/components/CountUp'
 
 export default memo(function DashboardChart({ widget, result }: { widget: DashboardWidget; result: DashboardResult }) {
   const theme = useTheme()
+  const skipChartAnimation = useChartSkipAnimation()
   if (result.status === 'error') {
     return <Box sx={{ minHeight: 130, display: 'grid', placeItems: 'center', color: 'error.main', p: 2.5, textAlign: 'center', fontSize: 13 }}>{result.message}</Box>
   }
@@ -17,7 +20,15 @@ export default memo(function DashboardChart({ widget, result }: { widget: Dashbo
     return (
       <Box sx={{ pt: 1.75 }}>
         <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, overflowWrap: 'anywhere' }}>
-          <Box component="strong" sx={{ fontSize: 'clamp(24px, 11cqw, 40px)', whiteSpace: 'nowrap', fontWeight: 600, fontVariantNumeric: 'tabular-nums', ...(customColors[0] ? { color: customColors[0] } : {}) }}>{formatDashboardNumber(result.value, widget.decimals)}</Box>
+          <Box component="strong" sx={{ fontSize: 'clamp(24px, 11cqw, 40px)', whiteSpace: 'nowrap', fontWeight: 600, fontVariantNumeric: 'tabular-nums', ...(customColors[0] ? { color: customColors[0] } : {}) }}>
+            {/* 刷新/切换周期时数值滚动；首屏不动，避免与既有断言抢时序 */}
+            <CountUp
+              value={Number(result.value ?? 0)}
+              animateOnMount={false}
+              duration={0.5}
+              format={(value) => formatDashboardNumber(value, widget.decimals)}
+            />
+          </Box>
           <Typography component="span" sx={{ fontSize: 12, color: 'text.secondary' }}>{widget.unit}</Typography>
         </Box>
         <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 1.25 }}>{aggregationLabels[widget.aggregation]} · {result.matched_rows ?? 0} 条记录</Typography>
@@ -79,6 +90,7 @@ export default memo(function DashboardChart({ widget, result }: { widget: Dashbo
         valueFormatter: (item: any) => `${format(item.value)}${widget.unit}`,
       }]}
       legend={{ direction: 'row', position: { vertical: 'bottom', horizontal: 'middle' } }}
+      skipAnimation={skipChartAnimation}
       sx={chartSx}
     />
   ) : widget.kind === 'bar' ? (
@@ -91,6 +103,7 @@ export default memo(function DashboardChart({ widget, result }: { widget: Dashbo
       colors={seriesColors}
       grid={{ horizontal: true }}
       legend={legend}
+      skipAnimation={skipChartAnimation}
       sx={chartSx}
     />
   ) : (
@@ -103,13 +116,14 @@ export default memo(function DashboardChart({ widget, result }: { widget: Dashbo
       colors={seriesColors}
       grid={{ horizontal: true }}
       legend={legend}
+      skipAnimation={skipChartAnimation}
       sx={chartSx}
     />
   )
 
   return (
     <Box sx={{ width: '100%', minWidth: 0 }}>
-      {chart}
+      <ChartFrame refreshKey={result.points?.length ?? 0}>{chart}</ChartFrame>
       <Box component="details" sx={{ overflowX: 'auto', fontSize: 12, mt: 0.75, color: 'text.secondary' }}>
         <summary style={{ cursor: 'pointer' }}>查看具体数值</summary>
         <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 8 }}>
