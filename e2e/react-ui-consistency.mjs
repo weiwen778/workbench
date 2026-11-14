@@ -102,6 +102,7 @@ await page.waitForTimeout(200)
 // 表格列表：卡片本身是唯一打开入口，不再有打开按钮
 await page.goto(`${base}/data`, { waitUntil: 'networkidle' })
 await page.waitForTimeout(500)
+await page.getByLabel('表格二级导航').waitFor()
 expect(await page.getByRole('button', { name: /^打开表格/ }).count() > 0, '表格卡片缺少可访问的打开入口')
 expect(await page.getByRole('button', { name: '打开', exact: true }).count() === 0, '表格列表仍有重复的打开按钮')
 
@@ -147,6 +148,7 @@ await page.keyboard.press('Escape')
 // 看板详情：刷新/重命名/新建收进菜单
 await page.goto(`${base}/visualizations`, { waitUntil: 'networkidle' })
 await page.waitForTimeout(500)
+await page.getByLabel('看板二级导航').waitFor()
 await page.getByRole('button', { name: /^打开看板/ }).first().click()
 await page.waitForTimeout(500)
 await page.getByRole('button', { name: '看板操作' }).click()

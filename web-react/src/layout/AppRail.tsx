@@ -10,7 +10,7 @@ import { appNavItem } from './app-nav'
 import { activeGroupKey, type NavGroup } from './nav'
 import type { SidebarMode } from './sidebar-order'
 
-const CATEGORY_KEYS = new Set(['checkin', 'todos', 'notes', 'memos', 'bookmarks'])
+const CATEGORY_KEYS = new Set(['checkin', 'visualizations', 'data', 'todos', 'notes', 'memos', 'bookmarks'])
 
 interface AppRailProps {
   mode: SidebarMode
