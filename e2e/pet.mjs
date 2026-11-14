@@ -52,10 +52,12 @@ try {
 
   await page.getByRole('button', { name: /睡觉/ }).click()
   // 状态栏把阶段和状态放在同一行（幼犬 · 睡觉中），这里用子串匹配而不是 exact。
-  await page.getByText('睡觉中').waitFor()
+  // 房间右上角的徽标也会显示同一个状态，所以取第一个（工具栏）。
+  const headerStatus = page.getByText('睡觉中').first()
+  await headerStatus.waitFor()
   assert.ok(await feed.isDisabled())
   await page.getByRole('button', { name: /叫醒/ }).click()
-  await page.getByText('睡觉中').waitFor({ state: 'hidden' })
+  await headerStatus.waitFor({ state: 'hidden' })
 
   const petButton = page.getByRole('button', { name: '抚摸', exact: true })
   const petResponse = page.waitForResponse((r) => r.url().endsWith('/api/v1/pet/actions'))
@@ -66,8 +68,27 @@ try {
   await page.reload()
   await page.getByRole('heading', { name: '豆豆' }).waitFor()
   await page.screenshot({ path: '../.run/pet-e2e/shell.png' })
+
+  const sprite = page.locator('[data-pet-sprite]')
+  await sprite.waitFor()
+  assert.ok(await page.locator('[data-pet-room]').count())
+  await page.screenshot({ path: '../.run/pet-e2e/room.png' })
+
+  await page.setViewportSize({ width: 375, height: 844 })
+  await page.reload()
+  await page.locator('[data-pet-room]').waitFor()
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1))
+  await page.screenshot({ path: '../.run/pet-e2e/mobile.png' })
+
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.reload()
+  await page.locator('[data-pet-sprite]').waitFor()
+  const firstFrame = await page.locator('[data-pet-sprite]').getAttribute('data-frame')
+  await page.waitForTimeout(700)
+  assert.equal(await page.locator('[data-pet-sprite]').getAttribute('data-frame'), firstFrame)
+
   assert.deepEqual(errors, [])
-  console.log('PASS: pet adoption, rename, reload, needs panel, feed cooldown, sleep/wake and petting.')
+  console.log('PASS: pet adoption, rename, reload, needs panel, feed cooldown, sleep/wake, petting, room, 375px layout and reduced motion.')
 } catch (error) {
   await page.screenshot({ path: '../.run/pet-e2e/failure.png' })
   throw error
