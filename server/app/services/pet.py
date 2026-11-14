@@ -311,6 +311,7 @@ def claim_daily_bonus(db: Session, pet: Pet, now: datetime) -> dict | None:
     if not (has_checkin or has_todo):
         return None
 
+    db.flush()
     claim = db.execute(
         update(Pet)
         .where(

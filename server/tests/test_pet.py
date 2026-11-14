@@ -488,3 +488,29 @@ def test_get_pet_claims_bonus_once(auth, db):
     second = auth.get("/api/v1/pet").json()
     assert second["daily_bonus"] is None
     assert second["pet"]["stats"]["mood"] <= 86
+
+
+def test_get_pet_bonus_preserves_pending_advance(auth, db, monkeypatch):
+    now = T0 + timedelta(hours=1)
+    monkeypatch.setattr("app.routers.pet.utcnow", lambda: now)
+    adopted = auth.post("/api/v1/pet", json={}).json()["pet"]
+    pet = db.get(Pet, adopted["id"])
+    pet.last_tick_at = now - timedelta(hours=1)
+    db.commit()
+    _completed_todo(db, now)
+
+    response = auth.get("/api/v1/pet")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["daily_bonus"] == {
+        "mood": 6, "treats": 1, "source": "todo", "date": "2026-11-14",
+    }
+    assert body["pet"]["stats"] == {
+        "satiety": 69,
+        "cleanliness": 89,
+        "mood": 85,
+        "energy": 79,
+        "health": 100,
+    }
+    assert body["pet"]["treats"] == 1
