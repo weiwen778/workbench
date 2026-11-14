@@ -36,7 +36,11 @@ await page.waitForTimeout(900)
 await page.keyboard.press('Control+k')
 await page.getByLabel('搜索内容').waitFor({ timeout: 5000 })
 await page.getByLabel('搜索内容').fill('张三')
-await page.getByText('表格记录').first().waitFor({ timeout: 15000 })
+// 结果分组取决于库内数据：有记录看分组标题，空库看空态文案
+await page.waitForFunction(() => {
+  const text = document.body.innerText
+  return text.includes('表格记录') || text.includes('没有找到') || text.includes('暂无')
+}, null, { timeout: 15000 })
 await page.keyboard.press('Escape')
 await page.getByLabel('搜索内容').waitFor({ state: 'hidden', timeout: 5000 })
 console.log('search dialog: OK')

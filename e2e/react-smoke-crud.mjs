@@ -60,8 +60,10 @@ try {
   await page.waitForTimeout(1000)
   console.log('memo added:', (await page.locator('body').innerText()).includes('验证便利贴'))
   await page.screenshot({ path: `${out}/memos.png` })
-  await page.getByRole('button', { name: '删除便利贴' }).first().click()
-  await page.getByRole('button', { name: '删除' }).click()
+  // 删除在卡片「更多便利贴操作」菜单里（MenuItem），不是独立按钮
+  await page.getByRole('button', { name: '更多便利贴操作' }).first().click()
+  await page.getByRole('menuitem', { name: '删除便利贴' }).click()
+  await page.getByRole('button', { name: '删除', exact: true }).click()
   await page.waitForTimeout(1000)
 } finally {
   const trash = await api('GET', '/trash')
