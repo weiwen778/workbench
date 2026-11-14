@@ -136,16 +136,17 @@ export default function CalendarDashboard() {
         minHeight: 0,
         overflow: 'auto',
         p: { xs: 1.25, md: 1.5 },
-        display: 'grid',
+        display: isNarrow ? 'flex' : 'grid',
+        flexDirection: isNarrow ? 'column' : undefined,
         gap: 1.5,
-        gridTemplateColumns: isNarrow ? '1fr' : 'minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.9fr)',
-        gridTemplateRows: isNarrow ? 'auto' : 'minmax(0, 1.8fr) minmax(0, 0.9fr)',
-        gridTemplateAreas: isNarrow
-          ? '"calendar" "data1" "data2" "data3" "data4"'
-          : '"calendar calendar data1" "data2 data3 data4"',
+        ...(!isNarrow && {
+          gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.9fr)',
+          gridTemplateRows: 'minmax(0, 1.8fr) minmax(0, 0.9fr)',
+          gridTemplateAreas: '"calendar calendar data1" "data2 data3 data4"',
+        }),
       }}
     >
-      <Box sx={{ gridArea: 'calendar', minHeight: 0, display: 'flex' }}>
+      <Box sx={{ gridArea: isNarrow ? undefined : 'calendar', minHeight: 0, height: isNarrow ? 'auto' : '100%', display: 'flex' }}>
         <CalendarGrid
           month={month}
           events={calendarQuery.data?.events || []}
@@ -156,7 +157,7 @@ export default function CalendarDashboard() {
           error={calendarError}
         />
       </Box>
-      <Box sx={{ gridArea: 'data1', minHeight: 0, display: 'flex' }}>
+      <Box sx={{ gridArea: isNarrow ? undefined : 'data1', minHeight: 0, height: isNarrow ? 'auto' : '100%', display: 'flex' }}>
         <DataPanels
           section="subscriptions"
           data={panelsQuery.data}
@@ -166,7 +167,7 @@ export default function CalendarDashboard() {
           error={panelsError}
         />
       </Box>
-      <Box sx={{ gridArea: 'data2', minHeight: 0, display: 'flex' }}>
+      <Box sx={{ gridArea: isNarrow ? undefined : 'data2', minHeight: 0, height: isNarrow ? 'auto' : '100%', display: 'flex' }}>
         <DataPanels
           section="alibaba"
           data={panelsQuery.data}
@@ -176,7 +177,7 @@ export default function CalendarDashboard() {
           error={panelsError}
         />
       </Box>
-      <Box sx={{ gridArea: 'data3', minHeight: 0, display: 'flex' }}>
+      <Box sx={{ gridArea: isNarrow ? undefined : 'data3', minHeight: 0, height: isNarrow ? 'auto' : '100%', display: 'flex' }}>
         <DataPanels
           section="1688"
           data={panelsQuery.data}
@@ -186,7 +187,7 @@ export default function CalendarDashboard() {
           error={panelsError}
         />
       </Box>
-      <Box sx={{ gridArea: 'data4', minHeight: 0, display: 'flex' }}>
+      <Box sx={{ gridArea: isNarrow ? undefined : 'data4', minHeight: 0, height: isNarrow ? 'auto' : '100%', display: 'flex' }}>
         <DataPanels
           section="links"
           data={panelsQuery.data}
