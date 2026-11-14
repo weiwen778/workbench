@@ -193,3 +193,53 @@ export async function getTranslationStatus(): Promise<TranslationStatus> {
 export async function getCommonSources(): Promise<{ groups: CommonGroup[]; note: string }> {
   return (await http.get('/feeds/common')).data
 }
+
+export interface CalendarEvent {
+  kind: 'race' | 'holiday'
+  date: string
+  title: string
+  url: string
+  country?: string
+  city?: string
+  distance?: string
+}
+
+export interface CalendarPayload {
+  start: string
+  end: string
+  events: CalendarEvent[]
+  status: string
+  last_success_at: string | null
+  last_error: string | null
+  race_window_exceeded: boolean
+}
+
+export interface RuleSource {
+  key: string
+  title: string
+  platform: string
+  url: string
+  note: string
+  status: string
+  entries: { title: string; url: string; published_at: string | null; badge: string; summary: string }[]
+  last_success_at: string | null
+  last_error: string | null
+}
+
+export interface DataPanelsPayload {
+  subscriptions: { items: FeedEntry[]; total: number; unread: number }
+  rules: RuleSource[]
+  links: { key: string; title: string; url: string; badge: string }[]
+}
+
+export async function getCalendar(start: string, end: string): Promise<CalendarPayload> {
+  return (await http.get('/feeds/calendar', { params: { start, end } })).data
+}
+
+export async function getDataPanels(): Promise<DataPanelsPayload> {
+  return (await http.get('/feeds/data-panels')).data
+}
+
+export async function refreshCommon(key: string): Promise<{ queued: boolean; reason?: string; retry_after?: number }> {
+  return (await http.post(`/feeds/common/${key}/refresh`)).data
+}
