@@ -150,6 +150,7 @@ def create_app() -> FastAPI:
         memos,
         bookmarks,
         notes,
+        pet,
         preferences,
         tables,
         table_workspaces,
@@ -190,6 +191,7 @@ def create_app() -> FastAPI:
     app.include_router(document_projects.router, prefix=api)
     app.include_router(notes.router, prefix=api)
     app.include_router(memos.router, prefix=api)
+    app.include_router(pet.router, prefix=api)
     app.include_router(bookmarks.router, prefix=api)
     app.include_router(translate.router, prefix=api)
     app.include_router(media.router, prefix=api)
