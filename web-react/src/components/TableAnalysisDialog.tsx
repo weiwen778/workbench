@@ -1,13 +1,20 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputLabel, MenuItem, Select, Stack, Typography } from '@mui/material'
 import { apiError, http } from '@/api/client'
 import { DataTable } from '@/ui/common'
-import { aggregate, display, type Field, type Row } from '@/table-core'
+import { display, type Field, type Row } from '@/table-core'
+import { AnalysisError, cancelAnalysis, runAnalysis } from '@/analysis/client'
+import type { AnalysisOutput } from '@/analysis/pivot'
+
+const EMPTY_RESULT: AnalysisOutput = { headers: [], data: [], total: 0 }
 
 export default function TableAnalysisDialog({ open, tableId, onClose }: { open: boolean; tableId: number; onClose: () => void }) {
   const [source, setSource] = useState<any>(null)
   const [failure, setFailure] = useState('')
   const [loading, setLoading] = useState(false)
+  const [computing, setComputing] = useState(false)
+  const [analysisError, setAnalysisError] = useState('')
+  const [result, setResult] = useState<AnalysisOutput>(EMPTY_RESULT)
   const [kind, setKind] = useState<'summary' | 'pivot'>('summary')
   const [group, setGroup] = useState('')
   const [column, setColumn] = useState('')
@@ -34,30 +41,35 @@ export default function TableAnalysisDialog({ open, tableId, onClose }: { open: 
   const references = source?.references || {}
   const rows: Row[] = source?.records || []
 
-  const result = useMemo(() => {
-    if (!source || !group) return { headers: [] as string[], data: [] as any[], detail: [] as Row[] }
-    const groupField = fields.find((field) => field.key === group)
-    const columnField = fields.find((field) => field.key === column)
-    const label = (row: Row, field?: Field) => field ? display(field, row.data[field.key], references) || '（空）' : '全部'
-    const groupKeys = Array.from(new Set(rows.map((row) => label(row, groupField))))
-    if (kind === 'summary') {
-      const data = groupKeys.map((key) => {
-        const subset = rows.filter((row) => label(row, groupField) === key)
-        return { key, value: aggregate(subset, value, operation), count: subset.length }
-      })
-      return { headers: ['分组', '结果', '行数'], data, detail: rows }
+  // Grouping/pivoting runs in a worker; this effect cancels stale runs when
+  // the dialog closes or a selector changes.
+  useEffect(() => {
+    if (!open || !source || !group) {
+      cancelAnalysis()
+      setComputing(false)
+      setResult(source ? { ...EMPTY_RESULT, total: rows.length } : EMPTY_RESULT)
+      return
     }
-    const columnKeys = columnField ? Array.from(new Set(rows.map((row) => label(row, columnField)))) : ['合计']
-    const data = groupKeys.map((key) => {
-      const resultRow: Record<string, any> = { key }
-      for (const columnKey of columnKeys) {
-        const subset = rows.filter((row) => label(row, groupField) === key && (!columnField || label(row, columnField) === columnKey))
-        resultRow[columnKey] = aggregate(subset, value, operation)
-      }
-      return resultRow
+    let active = true
+    setComputing(true)
+    setAnalysisError('')
+    setResult({ ...EMPTY_RESULT, total: rows.length })
+    void runAnalysis({ kind, rows, fields, references, group, column, value, operation }).then((output) => {
+      if (active) setResult(output)
+    }).catch((reason) => {
+      if (!active) return
+      if (reason instanceof AnalysisError && reason.code === 'CANCELLED') return
+      setAnalysisError(reason instanceof Error ? reason.message : '分析失败')
+    }).finally(() => {
+      if (active) setComputing(false)
     })
-    return { headers: ['分组', ...columnKeys], data, detail: rows }
-  }, [source, group, column, value, operation, kind, fields, rows, references])
+    return () => {
+      active = false
+      cancelAnalysis()
+    }
+  // `fields`, `rows` and `references` all derive from `source`.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, source, kind, group, column, value, operation])
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
@@ -67,7 +79,10 @@ export default function TableAnalysisDialog({ open, tableId, onClose }: { open: 
         {loading ? <Typography sx={{ py: 3, fontSize: 13, color: 'text.secondary' }}>正在读取整张表…</Typography> : null}
         {source ? (
           <>
-            <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 1.5 }}>全表 {rows.length} 行。</Typography>
+            <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 1.5 }}>
+              全表 {rows.length} 行。{computing ? '正在后台计算…' : ''}
+            </Typography>
+            {analysisError ? <Alert severity="warning" sx={{ mb: 1.5 }} onClose={() => setAnalysisError('')}>{analysisError}</Alert> : null}
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
               <FormControl size="small" sx={{ minWidth: 130 }}>
                 <InputLabel shrink>分析方式</InputLabel>
@@ -125,16 +140,16 @@ export default function TableAnalysisDialog({ open, tableId, onClose }: { open: 
                 ...result.headers.slice(1).map((header) => ({ key: header, label: header, align: 'right' as const, render: (row: any) => row[header] })),
               ]}
             />
-            <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 1.5, mb: 0.75 }}>明细 · {result.detail.length} 行</Typography>
+            <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 1.5, mb: 0.75 }}>明细 · {result.total} 行</Typography>
             <DataTable
-              rows={result.detail.slice((page - 1) * 50, page * 50)}
+              rows={rows.slice((page - 1) * 50, page * 50)}
               maxHeight={240}
               columns={fields.map((field) => ({ key: field.key, label: field.name, width: 130, ellipsis: true, render: (row: any) => display(field, row.data[field.key], references) }))}
             />
             <Stack direction="row" justifyContent="flex-end" spacing={1} sx={{ mt: 0.5 }} alignItems="center">
-              <Typography sx={{ fontSize: 12, alignSelf: 'center' }}>{page} / {Math.max(1, Math.ceil(result.detail.length / 50))}</Typography>
+              <Typography sx={{ fontSize: 12, alignSelf: 'center' }}>{page} / {Math.max(1, Math.ceil(result.total / 50))}</Typography>
               <Button size="small" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button>
-              <Button size="small" disabled={page >= Math.ceil(result.detail.length / 50)} onClick={() => setPage(page + 1)}>下一页</Button>
+              <Button size="small" disabled={page >= Math.ceil(result.total / 50)} onClick={() => setPage(page + 1)}>下一页</Button>
             </Stack>
           </>
         ) : null}

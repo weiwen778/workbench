@@ -46,5 +46,16 @@ export function aggregate(rows: Row[], key: string, operation: string): string {
   }
   if (!values.length) return '—'
   const sum = values.reduce((a, b) => a.add(b), new Decimal(0))
-  return (operation === 'sum' ? sum : operation === 'avg' ? sum.div(values.length) : operation === 'min' ? Decimal.min(...values) : Decimal.max(...values)).toDecimalPlaces(6).toFixed()
+  let result: Decimal
+  if (operation === 'sum') result = sum
+  else if (operation === 'avg') result = sum.div(values.length)
+  else {
+    // Loop instead of spreading: large groups would otherwise exceed the
+    // engine's argument limit and fail inside the worker.
+    result = values[0]
+    for (let index = 1; index < values.length; index += 1) {
+      result = operation === 'min' ? Decimal.min(result, values[index]) : Decimal.max(result, values[index])
+    }
+  }
+  return result.toDecimalPlaces(6).toFixed()
 }

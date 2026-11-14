@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   Alert, Box, Button, Chip, CircularProgress, IconButton, Paper, Stack, Tooltip, Typography,
 } from '@mui/material'
@@ -7,6 +8,7 @@ import { Refresh, Translate } from '@/icons'
 import { apiError } from '@/api/client'
 import { toast } from '@/ui/feedback'
 import { EmptyHint, LoadingBlock } from '@/ui/common'
+import { useSession } from '@/session'
 import { readTranslationPreferences } from '@/utils/translation-preferences'
 import {
   getHot, refreshHot, translateTitles, type HotEntry, type HotPayload, type HotSource,
@@ -14,6 +16,8 @@ import {
 import { dateTime, DividerDot, ExternalText, MetaLine, relativeTime, SourceLink, StatusChip } from '@/feeds/shared'
 
 const VISIBLE_COUNT = 10
+const POLL_INTERVAL = 1600
+const POLL_TICKS = 8
 
 function collectTranslations(payload: HotPayload | null, current: Record<string, string>) {
   const next = { ...current }
@@ -29,67 +33,60 @@ function collectTranslations(payload: HotPayload | null, current: Record<string,
 
 export default function HotPanel() {
   const navigate = useNavigate()
-  const [data, setData] = useState<HotPayload | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const session = useSession()
+  const userId = session.user?.id ?? 0
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const [translations, setTranslations] = useState<Record<string, string>>({})
   const [translating, setTranslating] = useState(false)
   const [translationError, setTranslationError] = useState('')
-  const pollTimer = useRef<number | null>(null)
-  const pollTicks = useRef(0)
+  const [polling, setPolling] = useState(false)
+  const firstRefreshSent = useRef(false)
 
-  const load = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true)
-    try {
-      const payload = await getHot()
-      setData(payload)
-      setTranslations((current) => collectTranslations(payload, current))
-      setError('')
-    } catch (reason) {
-      if (!silent) setError(apiError(reason).message)
-    } finally {
-      if (!silent) setLoading(false)
-    }
-  }, [])
-
-  const stopPolling = useCallback(() => {
-    if (pollTimer.current) { window.clearInterval(pollTimer.current); pollTimer.current = null }
-    pollTicks.current = 0
-  }, [])
-
-  const startPolling = useCallback(() => {
-    if (pollTimer.current) return
-    pollTicks.current = 0
-    pollTimer.current = window.setInterval(() => {
-      pollTicks.current += 1
-      void load(true)
-      if (pollTicks.current >= 8) stopPolling()
-    }, 1600)
-  }, [load, stopPolling])
+  const hot = useQuery({
+    queryKey: ['feeds', 'hot', userId],
+    queryFn: getHot,
+    enabled: userId > 0,
+  })
+  const data = hot.data ?? null
+  const error = hot.error ? apiError(hot.error).message : ''
+  const { refetch } = hot
 
   useEffect(() => {
-    let alive = true
-    void (async () => {
-      await load()
-      if (!alive) return
-      try {
-        const result = await refreshHot(undefined, false)
-        if (result.started.length || result.joined.length) startPolling()
-      } catch { /* 首屏缓存仍可用 */ }
-    })()
-    return () => { alive = false; stopPolling() }
-  }, [load, startPolling, stopPolling])
+    if (data) setTranslations((current) => collectTranslations(data, current))
+  }, [data])
 
-  const triggerRefresh = async (ids?: string[], force = true) => {
-    try {
-      const result = await refreshHot(ids, force)
-      if (result.started.length) startPolling()
-      else if (result.joined.length) startPolling()
-      else void load(true)
-    } catch (reason) {
-      toast.error(apiError(reason).message)
-    }
+  const refresh = useMutation({
+    mutationFn: (vars: { ids?: string[]; force?: boolean; silent?: boolean }) => refreshHot(vars.ids, vars.force ?? true),
+    onSuccess: (result) => {
+      if (result.started.length || result.joined.length) setPolling(true)
+      else void refetch()
+    },
+    onError: (reason, vars) => {
+      if (!vars.silent) toast.error(apiError(reason).message)
+    },
+  })
+
+  // Paint the cached payload first, then ask the server to refresh stale sources.
+  useEffect(() => {
+    if (!userId || firstRefreshSent.current) return
+    firstRefreshSent.current = true
+    refresh.mutate({ force: false, silent: true })
+  }, [userId, refresh.mutate])
+
+  // Poll while the server reports sources in progress, bounded like before.
+  useEffect(() => {
+    if (!polling) return
+    let ticks = 0
+    const timer = window.setInterval(() => {
+      ticks += 1
+      void refetch()
+      if (ticks >= POLL_TICKS) setPolling(false)
+    }, POLL_INTERVAL)
+    return () => window.clearInterval(timer)
+  }, [polling, refetch])
+
+  const triggerRefresh = (ids?: string[], force = true) => {
+    refresh.mutate({ ids, force })
   }
 
   const translate = async (texts: string[]) => {
@@ -134,9 +131,9 @@ export default function HotPanel() {
       .flatMap((source) => missingForSource(source)).length
   }, [data, expanded, translations])
 
-  if (loading && !data) return <LoadingBlock text="正在读取热榜缓存…" />
+  if (hot.isPending && !data) return <LoadingBlock text="正在读取热榜缓存…" />
   if (error && !data) {
-    return <EmptyHint action={<Button size="small" onClick={() => void load()}>重试</Button>}>{error}</EmptyHint>
+    return <EmptyHint action={<Button size="small" onClick={() => void refetch()}>重试</Button>}>{error}</EmptyHint>
   }
 
   return (

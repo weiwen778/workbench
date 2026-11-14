@@ -16,12 +16,14 @@ import MarkdownEditor, { type MarkdownEditorHandle } from '@/components/Markdown
 import ProjectActions from '@/docs/ProjectActions'
 import { useUnloadWarning } from '@/docs/useUnloadWarning'
 import { uploadProjectFile, type ProjectDetail } from '@/docs/api'
+import { useSession } from '@/session'
+import {
+  clearDocumentDraft, loadDocumentDraft, saveDocumentDraft, type DocumentDraft,
+} from '@/storage/document-drafts'
 import '@/docs/doc/doc.css'
 
 const ACCEPT = '.docx,.txt,.md,.markdown,.html,.htm'
 const MAX_BYTES = 20 * 1024 * 1024
-const DRAFT_KEY = 'wb_docs_document_draft_v1'
-const DRAFT_MAX_BYTES = 4 * 1024 * 1024
 
 function isSafeResourceUrl(value: string) {
   const raw = value.trim()
@@ -128,6 +130,8 @@ async function uploadableImage(dataUrl: string): Promise<{ blob: Blob; extension
 }
 
 export default function DocEditor() {
+  const session = useSession()
+  const userId = session.user?.id ?? 0
   const [markdown, setMarkdown] = useState('')
   const [title, setTitle] = useState('未命名文档')
   const [format, setFormat] = useState('markdown')
@@ -135,7 +139,7 @@ export default function DocEditor() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [warnings, setWarnings] = useState<string[]>([])
-  const [draft, setDraft] = useState<{ title: string; markdown: string; format: string; savedAt: string } | null>(null)
+  const [draft, setDraft] = useState<DocumentDraft | null>(null)
   const [draftError, setDraftError] = useState('')
   const [savedBaseline, setSavedBaseline] = useState<{ title: string; markdown: string; format: string } | null>(null)
   const hasContentRef = useRef(false)
@@ -166,41 +170,35 @@ export default function DocEditor() {
   const plainText = useMemo(() => new DOMParser().parseFromString(previewHtml, 'text/html').body.textContent || '', [previewHtml])
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(DRAFT_KEY)
-      if (!raw) return
-      const parsed = JSON.parse(raw)
-      if (parsed && typeof parsed.markdown === 'string' && parsed.markdown.trim()) setDraft(parsed)
-    } catch { /* ignore malformed local draft */ }
-  }, [])
+    if (!userId) return
+    let cancelled = false
+    void loadDocumentDraft(userId).then((record) => {
+      if (!cancelled && record?.markdown.trim()) setDraft(record)
+    })
+    return () => { cancelled = true }
+  }, [userId])
 
   useEffect(() => {
     if (!markdown.trim()) {
       if (hasContentRef.current) {
         hasContentRef.current = false
-        try { localStorage.removeItem(DRAFT_KEY) } catch { /* ignore */ }
+        void clearDocumentDraft(userId)
         setDraft(null)
         setDraftError('')
       }
       return
     }
     hasContentRef.current = true
+    if (!userId) return
     const timer = window.setTimeout(() => {
-      try {
-        if (new Blob([markdown]).size > DRAFT_MAX_BYTES) {
-          setDraftError('内容超过 4 MB，未写入浏览器本地草稿；请保存项目或导出')
-          return
-        }
-        localStorage.setItem(DRAFT_KEY, JSON.stringify({
-          title, markdown, format, savedAt: new Date().toISOString(),
-        }))
-        setDraftError('')
-      } catch {
-        setDraftError('浏览器本地草稿写入失败（可能空间不足），请保存项目或导出')
-      }
+      void saveDocumentDraft(userId, {
+        title, markdown, format, savedAt: new Date().toISOString(),
+      }).then((result) => {
+        setDraftError(result.ok ? '' : result.message)
+      })
     }, 700)
     return () => window.clearTimeout(timer)
-  }, [markdown, title, format])
+  }, [markdown, title, format, userId])
 
   const restoreDraft = () => {
     if (!draft) return
@@ -211,7 +209,7 @@ export default function DocEditor() {
   }
 
   const discardDraft = () => {
-    try { localStorage.removeItem(DRAFT_KEY) } catch { /* ignore */ }
+    void clearDocumentDraft(userId)
     setDraft(null); setDraftError('')
   }
 

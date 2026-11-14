@@ -26,7 +26,7 @@
 
 | 层 | 技术 |
 | --- | --- |
-| 前端 | React 18.3、TypeScript 5.7、Vite 6、MUI 6、MUI X DataGrid / Charts 7、CodeMirror 6、Excalidraw 0.18 |
+| 前端 | React 18.3、TypeScript 5.7、Vite 6、MUI 6、MUI X DataGrid / Charts 7、CodeMirror 6、Excalidraw 0.18、TanStack Query 5、Dexie 4、Comlink 4 |
 | 后端 | Python 3.12、FastAPI、SQLAlchemy 2、Alembic、Pydantic v2 |
 | 数据库 | 本地/测试支持 SQLite；生产使用 PostgreSQL 16（Compose 内置） |
 | 部署 | Docker Compose（PostgreSQL + API + Nginx） |
@@ -253,6 +253,9 @@ docs/                  PRD、设计说明、交付与验收记录
 - 视觉统一使用 MUI 主题与 `sx`：`web-react/src/app/theme.ts` 只保留明暗模式和品牌色。
 - 表格统一走 `web-react/src/ui/common.tsx` 的 `DataTable`，内部是 MUI X DataGrid，已启用中文语言包。文档工作台的虚拟工作簿需要单元格级编辑和公式栏，直接使用 DataGrid，是明确例外。
 - 工作台页面按路由懒加载；`/docs` 的 PDF / 表格 / 文档编辑器再按页签懒加载，避免打开 PDF 时加载表格和文档依赖。
+- 服务端状态（请求、缓存、失效、重试）使用 TanStack Query；`@/api/client` 仍负责 CSRF、凭证与 401，页面可以逐页迁移，不必同时改写。
+- 浏览器本地可恢复副本统一放在 Dexie 数据库 `nexus-workbench`（当前为文档草稿，按账号隔离并带 schema 版本）；旧 `localStorage` 草稿会在首次读取时迁移，配额或 IndexedDB 不可用时回退到 `localStorage`。
+- 表格汇总/透视等 CPU 计算通过 Comlink 进入 Web Worker，支持取消、超时和过期结果隔离，不阻塞主线程滚动与输入。
 - 侧栏顺序在账号菜单「调整侧栏顺序」中自定义，按账号保存在浏览器；窗口较矮时自动压缩图标行并隐藏文字标签，避免侧栏出现滚动。
 - 列宽与列显示按表格保存在浏览器 `localStorage`；跨设备同步需要另接账号视图配置。
 - 图片处理全部在浏览器本地完成；ZIP 使用 `fflate`；笔记使用 CodeMirror。
@@ -279,6 +282,9 @@ docs/                  PRD、设计说明、交付与验收记录
 - 单文件上传上限默认 20 MB；PDF 本地预览允许更大文件，但保存项目受上传上限约束。
 - 文档工作台 DOCX 走 Mammoth → Markdown，页眉页脚、分页、复杂表格、修订记录会丢失；PDF 删密会栅格化该页；PDF 表单只在单一来源、原页序且无删密页时保留交互。详见 [文档工作台](docs/文档工作台.md)。
 - 信息聚合的公开来源可用性取决于第三方；关闭 `WB_FEED_ENABLED` 后不再自动或手动发起刷新，但已缓存内容仍可阅读。
+- 浏览器本地草稿（IndexedDB / `localStorage` 回退）只用于恢复未保存内容，不承诺跨设备或清理浏览器数据后仍可找回；正式备份仍以服务端为准。
+- TanStack Query 当前只接入了信息聚合热榜页；其余页面仍在用原有手写请求状态，可按页面逐步迁移。
+- 汇总与透视仍会先读取整张表的快照再交给 Worker；超大表的分片、上限和取消策略仍待后续阶段完善。
 - 翻译服务的自定义地址必须是 HTTPS（测试环境仅允许回环地址），修改地址必须重新填写密钥。
 - 主要验证浏览器为 Chromium；Safari/Firefox、真实 Word/Excel/Acrobat 仍需在目标环境补验。
 
