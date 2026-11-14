@@ -1,6 +1,6 @@
 import hashlib
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
@@ -31,6 +31,56 @@ def test_merge_clears_country_with_empty_success():
     previous = [{"kind": "race", "date": "2026-11-14", "title": "Old US", "country": "US", "url": "u1", "city": "", "distance": ""}]
     merged = common_sources.merge_runsignup_entries(previous, {"US": []})
     assert merged == []
+
+
+def _race_rows(country: str, count: int) -> list[dict]:
+    rows = []
+    for index in range(count):
+        day = date(2026, 11, 1) + timedelta(days=index)
+        rows.append({
+            "kind": "race", "date": day.isoformat(), "title": f"{country} Race {index}",
+            "country": country, "url": f"https://runsignup.com/{country}/{index}", "city": "", "distance": "",
+        })
+    return rows
+
+
+def test_merge_caps_each_country_and_spans_window():
+    us_rows = _race_rows("US", 969)
+    ca_rows = _race_rows("CA", 2)
+    merged = common_sources.merge_runsignup_entries([], {"US": us_rows, "CA": ca_rows})
+    us = [row for row in merged if row["country"] == "US"]
+    ca = [row for row in merged if row["country"] == "CA"]
+    assert len(us) == 30
+    assert us[0]["date"] == us_rows[0]["date"]
+    assert us[-1]["date"] == us_rows[-1]["date"]
+    assert len(ca) == 2
+
+
+def test_merge_prunes_retained_rows_outside_window():
+    previous = [
+        {"kind": "race", "date": "2025-11-14", "title": "Old US", "country": "US", "url": "u1", "city": "", "distance": ""},
+        {"kind": "race", "date": "2026-11-20", "title": "Old CA", "country": "CA", "url": "u2", "city": "", "distance": ""},
+    ]
+    merged = common_sources.merge_runsignup_entries(
+        previous, {"US": None, "CA": None}, start=date(2026, 11, 1), end=date(2026, 12, 1),
+    )
+    assert [row["title"] for row in merged] == ["Old CA"]
+
+
+def test_fetch_runsignup_all_keeps_same_title_with_different_urls(monkeypatch):
+    def fake(country, start, end, state=None):
+        return [{
+            "kind": "race", "date": "2026-11-14", "title": "Turkey Trot 5K",
+            "country": "US", "url": f"https://runsignup.com/{state}", "city": "", "distance": "",
+        }]
+
+    monkeypatch.setattr(common_sources, "RUNSIGNUP_US_STATES", ("CA", "NY"))
+    monkeypatch.setattr(common_sources, "fetch_runsignup_country", fake)
+    results, failures = common_sources.fetch_runsignup_all(
+        date(2026, 11, 14), date(2026, 12, 14), countries=("US",), concurrency=2,
+    )
+    assert failures == 0
+    assert {row["url"] for row in results["US"]} == {"https://runsignup.com/CA", "https://runsignup.com/NY"}
 
 
 def test_fetch_runsignup_all_isolates_country_failure(monkeypatch):

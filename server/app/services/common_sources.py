@@ -342,10 +342,10 @@ def fetch_runsignup_all(
 
     if us_state_rows:
         combined: list[dict] = []
-        seen: set[tuple[str, str]] = set()
+        seen: set[tuple[str, str, str]] = set()
         for rows in us_state_rows:
             for row in rows:
-                key = (row["date"], row["title"])
+                key = (row["date"], row["title"], row["url"])
                 if key in seen:
                     continue
                 seen.add(key)
@@ -358,8 +358,19 @@ def fetch_runsignup_all(
     return results, failures
 
 
-def merge_runsignup_entries(previous: list[dict], results: dict[str, list[dict] | None]) -> list[dict]:
-    """Merge new per-country results into the previous race list."""
+def merge_runsignup_entries(
+    previous: list[dict],
+    results: dict[str, list[dict] | None],
+    start: date | None = None,
+    end: date | None = None,
+) -> list[dict]:
+    """Merge new per-country results into the previous race list.
+
+    Rows for countries whose fetch failed (``None``) are retained, but only
+    when they fall inside ``[start, end]`` if a window is supplied. Each
+    country is capped at 30 rows with even sampling so one large country
+    (notably US) cannot crowd out the rest of the world.
+    """
     by_country: dict[str, list[dict]] = {}
     for row in previous:
         by_country.setdefault(row.get("country", ""), []).append(row)
@@ -368,6 +379,9 @@ def merge_runsignup_entries(previous: list[dict], results: dict[str, list[dict] 
     for country, old_rows in by_country.items():
         new_rows = results.get(country)
         if new_rows is None:
+            if start is not None and end is not None:
+                low, high = start.isoformat(), end.isoformat()
+                old_rows = [row for row in old_rows if low <= row.get("date", "") <= high]
             merged.extend(old_rows)
         else:
             merged.extend(new_rows)
@@ -377,7 +391,32 @@ def merge_runsignup_entries(previous: list[dict], results: dict[str, list[dict] 
             merged.extend(new_rows)
 
     merged.sort(key=lambda row: (row.get("date", ""), row.get("title", "")))
-    return merged[:1000]
+
+    per_country: dict[str, list[dict]] = {}
+    for row in merged:
+        per_country.setdefault(row.get("country", ""), []).append(row)
+
+    capped: list[dict] = []
+    for rows in per_country.values():
+        capped.extend(_cap_country_rows(rows))
+    capped.sort(key=lambda row: (row.get("date", ""), row.get("title", "")))
+
+    logger.info(
+        "runsignup merge fetched=%s kept=%s dropped=%s",
+        len(merged), len(capped), len(merged) - len(capped),
+    )
+    return capped
+
+
+def _cap_country_rows(rows: list[dict], limit: int = 30) -> list[dict]:
+    """Cap one country's sorted rows to ``limit`` while spanning the range."""
+    count = len(rows)
+    if count <= limit:
+        return rows
+    if limit <= 1:
+        return rows[:1]
+    indexes = {round(index * (count - 1) / (limit - 1)) for index in range(limit)}
+    return [rows[index] for index in sorted(indexes)]
 
 
 def fetch_alibaba_rules() -> list[dict]:

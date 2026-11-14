@@ -406,7 +406,7 @@ def refresh_common_source(key: str, force: bool = False) -> dict:
             successes = sum(v is not None for v in results.values())
             if successes == 0:
                 raise PublicHttpError("ALL_COUNTRIES_FAILED", "所有国家赛事抓取失败")
-            entries = merge_runsignup_entries(claim["entries"], results)
+            entries = merge_runsignup_entries(claim["entries"], results, start=start, end=end)
             provider = source["platform"]
             note = f"{successes}/{len(results)} 个国家成功"
             interval = settings.feed_runsignup_interval_seconds
