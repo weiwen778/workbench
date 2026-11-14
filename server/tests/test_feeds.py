@@ -436,3 +436,55 @@ def test_common_success_updates_snapshot(db, monkeypatch):
     assert row.entries[0]["title"] == "新规则"
     assert row.last_error is None
     assert row.next_attempt_at is not None
+
+
+def test_calendar_endpoint_returns_races_and_holidays(auth, db):
+    from datetime import date
+    from app.models import FeedSnapshot, utcnow
+
+    db.add(FeedSnapshot(source_id="common:runsignup", entries=[{
+        "kind": "race", "date": "2026-11-14", "title": "Turkey Trot 5K",
+        "url": "https://runsignup.com/Race/US/CA/Avalon/Turkey-Trot-5K",
+        "country": "US", "city": "Avalon, CA", "distance": "3.1 Miles",
+    }], provider="RunSignup", provider_note="", last_success_at=utcnow(), consecutive_failures=0))
+    db.commit()
+    response = auth.get("/api/v1/feeds/calendar?start=2026-11-01&end=2026-12-15")
+    assert response.status_code == 200
+    body = response.json()
+    assert any(item["title"] == "Turkey Trot 5K" for item in body["events"])
+    assert any(item["title"] == "感恩节" and item["date"] == "2026-11-26" for item in body["events"])
+    assert body["status"] == "ok"
+
+
+def test_calendar_rejects_range_over_62_days(auth):
+    response = auth.get("/api/v1/feeds/calendar?start=2026-01-01&end=2026-06-01")
+    assert response.status_code == 422
+    assert response.json()["code"] == "INVALID_RANGE"
+
+
+def test_calendar_marks_range_beyond_race_window(auth):
+    from datetime import date, timedelta
+    start = date.today() + timedelta(days=100)
+    end = start + timedelta(days=10)
+    body = auth.get(f"/api/v1/feeds/calendar?start={start}&end={end}").json()
+    assert body["race_window_exceeded"] is True
+
+
+def test_data_panels_endpoint_returns_subscriptions_rules_links(auth):
+    body = auth.get("/api/v1/feeds/data-panels").json()
+    assert "items" in body["subscriptions"]
+    assert {row["key"] for row in body["rules"]} == {"alibaba-rules", "1688-rules"}
+    assert {row["key"] for row in body["links"]} >= {"temu-seller", "pinterest-trends", "runsignup"}
+
+
+def test_common_refresh_unknown_key_and_cooldown(auth, db):
+    assert auth.post("/api/v1/feeds/common/nope/refresh").status_code == 404
+    from app.models import FeedSnapshot, utcnow
+    db.add(FeedSnapshot(source_id="common:1688-rules", entries=[], consecutive_failures=0, last_attempt_at=utcnow()))
+    db.commit()
+    response = auth.post("/api/v1/feeds/common/1688-rules/refresh")
+    assert response.status_code == 202
+    body = response.json()
+    assert body["queued"] is False
+    assert body["reason"] == "cooldown"
+    assert body["retry_after"] > 0

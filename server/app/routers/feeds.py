@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -11,6 +13,7 @@ from ..deps import get_current_user
 from ..errors import ApiError
 from ..models import FeedSubscription, User
 from ..services import feed_service as service
+from ..services.common_sources import COMMON_SOURCES
 from ..services.feed_catalog import COMMON_GROUPS, HOT_SOURCE_IDS
 from ..services.feed_translation import translate_texts, translation_status
 
@@ -173,9 +176,42 @@ def get_translation_status(db: Session = Depends(get_db)):
     return translation_status(db)
 
 
+@router.get("/feeds/calendar")
+def calendar(
+    start: date = Query(...),
+    end: date = Query(...),
+    db: Session = Depends(get_db),
+):
+    if end < start or (end - start).days > 62:
+        raise ApiError("INVALID_RANGE", "日期范围最多 62 天", 422)
+    return service.calendar_payload(db, start, end)
+
+
+@router.get("/feeds/data-panels")
+def data_panels(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return service.data_panels_payload(db, user.id)
+
+
+@router.post("/feeds/common/{key}/refresh", status_code=202)
+def refresh_common_key(key: str, background: BackgroundTasks, db: Session = Depends(get_db)):
+    if not settings.feed_enabled or not settings.feed_common_enabled:
+        raise ApiError("FEED_DISABLED", "信息聚合已关闭，不会发起外部请求", 409)
+    if key not in COMMON_SOURCES:
+        raise ApiError("UNKNOWN_COMMON_SOURCE", "未知通用信息源", 404)
+    remaining = service.common_cooldown_remaining(db, key)
+    if remaining > 0:
+        return {"queued": False, "reason": "cooldown", "retry_after": remaining}
+    started, joined = service.request_common_refresh([key], force=True)
+    if started:
+        background.add_task(service.run_common_refresh, started, True)
+        return {"queued": True}
+    return {"queued": False, "reason": "joined"}
+
+
 @router.get("/feeds/common")
-def common_sources():
+def common_sources(db: Session = Depends(get_db)):
     return {
         "groups": COMMON_GROUPS,
-        "note": "常用信息源只提供官方入口，不使用 Nexus 账号或 Cookie 访问；需要登录的页面在浏览器中打开。",
+        "note": "公开数据自动刷新；需要登录的入口在浏览器打开。",
+        "sources": service.common_payload(db)["sources"],
     }

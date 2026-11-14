@@ -21,8 +21,8 @@ from ..db import SessionLocal
 from ..errors import ApiError
 from ..models import FeedEntry, FeedSnapshot, FeedSubscription, utcnow
 from ..utils import iso_z
-from .common_sources import COMMON_SOURCES, fetch_runsignup_all, merge_runsignup_entries
-from .feed_catalog import COMMON_BY_KEY, DIRECT_PROVIDERS, HOT_SECTIONS, HOT_SOURCE_IDS, HOT_SOURCES, DEFAULT_SUBSCRIPTIONS
+from .common_sources import COMMON_SOURCES, fetch_runsignup_all, merge_runsignup_entries, us_holidays
+from .feed_catalog import COMMON_BY_KEY, COMMON_GROUPS, DIRECT_PROVIDERS, HOT_SECTIONS, HOT_SOURCE_IDS, HOT_SOURCES, DEFAULT_SUBSCRIPTIONS
 from .feed_parsers import (
     FeedParseError, normalize_link, parse_dailyhot, parse_direct_bilibili,
     parse_direct_weibo, parse_direct_zhihu, parse_feed, parse_google_trends, safe_http_url,
@@ -787,6 +787,86 @@ def hot_payload(db: Session) -> dict:
         ],
         "source_count": len(sources),
         "generated_at": iso_z(utcnow()),
+    }
+
+
+def calendar_payload(db: Session, start: date, end: date) -> dict:
+    payload = {
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "events": [],
+        "status": "disabled",
+        "last_success_at": None,
+        "last_error": None,
+        "race_window_exceeded": False,
+    }
+    if not settings.feed_common_enabled:
+        return payload
+
+    window_end = date.today() + timedelta(days=settings.feed_runsignup_window_days)
+    payload["race_window_exceeded"] = end > window_end
+
+    row = db.get(FeedSnapshot, "common:runsignup")
+    race_entries: list[dict] = []
+    if row and row.last_success_at:
+        for entry in row.entries or []:
+            entry_date = entry.get("date")
+            if entry_date and start.isoformat() <= entry_date <= end.isoformat():
+                race_entries.append(entry)
+
+    events = race_entries + us_holidays(start, end)
+    events.sort(key=lambda item: (item.get("date", ""), item.get("kind", ""), item.get("title", "")))
+
+    payload["events"] = events
+    payload["status"] = _source_status(row) if row else "idle"
+    payload["last_success_at"] = iso_z(row.last_success_at) if row and row.last_success_at else None
+    payload["last_error"] = row.last_error if row else None
+    return payload
+
+
+def data_panels_payload(db: Session, user_id: int) -> dict:
+    entries = list_entries(db, user_id, limit=30)
+    items = sorted(entries["items"], key=lambda item: item["read"])
+
+    unread = db.scalar(
+        select(func.count(FeedEntry.id))
+        .join(FeedSubscription, FeedSubscription.id == FeedEntry.subscription_id)
+        .where(
+            FeedSubscription.user_id == user_id,
+            FeedSubscription.deleted_at.is_(None),
+            FeedEntry.read_at.is_(None),
+        )
+    ) or 0
+
+    common = common_payload(db)
+    rules = [src for src in common["sources"] if src["key"] in {"alibaba-rules", "1688-rules"}]
+
+    link_badges = {
+        "temu-seller": "需登录",
+        "pinterest-trends": "官方入口",
+        "runsignup": "官方入口",
+    }
+    links = []
+    for group in COMMON_GROUPS:
+        for item in group["items"]:
+            if item["key"] in link_badges:
+                links.append({
+                    "key": item["key"],
+                    "title": item["title"],
+                    "platform": item["platform"],
+                    "url": item["url"],
+                    "note": item.get("note") or "",
+                    "badge": link_badges[item["key"]],
+                })
+
+    return {
+        "subscriptions": {
+            "items": items,
+            "total": entries["total"],
+            "unread": int(unread),
+        },
+        "rules": rules,
+        "links": links,
     }
 
 
