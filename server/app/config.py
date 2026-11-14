@@ -82,6 +82,7 @@ class Settings(BaseSettings):
     feed_runsignup_countries: str = "all"
     feed_runsignup_concurrency: int = Field(default=8, ge=1, le=16)
     feed_runsignup_interval_seconds: int = Field(default=21600, ge=3600, le=86400)
+    feed_runsignup_cooldown_seconds: int = Field(default=600, ge=60, le=7200)
     feed_runsignup_window_days: int = Field(default=90, ge=30, le=365)
 
     # 视频解析：随 FastAPI 进程内嵌运行，不需要额外容器。

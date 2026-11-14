@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Box, useMediaQuery, useTheme } from '@mui/material'
 import { toast } from '@/ui/feedback'
@@ -35,28 +35,44 @@ export default function CalendarDashboard() {
 
   const range = useMemo(() => monthGridRange(month), [month])
 
+  // 刷新后按后端 refreshing 状态轮询，直到回落或超过上限，避免固定 3s/8s 猜时间。
+  const POLL_INTERVAL_MS = 3000
+  const POLL_MIN_MS = 4000
+  const POLL_MAX_MS = 180_000
+  const [polling, setPolling] = useState(false)
+  const pollStartedAt = useRef(0)
+
   const calendarQuery = useQuery({
     queryKey: ['feeds', 'calendar', range.start, range.end],
     queryFn: () => getCalendar(range.start, range.end),
+    refetchInterval: polling ? POLL_INTERVAL_MS : false,
   })
 
   const panelsQuery = useQuery({
     queryKey: ['feeds', 'data-panels'],
     queryFn: getDataPanels,
+    refetchInterval: polling ? POLL_INTERVAL_MS : false,
   })
 
   const calendarError = calendarQuery.error ? apiError(calendarQuery.error).message : null
   const panelsError = panelsQuery.error ? apiError(panelsQuery.error).message : null
 
+  const serverRefreshing = calendarQuery.data?.status === 'refreshing'
+    || (panelsQuery.data?.rules || []).some((rule) => rule.status === 'refreshing')
+
+  useEffect(() => {
+    if (!polling) return
+    const elapsed = Date.now() - pollStartedAt.current
+    if (elapsed > POLL_MAX_MS || (!serverRefreshing && elapsed > POLL_MIN_MS)) {
+      setPolling(false)
+    }
+  }, [polling, serverRefreshing, calendarQuery.dataUpdatedAt, panelsQuery.dataUpdatedAt])
+
   const invalidateLater = () => {
-    window.setTimeout(() => {
-      void queryClient.invalidateQueries({ queryKey: ['feeds', 'calendar'] })
-      void queryClient.invalidateQueries({ queryKey: ['feeds', 'data-panels'] })
-    }, 3000)
-    window.setTimeout(() => {
-      void queryClient.invalidateQueries({ queryKey: ['feeds', 'calendar'] })
-      void queryClient.invalidateQueries({ queryKey: ['feeds', 'data-panels'] })
-    }, 8000)
+    pollStartedAt.current = Date.now()
+    setPolling(true)
+    void queryClient.invalidateQueries({ queryKey: ['feeds', 'calendar'] })
+    void queryClient.invalidateQueries({ queryKey: ['feeds', 'data-panels'] })
   }
 
   const refreshAll = useMutation({
@@ -162,6 +178,9 @@ export default function CalendarDashboard() {
           status={calendarQuery.data?.status || 'idle'}
           loading={calendarQuery.isPending}
           error={calendarError}
+          lastSuccessAt={calendarQuery.data?.last_success_at ?? null}
+          lastError={calendarQuery.data?.last_error ?? null}
+          windowExceeded={calendarQuery.data?.race_window_exceeded ?? false}
         />
       </Box>
       <Box sx={{

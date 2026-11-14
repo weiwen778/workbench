@@ -5,7 +5,7 @@ import {
 import { alpha, useTheme } from '@mui/material/styles'
 import { ArrowLeft, ArrowRight, ExternalLink, Refresh } from '@/icons'
 import { LoadingBlock } from '@/ui/common'
-import { StatusChip } from '@/feeds/shared'
+import { StatusChip, dateTime, relativeTime } from '@/feeds/shared'
 import type { CalendarEvent } from '@/feeds/api'
 
 export interface CalendarGridProps {
@@ -16,6 +16,9 @@ export interface CalendarGridProps {
   status: string
   loading: boolean
   error?: string | null
+  lastSuccessAt?: string | null
+  lastError?: string | null
+  windowExceeded?: boolean
 }
 
 export function formatDateLocal(date: Date): string {
@@ -27,7 +30,10 @@ export function formatDateLocal(date: Date): string {
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
 
-export default function CalendarGrid({ month, events, onMonthChange, onRefresh, status, loading, error }: CalendarGridProps) {
+export default function CalendarGrid({
+  month, events, onMonthChange, onRefresh, status, loading, error,
+  lastSuccessAt, lastError, windowExceeded,
+}: CalendarGridProps) {
   const [dialogDate, setDialogDate] = useState<string | null>(null)
 
   const theme = useTheme()
@@ -70,9 +76,25 @@ export default function CalendarGrid({ month, events, onMonthChange, onRefresh, 
         year={year} monthIndex={monthIndex}
         status={status} onPrev={handlePrev} onNext={handleNext} onToday={handleToday} onRefresh={onRefresh}
       />
-      <Typography sx={{ px: 1.25, pb: 0.5, fontSize: 11, color: 'text.secondary' }}>
-        RunSignup 覆盖因国家而异，部分国家暂无赛事
-      </Typography>
+      <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap flexWrap="wrap" sx={{ px: 1.25, pb: 0.5 }}>
+        <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+          {lastSuccessAt ? `最近抓取 ${relativeTime(lastSuccessAt)}（${dateTime(lastSuccessAt)}）` : '尚未成功抓取赛事'}
+        </Typography>
+        <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>·</Typography>
+        <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+          RunSignup 覆盖因国家而异，部分国家暂无赛事
+        </Typography>
+      </Stack>
+      {windowExceeded ? (
+        <Alert severity="info" variant="outlined" sx={{ mx: 1.25, mb: 0.75, py: 0.25, fontSize: 11.5 }}>
+          查询范围超出 RunSignup 抓取窗口，仅显示已抓取到的赛事；节日不受影响。
+        </Alert>
+      ) : null}
+      {lastError ? (
+        <Alert severity="warning" variant="outlined" sx={{ mx: 1.25, mb: 0.75, py: 0.25, fontSize: 11.5 }}>
+          上次抓取失败：{lastError}（当前显示最近一次成功的数据）
+        </Alert>
+      ) : null}
       {error && hasEvents ? (
         <Alert severity="error" variant="outlined" sx={{ mx: 1.25, mb: 0.75, py: 0.25, fontSize: 11.5 }}>
           {error}
@@ -217,19 +239,19 @@ function CalendarHeader({
       <Typography sx={{ fontSize: 16, fontWeight: 650 }}>{year}年{monthIndex + 1}月</Typography>
       <Stack direction="row" spacing={0.25}>
         <Tooltip title="上月">
-          <IconButton size="small" onClick={onPrev}><ArrowLeft fontSize="small" /></IconButton>
+          <IconButton size="small" aria-label="上月" onClick={onPrev}><ArrowLeft fontSize="small" /></IconButton>
         </Tooltip>
         <Tooltip title="今天">
-          <IconButton size="small" onClick={onToday}><Typography sx={{ fontSize: 11, fontWeight: 600 }}>今</Typography></IconButton>
+          <IconButton size="small" aria-label="今天" onClick={onToday}><Typography sx={{ fontSize: 11, fontWeight: 600 }}>今</Typography></IconButton>
         </Tooltip>
         <Tooltip title="下月">
-          <IconButton size="small" onClick={onNext}><ArrowRight fontSize="small" /></IconButton>
+          <IconButton size="small" aria-label="下月" onClick={onNext}><ArrowRight fontSize="small" /></IconButton>
         </Tooltip>
       </Stack>
       <Box sx={{ flex: 1 }} />
       <StatusChip status={status} />
       <Tooltip title="刷新赛事">
-        <IconButton size="small" onClick={onRefresh}><Refresh fontSize="small" /></IconButton>
+        <IconButton size="small" aria-label="刷新赛事" onClick={onRefresh}><Refresh fontSize="small" /></IconButton>
       </Tooltip>
     </Stack>
   )

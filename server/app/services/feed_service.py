@@ -391,7 +391,9 @@ def refresh_common_source(key: str, force: bool = False) -> dict:
         return {"key": key, "status": "disabled"}
     sid = f"common:{key}"
     with SessionLocal() as db:
-        lock_seconds = 600 if key == "runsignup" else 60
+        lock_seconds = (
+            max(600, settings.feed_runsignup_cooldown_seconds) if key == "runsignup" else 60
+        )
         claim, state = _claim_snapshot(db, sid, force, lock_seconds=lock_seconds)
     if not claim:
         return {"key": key, "status": state}
@@ -480,16 +482,25 @@ def common_due_keys(db: Session, limit: int = 10) -> list[str]:
     return due
 
 
-def common_cooldown_remaining(db: Session, key: str, seconds: int = 60) -> int:
+def common_cooldown_seconds(key: str) -> int:
+    """单独设置公共源冷却：RunSignup 全量抓取需要数分钟，使用更长的独立冷却。"""
+    if key == "runsignup":
+        return settings.feed_runsignup_cooldown_seconds
+    return 60
+
+
+def common_cooldown_remaining(db: Session, key: str, seconds: int | None = None) -> int:
+    window = common_cooldown_seconds(key) if seconds is None else seconds
     row = db.get(FeedSnapshot, f"common:{key}")
     if row is None or row.last_attempt_at is None:
         return 0
     now = utcnow()
-    remaining = (row.last_attempt_at + timedelta(seconds=seconds) - now).total_seconds()
+    remaining = (row.last_attempt_at + timedelta(seconds=window) - now).total_seconds()
     return max(0, math.ceil(remaining))
 
 
-def common_payload(db: Session) -> dict:
+def common_payload(db: Session, include_races: bool = True) -> dict:
+    """公共源快照。include_races=False 时不返回 RunSignup 赛事条目，避免旧接口与数据栏传输大快照。"""
     rows = {row.source_id: row for row in db.scalars(select(FeedSnapshot)).all()}
     sources = []
     for source in COMMON_SOURCES.values():
@@ -501,7 +512,7 @@ def common_payload(db: Session) -> dict:
         else:
             status = _source_status(row)
             entries = []
-            if row and row.last_success_at:
+            if row and row.last_success_at and (include_races or source["key"] != "runsignup"):
                 entries = list(row.entries or [])
         interval = settings.feed_runsignup_interval_seconds if source["key"] == "runsignup" else source["interval"]
         sources.append({
@@ -838,7 +849,7 @@ def data_panels_payload(db: Session, user_id: int) -> dict:
         )
     ) or 0
 
-    common = common_payload(db)
+    common = common_payload(db, include_races=False)
     rules = [src for src in common["sources"] if src["key"] in {"alibaba-rules", "1688-rules"}]
 
     link_badges = {
@@ -1171,6 +1182,24 @@ def due_subscription_ids(db: Session, user_id: int | None = None, limit: int = 2
     ).all())
 
 
+def _run_runsignup_task() -> None:
+    try:
+        refresh_common_source("runsignup", force=False)
+    except Exception:
+        logger.exception("feed runsignup background task failed")
+    finally:
+        _release(["common:runsignup"])
+
+
+def dispatch_runsignup_refresh(force: bool = False) -> bool:
+    """RunSignup 全量抓取放到守护线程，避免阻塞热榜与订阅的同轮调度。"""
+    started, _ = request_common_refresh(["runsignup"], force=force)
+    if not started:
+        return False
+    threading.Thread(target=_run_runsignup_task, name="feeds-runsignup", daemon=True).start()
+    return True
+
+
 def refresh_due_all() -> None:
     if not settings.feed_enabled:
         return
@@ -1186,10 +1215,14 @@ def refresh_due_all() -> None:
     if settings.feed_common_enabled:
         with SessionLocal() as db:
             common_keys = common_due_keys(db, limit=10)
-        if common_keys:
-            started, _ = request_common_refresh(common_keys, force=False)
+        # 轻量规则源同步刷新；RunSignup 单独派发，不占用本轮调度时间。
+        immediate = [key for key in common_keys if key != "runsignup"]
+        if immediate:
+            started, _ = request_common_refresh(immediate, force=False)
             if started:
                 run_common_refresh(started, force=False)
+        if "runsignup" in common_keys:
+            dispatch_runsignup_refresh(force=False)
 
 
 async def refresh_loop() -> None:

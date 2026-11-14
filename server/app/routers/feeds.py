@@ -210,8 +210,9 @@ def refresh_common_key(key: str, background: BackgroundTasks, db: Session = Depe
 
 @router.get("/feeds/common")
 def common_sources(db: Session = Depends(get_db)):
+    """兼容旧页面的公共源入口。RunSignup 赛事不再随该接口返回，改由 /feeds/calendar 提供。"""
     return {
         "groups": COMMON_GROUPS,
         "note": "公开数据自动刷新；需要登录的入口在浏览器打开。",
-        "sources": service.common_payload(db)["sources"],
+        "sources": service.common_payload(db, include_races=False)["sources"],
     }

@@ -488,3 +488,105 @@ def test_common_refresh_unknown_key_and_cooldown(auth, db):
     assert body["queued"] is False
     assert body["reason"] == "cooldown"
     assert body["retry_after"] > 0
+
+
+def test_runsignup_has_longer_cooldown_than_rule_sources(db):
+    db.add(FeedSnapshot(source_id="common:runsignup", entries=[], consecutive_failures=0, last_attempt_at=utcnow()))
+    db.add(FeedSnapshot(source_id="common:alibaba-rules", entries=[], consecutive_failures=0, last_attempt_at=utcnow()))
+    db.commit()
+    runsignup = service.common_cooldown_remaining(db, "runsignup")
+    rules = service.common_cooldown_remaining(db, "alibaba-rules")
+    assert rules > 0 and rules <= 60
+    assert runsignup > rules
+    assert runsignup <= service.settings.feed_runsignup_cooldown_seconds
+
+
+def test_refresh_due_all_dispatches_runsignup_out_of_sync_path(db, monkeypatch):
+    calls: dict[str, object] = {"immediate": None, "runsignup": 0}
+
+    monkeypatch.setattr(service.settings, "feed_enabled", True)
+    monkeypatch.setattr(service.settings, "feed_common_enabled", True)
+    monkeypatch.setattr(service, "request_hot_refresh", lambda ids, force: ([], []))
+    monkeypatch.setattr(service, "due_subscription_ids", lambda db, limit=20: [])
+    monkeypatch.setattr(
+        service, "common_due_keys",
+        lambda db, limit=10: ["alibaba-rules", "1688-rules", "runsignup"],
+    )
+
+    def fake_request_common(keys, force):
+        calls["immediate"] = list(keys)
+        return [], []
+
+    def fake_dispatch(force=False):
+        calls["runsignup"] = int(calls["runsignup"]) + 1
+        return True
+
+    monkeypatch.setattr(service, "request_common_refresh", fake_request_common)
+    monkeypatch.setattr(service, "dispatch_runsignup_refresh", fake_dispatch)
+
+    service.refresh_due_all()
+
+    assert calls["immediate"] == ["alibaba-rules", "1688-rules"]
+    assert calls["runsignup"] == 1
+
+
+def test_dispatch_runsignup_refresh_is_single_flight(monkeypatch):
+    class FakeThread:
+        def __init__(self, target=None, name=None, daemon=None):
+            self.target = target
+            self.name = name
+            self.daemon = daemon
+
+        def start(self) -> None:
+            # 不真正执行抓取，避免测试联网
+            return None
+
+    monkeypatch.setattr(service.threading, "Thread", FakeThread)
+    started, _ = service._reserve(["common:runsignup"])
+    try:
+        assert started == ["common:runsignup"]
+        assert service.dispatch_runsignup_refresh(force=True) is False
+    finally:
+        service._release(["common:runsignup"])
+
+    assert service.dispatch_runsignup_refresh(force=True) is True
+    service._release(["common:runsignup"])
+
+
+def test_common_endpoint_omits_race_entries(auth, db):
+    from datetime import date, timedelta
+    from app.models import FeedSnapshot, utcnow
+
+    target = (date.today() + timedelta(days=1)).isoformat()
+    db.add(FeedSnapshot(source_id="common:runsignup", entries=[{
+        "kind": "race", "date": target, "title": "Legacy Payload 5K",
+        "url": "https://runsignup.com/Race/US/CA/Legacy", "country": "US", "city": "Avalon, CA",
+        "distance": "5K",
+    }], provider="RunSignup", provider_note="", last_success_at=utcnow(), consecutive_failures=0))
+    db.commit()
+
+    body = auth.get("/api/v1/feeds/common").json()
+    runsignup = next(item for item in body["sources"] if item["key"] == "runsignup")
+    assert runsignup["entries"] == []
+    assert runsignup["last_success_at"]
+
+    calendar = auth.get(f"/api/v1/feeds/calendar?start={target}&end={target}").json()
+    assert any(item["title"] == "Legacy Payload 5K" for item in calendar["events"])
+
+
+def test_calendar_payload_exposes_last_error_and_last_success(auth, db):
+    from datetime import date, timedelta
+    from app.models import FeedSnapshot, utcnow
+
+    db.add(FeedSnapshot(
+        source_id="common:runsignup", entries=[], provider="RunSignup", provider_note="",
+        last_success_at=utcnow(), last_error="来源请求超时", consecutive_failures=1,
+    ))
+    db.commit()
+    start = date.today()
+    end = start + timedelta(days=7)
+    body = auth.get(f"/api/v1/feeds/calendar?start={start}&end={end}").json()
+    assert body["status"] == "stale"
+    assert body["last_success_at"]
+    assert body["last_error"] == "来源请求超时"
+    assert body["race_window_exceeded"] is False
