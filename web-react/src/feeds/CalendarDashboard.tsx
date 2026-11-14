@@ -45,6 +45,9 @@ export default function CalendarDashboard() {
     queryFn: getDataPanels,
   })
 
+  const calendarError = calendarQuery.error ? apiError(calendarQuery.error).message : null
+  const panelsError = panelsQuery.error ? apiError(panelsQuery.error).message : null
+
   const invalidateLater = () => {
     window.setTimeout(() => {
       void queryClient.invalidateQueries({ queryKey: ['feeds', 'calendar'] })
@@ -83,9 +86,6 @@ export default function CalendarDashboard() {
         toast.warning(messages.join('；'))
       }
       invalidateLater()
-    },
-    onError: (reason) => {
-      toast.error(apiError(reason).message)
     },
   })
 
@@ -153,6 +153,7 @@ export default function CalendarDashboard() {
           onRefresh={() => void handleCalendarRefresh()}
           status={calendarQuery.data?.status || 'idle'}
           loading={calendarQuery.isPending}
+          error={calendarError}
         />
       </Box>
       <Box sx={{ gridArea: 'data1', minHeight: 0, display: 'flex' }}>
@@ -162,6 +163,7 @@ export default function CalendarDashboard() {
           loading={panelsQuery.isPending}
           onRefresh={() => void handleSectionRefresh('subscriptions')}
           refreshing={refreshing.subscriptions}
+          error={panelsError}
         />
       </Box>
       <Box sx={{ gridArea: 'data2', minHeight: 0, display: 'flex' }}>
@@ -171,6 +173,7 @@ export default function CalendarDashboard() {
           loading={panelsQuery.isPending}
           onRefresh={() => void handleSectionRefresh('alibaba')}
           refreshing={refreshing.alibaba}
+          error={panelsError}
         />
       </Box>
       <Box sx={{ gridArea: 'data3', minHeight: 0, display: 'flex' }}>
@@ -180,6 +183,7 @@ export default function CalendarDashboard() {
           loading={panelsQuery.isPending}
           onRefresh={() => void handleSectionRefresh('1688')}
           refreshing={refreshing['1688']}
+          error={panelsError}
         />
       </Box>
       <Box sx={{ gridArea: 'data4', minHeight: 0, display: 'flex' }}>
@@ -189,6 +193,7 @@ export default function CalendarDashboard() {
           loading={panelsQuery.isPending}
           onRefresh={() => void handleSectionRefresh('links')}
           refreshing={refreshing.links}
+          error={panelsError}
         />
       </Box>
     </Box>

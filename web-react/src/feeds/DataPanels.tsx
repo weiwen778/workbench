@@ -1,4 +1,6 @@
-import { Box, Button, Chip, CircularProgress, IconButton, Paper, Stack, Tooltip, Typography } from '@mui/material'
+import {
+  Alert, Box, Button, Chip, CircularProgress, IconButton, Paper, Stack, Tooltip, Typography,
+} from '@mui/material'
 import { useNavigate } from 'react-router-dom'
 import { ExternalLink, Refresh } from '@/icons'
 import { EmptyHint, LoadingBlock } from '@/ui/common'
@@ -11,6 +13,7 @@ export interface DataPanelsProps {
   loading: boolean
   onRefresh: () => void
   refreshing: boolean
+  error?: string | null
 }
 
 const SECTION_TITLES: Record<DataPanelsProps['section'], string> = {
@@ -20,7 +23,7 @@ const SECTION_TITLES: Record<DataPanelsProps['section'], string> = {
   links: '常用平台入口',
 }
 
-export default function DataPanels({ section, data, loading, onRefresh, refreshing }: DataPanelsProps) {
+export default function DataPanels({ section, data, loading, onRefresh, refreshing, error }: DataPanelsProps) {
   const navigate = useNavigate()
 
   const title = SECTION_TITLES[section]
@@ -30,7 +33,7 @@ export default function DataPanels({ section, data, loading, onRefresh, refreshi
       <Stack direction="row" spacing={1} alignItems="center" sx={{ px: 1.25, py: 1, borderBottom: 1, borderColor: 'divider' }}>
         <Typography sx={{ fontSize: 14, fontWeight: 650 }}>{title}</Typography>
         <Box sx={{ flex: 1 }} />
-        {section === 'links' ? null : <PanelStatus section={section} data={data} />}
+        {section === 'links' ? null : <PanelStatus section={section} data={data} loading={loading} error={error} />}
         <Tooltip title={section === 'links' ? '刷新全部' : '刷新'}>
           <span>
             <IconButton size="small" disabled={refreshing} onClick={onRefresh}>
@@ -43,29 +46,50 @@ export default function DataPanels({ section, data, loading, onRefresh, refreshi
       <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', p: 1 }}>
         {loading && !data ? (
           <LoadingBlock text="正在读取…" />
-        ) : section === 'subscriptions' ? (
-          <SubscriptionsPanel data={data} navigate={navigate} />
-        ) : section === 'links' ? (
-          <LinksPanel data={data} />
+        ) : !data && error ? (
+          <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', px: 2 }}>
+            <Alert severity="error" sx={{ fontSize: 12 }}>加载失败：{error}</Alert>
+          </Box>
         ) : (
-          <RulesPanel section={section} data={data} />
+          <>
+            {data && error ? (
+              <Alert severity="error" variant="outlined" sx={{ mb: 0.75, py: 0.25, fontSize: 11.5 }}>
+                {error}
+              </Alert>
+            ) : null}
+            {section === 'subscriptions' ? (
+              <SubscriptionsPanel data={data} navigate={navigate} />
+            ) : section === 'links' ? (
+              <LinksPanel data={data} />
+            ) : (
+              <RulesPanel section={section} data={data} />
+            )}
+          </>
         )}
       </Box>
     </Paper>
   )
 }
 
-function PanelStatus({ section, data }: { section: DataPanelsProps['section']; data: DataPanelsPayload | undefined }) {
-  const rule = section === 'alibaba' || section === '1688'
-    ? data?.rules.find((item) => item.key === `${section}-rules`)
-    : undefined
-  if (!rule && section !== 'subscriptions') return null
-  const status = section === 'subscriptions' ? 'ok' : rule!.status
-  const lastAt = section === 'subscriptions' ? undefined : rule!.last_success_at
+function PanelStatus({ section, data, loading, error }: {
+  section: DataPanelsProps['section']
+  data: DataPanelsPayload | undefined
+  loading: boolean
+  error?: string | null
+}) {
+  if (section === 'links') return null
+  if (section === 'subscriptions') {
+    if (loading && !data) return <StatusChip status="refreshing" />
+    if (error && !data) return <StatusChip status="error" />
+    if (data) return <StatusChip status="ok" />
+    return null
+  }
+  const rule = data?.rules.find((item) => item.key === `${section}-rules`)
+  if (!rule) return null
   return (
     <Stack direction="row" spacing={0.6} alignItems="center">
-      <StatusChip status={status} />
-      {lastAt ? <Typography sx={{ fontSize: 10.5, color: 'text.secondary' }}>{relativeTime(lastAt)}</Typography> : null}
+      <StatusChip status={rule.status} />
+      {rule.last_success_at ? <Typography sx={{ fontSize: 10.5, color: 'text.secondary' }}>{relativeTime(rule.last_success_at)}</Typography> : null}
     </Stack>
   )
 }

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  Box, Chip, Dialog, DialogContent, DialogTitle, IconButton, Paper, Stack, Tooltip, Typography,
+  Alert, Box, Chip, Dialog, DialogContent, DialogTitle, IconButton, Paper, Stack, Tooltip, Typography,
 } from '@mui/material'
 import { alpha, useTheme } from '@mui/material/styles'
 import { ArrowLeft, ArrowRight, ExternalLink, Refresh } from '@/icons'
@@ -15,6 +15,7 @@ export interface CalendarGridProps {
   onRefresh: () => void
   status: string
   loading: boolean
+  error?: string | null
 }
 
 export function formatDateLocal(date: Date): string {
@@ -26,7 +27,7 @@ export function formatDateLocal(date: Date): string {
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
 
-export default function CalendarGrid({ month, events, onMonthChange, onRefresh, status, loading }: CalendarGridProps) {
+export default function CalendarGrid({ month, events, onMonthChange, onRefresh, status, loading, error }: CalendarGridProps) {
   const [dialogDate, setDialogDate] = useState<string | null>(null)
 
   const theme = useTheme()
@@ -61,19 +62,7 @@ export default function CalendarGrid({ month, events, onMonthChange, onRefresh, 
 
   const dialogEvents = dialogDate ? (eventsByDate.get(dialogDate) || []) : []
 
-  if (loading && !events.length) {
-    return (
-      <Paper variant="outlined" sx={{ height: '100%', minHeight: 320, display: 'flex', flexDirection: 'column' }}>
-        <CalendarHeader
-          year={year} monthIndex={monthIndex}
-          status={status} onPrev={handlePrev} onNext={handleNext} onToday={handleToday} onRefresh={onRefresh}
-        />
-        <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <LoadingBlock text="正在读取日历…" />
-        </Box>
-      </Paper>
-    )
-  }
+  const hasEvents = events.length > 0
 
   return (
     <Paper variant="outlined" sx={{ height: '100%', minHeight: 320, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -84,71 +73,88 @@ export default function CalendarGrid({ month, events, onMonthChange, onRefresh, 
       <Typography sx={{ px: 1.25, pb: 0.5, fontSize: 11, color: 'text.secondary' }}>
         RunSignup 覆盖因国家而异，部分国家暂无赛事
       </Typography>
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: 1, borderColor: 'divider' }}>
-        {WEEKDAYS.map((day) => (
-          <Box key={day} sx={{ py: 0.6, textAlign: 'center', fontSize: 11.5, fontWeight: 600, color: 'text.secondary', bgcolor: 'action.hover' }}>
-            {day}
-          </Box>
-        ))}
-      </Box>
-      <Box sx={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gridTemplateRows: 'repeat(6, 1fr)' }}>
-        {cells.map((date) => {
-          const dateStr = formatDateLocal(date)
-          const isCurrentMonth = date.getMonth() === monthIndex
-          const isToday = dateStr === today
-          const dayEvents = eventsByDate.get(dateStr) || []
-          const visible = dayEvents.slice(0, 2)
-          const overflow = dayEvents.length - visible.length
-          return (
-            <Box
-              key={dateStr}
-              onClick={() => dayEvents.length > 0 && setDialogDate(dateStr)}
-              sx={{
-                minHeight: 0,
-                p: 0.5,
-                borderRight: 1,
-                borderBottom: 1,
-                borderColor: 'divider',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 0.3,
-                cursor: dayEvents.length > 0 ? 'pointer' : 'default',
-                bgcolor: isToday ? 'action.selected' : 'background.paper',
-                '&:nth-of-type(7n)': { borderRight: 0 },
-                '&:nth-of-type(n+36)': { borderBottom: 0 },
-                opacity: isCurrentMonth ? 1 : 0.45,
-                '&:hover': dayEvents.length > 0 ? { bgcolor: 'action.hover' } : undefined,
-              }}
-            >
-              <Typography sx={{ fontSize: 11.5, fontWeight: isToday ? 700 : 500, color: isToday ? 'primary.main' : 'text.primary' }}>
-                {date.getDate()}
-              </Typography>
-              <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 0.3 }}>
-                {visible.map((event, index) => (
-                  <Tooltip key={`${event.kind}-${index}`} title={event.title} disableHoverListener={event.title.length <= 18}>
-                    <Chip
-                      size="small"
-                      label={event.kind === 'race' && event.country ? `${event.country} · ${event.title}` : event.title}
-                      sx={{
-                        height: 18,
-                        fontSize: 9.5,
-                        borderRadius: 0.75,
-                        bgcolor: event.kind === 'holiday' ? alpha(theme.palette.warning.main, 0.14) : alpha(theme.palette.primary.main, 0.12),
-                        color: event.kind === 'holiday' ? theme.palette.warning.dark : theme.palette.primary.dark,
-                        borderColor: 'transparent',
-                        '& .MuiChip-label': { px: 0.6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-                      }}
-                    />
-                  </Tooltip>
-                ))}
+      {error && hasEvents ? (
+        <Alert severity="error" variant="outlined" sx={{ mx: 1.25, mb: 0.75, py: 0.25, fontSize: 11.5 }}>
+          {error}
+        </Alert>
+      ) : null}
+      {loading && !hasEvents ? (
+        <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <LoadingBlock text="正在读取日历…" />
+        </Box>
+      ) : error && !hasEvents ? (
+        <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', px: 2 }}>
+          <Alert severity="error" sx={{ fontSize: 12 }}>加载失败：{error}</Alert>
+        </Box>
+      ) : (
+        <>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: 1, borderColor: 'divider' }}>
+            {WEEKDAYS.map((day) => (
+              <Box key={day} sx={{ py: 0.6, textAlign: 'center', fontSize: 11.5, fontWeight: 600, color: 'text.secondary', bgcolor: 'action.hover' }}>
+                {day}
               </Box>
-              {overflow > 0 ? (
-                <Typography sx={{ fontSize: 10, color: 'text.secondary', textAlign: 'right' }}>+{overflow}</Typography>
-              ) : null}
-            </Box>
-          )
-        })}
-      </Box>
+            ))}
+          </Box>
+          <Box sx={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gridTemplateRows: 'repeat(6, 1fr)' }}>
+            {cells.map((date) => {
+              const dateStr = formatDateLocal(date)
+              const isCurrentMonth = date.getMonth() === monthIndex
+              const isToday = dateStr === today
+              const dayEvents = eventsByDate.get(dateStr) || []
+              const visible = dayEvents.slice(0, 2)
+              const overflow = dayEvents.length - visible.length
+              return (
+                <Box
+                  key={dateStr}
+                  onClick={() => dayEvents.length > 0 && setDialogDate(dateStr)}
+                  sx={{
+                    minHeight: 0,
+                    p: 0.5,
+                    borderRight: 1,
+                    borderBottom: 1,
+                    borderColor: 'divider',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 0.3,
+                    cursor: dayEvents.length > 0 ? 'pointer' : 'default',
+                    bgcolor: isToday ? 'action.selected' : 'background.paper',
+                    '&:nth-of-type(7n)': { borderRight: 0 },
+                    '&:nth-of-type(n+36)': { borderBottom: 0 },
+                    opacity: isCurrentMonth ? 1 : 0.45,
+                    '&:hover': dayEvents.length > 0 ? { bgcolor: 'action.hover' } : undefined,
+                  }}
+                >
+                  <Typography sx={{ fontSize: 11.5, fontWeight: isToday ? 700 : 500, color: isToday ? 'primary.main' : 'text.primary' }}>
+                    {date.getDate()}
+                  </Typography>
+                  <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 0.3 }}>
+                    {visible.map((event, index) => (
+                      <Tooltip key={`${event.kind}-${index}`} title={event.title} disableHoverListener={event.title.length <= 18}>
+                        <Chip
+                          size="small"
+                          label={event.kind === 'race' && event.country ? `${event.country} · ${event.title}` : event.title}
+                          sx={{
+                            height: 18,
+                            fontSize: 9.5,
+                            borderRadius: 0.75,
+                            bgcolor: event.kind === 'holiday' ? alpha(theme.palette.warning.main, 0.14) : alpha(theme.palette.primary.main, 0.12),
+                            color: event.kind === 'holiday' ? theme.palette.warning.dark : theme.palette.primary.dark,
+                            borderColor: 'transparent',
+                            '& .MuiChip-label': { px: 0.6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+                          }}
+                        />
+                      </Tooltip>
+                    ))}
+                  </Box>
+                  {overflow > 0 ? (
+                    <Typography sx={{ fontSize: 10, color: 'text.secondary', textAlign: 'right' }}>+{overflow}</Typography>
+                  ) : null}
+                </Box>
+              )
+            })}
+          </Box>
+        </>
+      )}
 
       <Dialog open={Boolean(dialogDate)} onClose={() => setDialogDate(null)} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ fontSize: 15, fontWeight: 600 }}>
