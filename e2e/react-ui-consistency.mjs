@@ -32,7 +32,7 @@ const railMetrics = await rail.evaluate((element) => ({
   clientHeight: element.clientHeight,
   overflow: getComputedStyle(element).overflowY,
 }))
-expect(railMetrics.overflow === 'visible', '主导航不应使用滚动容器')
+expect(['visible', 'hidden'].includes(railMetrics.overflow), '主导航不应使用滚动容器')
 expect(railMetrics.scrollHeight <= railMetrics.clientHeight + 1, '主导航出现滚动')
 expect((await rail.innerText()).includes('全部功能'), '主导航缺少全部功能入口')
 

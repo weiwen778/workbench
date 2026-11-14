@@ -50,8 +50,10 @@ export default function AppRail({ mode, pinned, onToggleMode, onOpenAll, onManag
     borderRadius: 1,
     cursor: 'pointer',
     userSelect: 'none',
+    overflow: 'hidden',
     color: active ? 'primary.contrastText' : 'text.secondary',
     bgcolor: active ? accent : 'transparent',
+    transition: 'width 160ms ease, min-height 160ms ease, padding 160ms ease, background-color 120ms ease',
     '&:hover': { bgcolor: active ? accent : 'action.hover', color: active ? 'primary.contrastText' : 'text.primary' },
     '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 1 },
   })
@@ -121,13 +123,14 @@ export default function AppRail({ mode, pinned, onToggleMode, onOpenAll, onManag
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
+        overflow: 'hidden',
         py: 1,
         gap: 0.5,
         transition: 'width 160ms ease',
         '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
       }}
     >
-      <Box sx={{ width: '100%', px: wide ? 1.25 : 0.5, display: 'flex', alignItems: 'center', gap: 0.5, minHeight: 34 }}>
+      <Box sx={{ position: 'relative', width: '100%', height: 44, px: wide ? 1.25 : 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
         <Tooltip title="回到首页">
           <Box
             role="button"
@@ -135,23 +138,47 @@ export default function AppRail({ mode, pinned, onToggleMode, onOpenAll, onManag
             aria-label="回到首页"
             onClick={() => go('/checkins')}
             onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); go('/checkins') } }}
-            sx={{
-              width: 30, height: 30, display: 'grid', placeItems: 'center', cursor: 'pointer', borderRadius: 1.5,
-              '& img': { width: '100%', height: '100%', objectFit: 'contain' },
-            }}
+            sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 0, cursor: 'pointer', borderRadius: 1.5 }}
           >
-            <Box component="img" src="/favicon.svg?v=20261031-notion" alt="Nexus 图标" />
+            <Box
+              component="img"
+              src="/favicon.svg?v=20261031-notion"
+              alt="Nexus 图标"
+              sx={{ display: 'block', width: wide ? 30 : 28, height: wide ? 30 : 28, flexShrink: 0, objectFit: 'contain' }}
+            />
+            <Typography
+              component="span"
+              sx={{
+                ml: wide ? 1 : 0,
+                maxWidth: wide ? 88 : 0,
+                opacity: wide ? 1 : 0,
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                fontSize: 13,
+                fontWeight: 600,
+                letterSpacing: '-0.01em',
+                transition: 'max-width 160ms ease, margin-left 160ms ease, opacity 120ms ease',
+              }}
+            >
+              Nexus
+            </Typography>
           </Box>
         </Tooltip>
-        {wide ? <Typography sx={{ flex: 1, fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em' }}>Nexus</Typography> : <Box sx={{ flex: 1 }} />}
         <Tooltip title={wide ? '收起侧栏' : '展开侧栏'}>
           <IconButton
             size="small"
             aria-label={wide ? '收起侧栏' : '展开侧栏'}
             aria-expanded={wide}
             onClick={onToggleMode}
+            sx={{
+              position: 'absolute', top: '50%', right: wide ? 8 : 2, transform: 'translateY(-50%)',
+              width: wide ? 27 : 22, height: wide ? 27 : 22,
+              border: 1, borderColor: 'divider', bgcolor: 'background.paper', color: 'text.secondary',
+              transition: 'width 160ms ease, height 160ms ease, background-color 120ms ease',
+              '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
+            }}
           >
-            {wide ? <ChevronLeft sx={{ fontSize: 19 }} /> : <ChevronRight sx={{ fontSize: 19 }} />}
+            {wide ? <ChevronLeft sx={{ fontSize: 17 }} /> : <ChevronRight sx={{ fontSize: 16 }} />}
           </IconButton>
         </Tooltip>
       </Box>
