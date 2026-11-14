@@ -43,9 +43,14 @@ expect((await rail.evaluate((element) => element.clientWidth)) >= 200, '宽版�
 await page.reload({ waitUntil: 'networkidle' })
 await page.waitForTimeout(500)
 expect((await rail.evaluate((element) => element.clientWidth)) >= 200, '宽版模式没有持久化')
-await page.getByLabel('打卡项目二级导航').waitFor()
-expect(await page.getByRole('button', { name: /^置顶/ }).count() >= 10, '打卡二级导航没有显示全部项目')
-expect(await page.getByRole('button', { name: /^收藏/ }).count() >= 10, '打卡二级导航缺少收藏入口')
+await page.getByLabel('打卡二级导航').waitFor()
+expect(await page.getByRole('button', { name: /^收藏/ }).count() === 0, '侧栏不应外显收藏按钮')
+expect(await page.getByRole('button', { name: /^置顶/ }).count() === 0, '侧栏不应外显置顶按钮')
+await page.getByRole('button', { name: '打卡', exact: true }).click()
+await page.waitForTimeout(300)
+expect(await page.getByLabel('打卡二级导航').count() === 0, '点击一级项没有收起二级导航')
+await page.getByRole('button', { name: '打卡', exact: true }).click()
+await page.getByLabel('打卡二级导航').waitFor()
 
 // 管理导航：拖动排序、取消固定、重新固定、恢复默认
 await page.getByRole('button', { name: '账号' }).click()
@@ -78,6 +83,14 @@ await page.getByRole('button', { name: '完成' }).click()
 await page.waitForTimeout(300)
 expect((await rail.innerText()).includes('文档工作台'), '恢复默认后文档工作台未回到侧栏')
 
+// 其他分类模块也应显示二级导航
+await page.goto(`${base}/todos`, { waitUntil: 'networkidle' })
+await page.waitForTimeout(400)
+await page.getByLabel('待办二级导航').waitFor()
+await page.goto(`${base}/notes`, { waitUntil: 'networkidle' })
+await page.waitForTimeout(400)
+await page.getByLabel('笔记二级导航').waitFor()
+
 // 全部功能面板
 await page.getByRole('button', { name: '全部功能' }).click()
 await page.getByText('全部功能', { exact: true }).first().waitFor()
@@ -104,6 +117,8 @@ await page.keyboard.press('Escape')
 // 便利贴：管理分类收进更多菜单
 await page.goto(`${base}/memos`, { waitUntil: 'networkidle' })
 await page.waitForTimeout(500)
+await page.getByLabel('便利贴二级导航').waitFor()
+expect(await page.getByRole('button', { name: /^收藏/ }).count() === 0, '便利贴二级导航不应外显收藏按钮')
 await page.getByRole('button', { name: '更多便利贴操作' }).first().click()
 await page.getByRole('menuitem', { name: '管理分类' }).click()
 await page.getByText('便利贴分类管理').waitFor()

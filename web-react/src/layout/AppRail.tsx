@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
-  Avatar, Box, Divider, IconButton, Menu, MenuItem, ListItemIcon, ListItemText, Tooltip, Typography, useTheme,
+  Avatar, Box, Collapse, Divider, IconButton, Menu, MenuItem, ListItemIcon, ListItemText, Tooltip, Typography, useTheme,
 } from '@mui/material'
 import ChevronLeft from '@mui/icons-material/ChevronLeft'
 import ChevronRight from '@mui/icons-material/ChevronRight'
@@ -10,33 +10,50 @@ import GridView from '@mui/icons-material/GridView'
 import { logout, useSession } from '@/session'
 import { preloadPath } from '@/router/preload'
 import { appNavItem } from './app-nav'
-import CheckinSubnav from './CheckinSubnav'
+import { activeGroupKey, type NavGroup } from './nav'
 import type { SidebarMode } from './sidebar-order'
+
+const CATEGORY_KEYS = new Set(['checkin', 'todos', 'notes', 'memos', 'bookmarks'])
 
 interface AppRailProps {
   mode: SidebarMode
   pinned: string[]
+  groups: NavGroup[]
   onToggleMode: () => void
   onOpenAll: () => void
   onManage: () => void
 }
 
-export default function AppRail({ mode, pinned, onToggleMode, onOpenAll, onManage }: AppRailProps) {
+export default function AppRail({ mode, pinned, groups, onToggleMode, onOpenAll, onManage }: AppRailProps) {
   const navigate = useNavigate()
   const location = useLocation()
   const session = useSession()
   const theme = useTheme()
   const accent = theme.palette.primary.main
   const [userAnchor, setUserAnchor] = useState<HTMLElement | null>(null)
-  const [checkinOpen, setCheckinOpen] = useState(() => window.location.pathname.startsWith('/checkins'))
+  const [openKey, setOpenKey] = useState<string | null>(() => activeGroupKey(window.location.pathname, groups) || null)
   const wide = mode === 'wide'
+  const activeGroup = activeGroupKey(location.pathname, groups) || null
 
   const items = useMemo(() => pinned.map((key) => appNavItem(key)).filter(Boolean), [pinned])
   const activeKey = items.find((item) => item && (location.pathname === item.path || location.pathname.startsWith(item.path + '/')))?.key || ''
 
+  useEffect(() => {
+    setOpenKey(activeGroup && CATEGORY_KEYS.has(activeGroup) ? activeGroup : null)
+  }, [activeGroup])
+
   const go = (path: string) => {
     preloadPath(path)
     navigate(path)
+  }
+
+  const isSubActive = (path: string) => {
+    const [pathname, query] = path.split('?')
+    if (location.pathname !== pathname) return false
+    if (!query) return true
+    const expected = new URLSearchParams(query)
+    const current = new URLSearchParams(location.search)
+    return Array.from(expected.entries()).every(([key, value]) => current.get(key) === value)
   }
 
   const itemSx = (active: boolean) => ({
@@ -60,9 +77,14 @@ export default function AppRail({ mode, pinned, onToggleMode, onOpenAll, onManag
     '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 1 },
   })
 
-  const renderItem = (item: NonNullable<ReturnType<typeof appNavItem>>, expandable = false) => {
+  const renderItem = (item: NonNullable<ReturnType<typeof appNavItem>>, subItems: NavGroup['items']) => {
     const Icon = item.icon
     const active = activeKey === item.key
+    const hasSub = wide && CATEGORY_KEYS.has(item.key) && subItems.length > 0
+    const activate = () => {
+      go(item.path)
+      if (hasSub) setOpenKey((value) => value === item.key ? null : item.key)
+    }
     return (
       <Box
         key={item.key}
@@ -70,11 +92,12 @@ export default function AppRail({ mode, pinned, onToggleMode, onOpenAll, onManag
         tabIndex={0}
         aria-label={item.label}
         aria-current={active ? 'page' : undefined}
-        onClick={() => go(item.path)}
+        aria-expanded={hasSub ? openKey === item.key : undefined}
+        onClick={activate}
         onMouseEnter={() => preloadPath(item.path)}
         onFocus={() => preloadPath(item.path)}
-        onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); go(item.path) } }}
-        sx={{ ...itemSx(active), ...(expandable && wide ? { pr: 3.25 } : {}) }}
+        onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate() } }}
+        sx={{ ...itemSx(active), ...(hasSub ? { pr: 2.5 } : {}) }}
       >
         <Icon sx={{ fontSize: wide ? 20 : 19, flexShrink: 0 }} />
         <Typography
@@ -86,10 +109,18 @@ export default function AppRail({ mode, pinned, onToggleMode, onOpenAll, onManag
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             maxWidth: '100%',
+            flex: hasSub ? 1 : undefined,
           }}
         >
           {item.label}
         </Typography>
+        {hasSub ? (
+          <ChevronRight sx={{
+            fontSize: 15, flexShrink: 0, color: active ? 'primary.contrastText' : 'text.disabled',
+            transition: 'transform 160ms ease', transform: openKey === item.key ? 'rotate(90deg)' : 'none',
+            pointerEvents: 'none',
+          }} />
+        ) : null}
       </Box>
     )
   }
@@ -187,39 +218,53 @@ export default function AppRail({ mode, pinned, onToggleMode, onOpenAll, onManag
       <Divider sx={{ width: wide ? 'calc(100% - 20px)' : 32, mb: 0.5 }} />
 
       <Box sx={{ width: '100%', px: wide ? 0.75 : 0.5, display: 'flex', flexDirection: 'column', alignItems: wide ? 'stretch' : 'center', gap: 0.5 }}>
-        {items.map((item) => item ? (
-          <Box key={`rail-${item.key}`} sx={{ position: 'relative', width: '100%' }}>
-            {renderItem(item, item.key === 'checkin')}
-            {item.key === 'checkin' ? (
-              <>
-                <IconButton
-                  size="small"
-                  aria-label={wide ? (checkinOpen ? '收起打卡项目' : '展开打卡项目') : '打开打卡项目'}
-                  aria-expanded={wide ? checkinOpen : false}
-                  onClick={() => {
-                    if (!wide) {
-                      onToggleMode()
-                      setCheckinOpen(true)
-                      return
-                    }
-                    setCheckinOpen((value) => !value)
-                  }}
-                  sx={{
-                    position: 'absolute', right: wide ? 2 : 0, top: wide ? 18 : 3, transform: wide ? 'translateY(-50%)' : 'none',
-                    width: wide ? 22 : 16, height: wide ? 22 : 16, p: 0, color: 'text.disabled',
-                    '&:hover': { color: 'text.primary', bgcolor: 'action.hover' },
-                  }}
-                >
-                  <ChevronRight sx={{
-                    fontSize: wide ? 16 : 12, transition: 'transform 160ms ease',
-                    transform: wide && checkinOpen ? 'rotate(90deg)' : 'none',
-                  }} />
-                </IconButton>
-                {wide ? <CheckinSubnav open={checkinOpen} /> : null}
-              </>
-            ) : null}
-          </Box>
-        ) : null)}
+        {items.map((item) => {
+          if (!item) return null
+          const group = groups.find((entry) => entry.key === item.key)
+          const subItems = group?.items || []
+          const expanded = wide && openKey === item.key && CATEGORY_KEYS.has(item.key) && subItems.length > 0
+          return (
+            <Box key={`rail-${item.key}`} sx={{ width: '100%' }}>
+              {renderItem(item, subItems)}
+              {expanded ? (
+                <Collapse in timeout={180}>
+                  <Box
+                    aria-label={`${item.label}二级导航`}
+                    sx={{
+                      width: '100%', maxHeight: 'min(300px, max(96px, calc(100vh - 520px)))', overflowY: 'auto',
+                      mt: 0.25, mb: 0.5, pl: 2.75, pr: 0.5,
+                      borderLeft: '1px solid', borderColor: 'divider',
+                    }}
+                  >
+                    {subItems.map((sub) => {
+                      const active = isSubActive(sub.path)
+                      return (
+                        <Box
+                          key={sub.path}
+                          component="button"
+                          type="button"
+                          onClick={(event) => { event.stopPropagation(); go(sub.path) }}
+                          sx={{
+                            width: '100%', minHeight: 26, display: 'flex', alignItems: 'center', gap: 0.75,
+                            border: 0, borderRadius: 0.75, bgcolor: active ? 'action.selected' : 'transparent',
+                            color: active ? 'primary.main' : 'text.secondary', px: 0.75, py: 0.25,
+                            textAlign: 'left', cursor: 'pointer',
+                            '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
+                          }}
+                        >
+                          <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: active ? 600 : 400 }}>{sub.label}</Typography>
+                          {typeof sub.count === 'number' && sub.count > 0 ? (
+                            <Typography component="span" sx={{ fontSize: 10.5, color: 'text.disabled' }}>{sub.count}</Typography>
+                          ) : null}
+                        </Box>
+                      )
+                    })}
+                  </Box>
+                </Collapse>
+              ) : null}
+            </Box>
+          )
+        })}
       </Box>
 
       <Box sx={{ flex: 1, minHeight: 0 }} />

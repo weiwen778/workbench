@@ -48,8 +48,6 @@ export default function AppLayout() {
   const session = useSession()
   const navigate = useNavigate()
   const location = useLocation()
-  const groups = useMemo(() => buildGroups(EMPTY_DATA), [])
-
   const [narrow, setNarrow] = useState(() => window.innerWidth < 900)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [allNavOpen, setAllNavOpen] = useState(false)
@@ -59,6 +57,7 @@ export default function AppLayout() {
   const [toolsView, setToolsView] = useState<'tasks' | 'activity'>('tasks')
   const [taskCount, setTaskCount] = useState(0)
   const [data, setData] = useState<SidebarData>(EMPTY_DATA)
+  const groups = useMemo(() => buildGroups(data), [data])
   const [navMode, setNavMode] = useState<SidebarMode>(() => readSidebarMode(session.user?.id))
   const [pinned, setPinned] = useState<string[]>(() => readPinnedKeys(session.user?.id, DEFAULT_PINNED_KEYS, APP_NAV_KEYS))
 
@@ -276,6 +275,7 @@ export default function AppLayout() {
         <AppRail
           mode={navMode}
           pinned={pinned}
+          groups={groups}
           onToggleMode={toggleNavMode}
           onOpenAll={() => setAllNavOpen(true)}
           onManage={() => setManageNavOpen(true)}

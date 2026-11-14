@@ -5,12 +5,58 @@ import {
   FormControl, IconButton, InputLabel, Menu, MenuItem, Paper, Popover, Select, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
 import { Divider } from '@mui/material'
-import { Clock, Download, InfoFilled, MoreFilled, Plus, Refresh, Setting, Upload } from '@/icons'
+import PushPin from '@mui/icons-material/PushPin'
+import {
+  DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
+} from '@dnd-kit/core'
+import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { Clock, Download, DragIndicator, InfoFilled, MoreFilled, Plus, Refresh, Setting, Upload } from '@/icons'
 import { apiError, http } from '@/api/client'
 import { DataTable, EmptyHint, FieldRow, Page, PageBody, PageToolbar, UploadDropzone } from '@/ui/common'
 import { confirmDialog, promptDialog, toast } from '@/ui/feedback'
 
 type Period = 'daily' | 'weekly' | 'monthly'
+
+function SortableNavTarget({ target, onPin }: { target: any; onPin: () => void }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: target.id })
+  return (
+    <Box
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform), transition,
+        zIndex: isDragging ? 2 : undefined, opacity: isDragging ? 0.65 : 1, position: 'relative',
+      }}
+      sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minHeight: 30, px: 0.75, borderTop: 1, borderColor: 'divider', '&:first-of-type': { borderTop: 0 } }}
+    >
+      <Box
+        ref={setActivatorNodeRef}
+        {...attributes}
+        {...listeners}
+        component="button"
+        type="button"
+        aria-label={`拖动${target.name}排序`}
+        title="拖动排序"
+        sx={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 22,
+          p: 0, border: 0, borderRadius: 0.5, bgcolor: 'transparent', color: 'text.disabled',
+          cursor: 'grab', touchAction: 'none',
+          '&:hover': { color: 'text.secondary' },
+          '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 1 },
+          '&:active': { cursor: 'grabbing' },
+        }}
+      >
+        <DragIndicator sx={{ fontSize: 15 }} />
+      </Box>
+      <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: 12 }}>{target.name}</Typography>
+      <Tooltip title="置顶">
+        <IconButton size="small" aria-label={`置顶${target.name}`} onClick={onPin} sx={{ width: 22, height: 22, p: 0.25, color: 'text.disabled', '&:hover': { color: 'primary.main' } }}>
+          <PushPin sx={{ fontSize: 14 }} />
+        </IconButton>
+      </Tooltip>
+    </Box>
+  )
+}
 
 export default function CheckinPage() {
   const params = useParams()
@@ -29,6 +75,14 @@ export default function CheckinPage() {
 
   const [manageOpen, setManageOpen] = useState(false)
   const [allTargets, setAllTargets] = useState<any[]>([])
+  const [navTargets, setNavTargets] = useState<any[]>([])
+  const navSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+  useEffect(() => {
+    setNavTargets(allTargets.filter((target) => target.status === 'active'))
+  }, [allTargets])
   const [groupList, setGroupList] = useState<any[]>([])
   const [newTarget, setNewTarget] = useState({ name: '', platform: '' })
   const [newGroupName, setNewGroupName] = useState('')
@@ -74,7 +128,6 @@ export default function CheckinPage() {
       if (!viewActive.current || request !== requestVersion.current) return
       setGroups(data.groups)
       setTargets(data.targets)
-      window.dispatchEvent(new Event('wb:checkin-targets-changed'))
       setStats(data.statistics)
       setRange(`${data.period_start} ~ ${data.period_end}`)
       setNoteDraft((prev) => {
@@ -141,6 +194,42 @@ export default function CheckinPage() {
       setGroupList(groupsResponse.data)
       window.dispatchEvent(new Event('wb:checkins-changed'))
     } catch (error) { toast.error(apiError(error).message) }
+  }
+
+  const persistNavOrder = async (next: any[]) => {
+    for (const [index, target] of next.entries()) {
+      if (target.sort_order !== index) await http.patch(`/work-targets/${target.id}`, { sort_order: index })
+    }
+  }
+
+  const reorderNavTargets = async (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = navTargets.findIndex((target) => target.id === active.id)
+    const newIndex = navTargets.findIndex((target) => target.id === over.id)
+    if (oldIndex < 0 || newIndex < 0) return
+    const next = arrayMove(navTargets, oldIndex, newIndex)
+    setNavTargets(next)
+    try {
+      await persistNavOrder(next)
+      await loadManage(); await refresh()
+    } catch (error) {
+      toast.error(apiError(error).message)
+      setNavTargets(navTargets)
+    }
+  }
+
+  const pinNavTarget = async (target: any) => {
+    if (navTargets[0]?.id === target.id) return
+    const next = [target, ...navTargets.filter((item) => item.id !== target.id)]
+    setNavTargets(next)
+    try {
+      await persistNavOrder(next)
+      await loadManage(); await refresh()
+    } catch (error) {
+      toast.error(apiError(error).message)
+      setNavTargets(navTargets)
+    }
   }
 
   useEffect(() => { if (manageOpen) void loadManage() }, [manageOpen])
@@ -461,6 +550,19 @@ export default function CheckinPage() {
           ]}
           maxHeight={320}
         />
+
+        <Typography sx={{ fontSize: 13, fontWeight: 600, mt: 2, mb: 0.25 }}>侧栏项目顺序</Typography>
+        <Typography sx={{ fontSize: 11.5, color: 'text.secondary', mb: 1 }}>拖动调整顺序，或把常用项目置顶。</Typography>
+        <DndContext sensors={navSensors} collisionDetection={closestCenter} onDragEnd={(event) => void reorderNavTargets(event)}>
+          <SortableContext items={navTargets.map((target) => target.id)} strategy={verticalListSortingStrategy}>
+            <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, overflow: 'auto', maxHeight: 180 }}>
+              {navTargets.map((target) => (
+                <SortableNavTarget key={target.id} target={target} onPin={() => void pinNavTarget(target)} />
+              ))}
+              {!navTargets.length ? <Typography sx={{ p: 1.5, fontSize: 12, color: 'text.secondary' }}>还没有启用的打卡项目</Typography> : null}
+            </Box>
+          </SortableContext>
+        </DndContext>
 
         <Typography sx={{ fontSize: 13, fontWeight: 600, mt: 2, mb: 1 }}>分类</Typography>
         <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
