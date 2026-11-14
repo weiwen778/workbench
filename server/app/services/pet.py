@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
+from ..errors import ApiError
 from ..models import Pet
-from ..utils import iso_z
+from ..utils import iso_z, utc_to_local
 
 STAT_KEYS = ("satiety", "cleanliness", "mood", "energy")
 AWAY_DECAY = {"satiety": 1.5, "cleanliness": 0.8, "mood": 1.2, "energy": 1.5}
@@ -16,6 +17,26 @@ HEALTH_LOSS_PER_DAY = 20.0
 HEALTH_REGEN_PER_DAY = 8.0
 HEALTH_FLOOR = 10.0
 MAX_CATCHUP_DAYS = 90
+ACTION_COOLDOWNS = {
+    "feed": 1800,
+    "treat": 3600,
+    "wash": 7200,
+    "play": 1200,
+    "walk": 14400,
+    "vet": 28800,
+    "pet": 5,
+}
+CARE_ACTIONS = {"feed", "treat", "wash", "play", "walk", "vet"}
+COOLDOWN_FIELDS = {
+    "feed": "last_fed_at",
+    "treat": "last_treated_at",
+    "wash": "last_washed_at",
+    "play": "last_played_at",
+    "walk": "last_walked_at",
+    "vet": "last_vet_at",
+    "pet": "last_petted_at",
+}
+PET_ACTIONS = {"feed", "treat", "wash", "play", "walk", "sleep", "wake", "vet", "pet"}
 
 
 def round_stat(value: float) -> int:
@@ -135,6 +156,138 @@ def advance(pet: Pet, now: datetime) -> None:
     pet.last_tick_at = now
 
 
+def _remaining(last: datetime | None, now: datetime, seconds: int) -> int:
+    if last is None:
+        return 0
+    elapsed = max(0.0, (now - last).total_seconds())
+    return max(0, int(math.ceil(seconds - elapsed)))
+
+
+def _hour_bucket(now: datetime) -> datetime:
+    local = utc_to_local(now)
+    bucket = local.replace(minute=0, second=0, microsecond=0)
+    return bucket.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _seconds_to_next_hour(now: datetime) -> int:
+    local = utc_to_local(now)
+    next_hour = local.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    return max(0, int(math.ceil((next_hour - local).total_seconds())))
+
+
+def _cooldowns(pet: Pet, now: datetime) -> dict[str, int]:
+    result = {
+        action: _remaining(getattr(pet, COOLDOWN_FIELDS[action]), now, seconds)
+        for action, seconds in ACTION_COOLDOWNS.items()
+    }
+    if pet.pet_bonus_total >= 15 and pet.pet_bonus_hour == _hour_bucket(now):
+        result["pet"] = max(result["pet"], _seconds_to_next_hour(now))
+    return result
+
+
+def _mark_care(pet: Pet, now: datetime) -> None:
+    day = utc_to_local(now).date()
+    if pet.last_care_date != day:
+        pet.last_care_date = day
+        pet.care_days += 1
+
+
+def apply_action(pet: Pet, action: str, now: datetime) -> tuple[str, str]:
+    if action not in PET_ACTIONS:
+        raise ApiError("VALIDATION_ERROR", "未知的宠物动作", 422)
+
+    advance(pet, now)
+    if pet.sleeping and action != "wake":
+        raise ApiError("PET_SLEEPING", "它正在睡觉，先叫醒它", 409)
+
+    if action == "sleep":
+        pet.sleeping = True
+        pet.sleep_started_at = now
+        return "slept", "睡着了"
+    if action == "wake":
+        pet.sleeping = False
+        pet.sleep_started_at = None
+        return "woke", "醒来了"
+
+    if action == "pet" and pet.pet_bonus_total >= 15 and pet.pet_bonus_hour == _hour_bucket(now):
+        raise ApiError(
+            "PET_PET_LIMIT",
+            "这个小时摸够啦，让它歇会儿",
+            409,
+            {"retry_after_seconds": _seconds_to_next_hour(now)},
+        )
+
+    remaining = _remaining(
+        getattr(pet, COOLDOWN_FIELDS[action]),
+        now,
+        ACTION_COOLDOWNS[action],
+    )
+    if remaining > 0:
+        raise ApiError(
+            "PET_COOLDOWN",
+            "还在冷却中",
+            409,
+            {"action": action, "remaining_seconds": remaining},
+        )
+
+    if action == "feed":
+        if pet.satiety >= 95:
+            raise ApiError("PET_TOO_FULL", "它已经吃饱了", 409)
+        pet.satiety = _clamp(pet.satiety + 40)
+        event, message = "fed", "吃饱啦，饱腹 +40"
+    elif action == "treat":
+        if pet.treats <= 0:
+            raise ApiError("PET_NO_TREAT", "没有零食了", 409)
+        pet.treats -= 1
+        pet.satiety = _clamp(pet.satiety + 15)
+        pet.mood = _clamp(pet.mood + 8)
+        event, message = "treated", "零食真好吃，心情 +8"
+    elif action == "wash":
+        pet.cleanliness = _clamp(pet.cleanliness + 50)
+        pet.energy = _clamp(pet.energy - 5)
+        pet.poop_count = 0
+        pet.poop_progress = 0
+        event, message = "washed", "洗得干干净净"
+    elif action == "play":
+        if pet.sick_since is not None:
+            raise ApiError("PET_SICK", "生病了，先看医生吧", 409)
+        if pet.energy < 20:
+            raise ApiError("PET_TOO_TIRED", "太累了，先睡一觉", 409)
+        pet.mood = _clamp(pet.mood + 20)
+        pet.energy = _clamp(pet.energy - 8)
+        event, message = "played", "玩得很开心，心情 +20"
+    elif action == "walk":
+        if pet.sick_since is not None:
+            raise ApiError("PET_SICK", "生病了，先看医生吧", 409)
+        if pet.energy < 25:
+            raise ApiError("PET_TOO_TIRED", "太累了，走不动", 409)
+        if not 7 <= utc_to_local(now).hour < 22:
+            raise ApiError("PET_DAYTIME_ONLY", "太晚了，明天再散步吧", 409)
+        pet.mood = _clamp(pet.mood + 25)
+        pet.satiety = _clamp(pet.satiety - 6)
+        pet.energy = _clamp(pet.energy - 12)
+        event, message = "walked", "散步回来了，心情 +25"
+    elif action == "vet":
+        if pet.health >= 85:
+            raise ApiError("PET_NOT_SICK", "它很健康，不需要看医生", 409)
+        pet.health = _clamp(pet.health + 20)
+        event, message = "vetted", "看过医生，健康 +20"
+    else:  # pet
+        bucket = _hour_bucket(now)
+        if pet.pet_bonus_hour != bucket:
+            pet.pet_bonus_hour = bucket
+            pet.pet_bonus_total = 0
+        gain = min(3, 15 - pet.pet_bonus_total)
+        pet.mood = _clamp(pet.mood + gain)
+        pet.pet_bonus_total += gain
+        event, message = "petted", "它蹭了蹭你的手，心情 +3"
+
+    setattr(pet, COOLDOWN_FIELDS[action], now)
+    if action in CARE_ACTIONS:
+        _mark_care(pet, now)
+    return event, message
+
+
 def claim_daily_bonus(db: Session, pet: Pet, now: datetime) -> dict | None:
     """Task 4 实现。"""
     return None
@@ -156,9 +309,7 @@ def pet_payload(pet: Pet, now: datetime) -> dict:
         "sleeping": pet.sleeping,
         "poop_count": pet.poop_count,
         "treats": pet.treats,
-        "cooldowns": {
-            "feed": 0, "treat": 0, "wash": 0, "play": 0, "walk": 0, "vet": 0, "pet": 0,
-        },
+        "cooldowns": _cooldowns(pet, now),
         "next_stage_in_days": next_stage_in_days,
         "version": pet.version,
         "updated_at": iso_z(pet.updated_at),

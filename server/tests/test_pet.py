@@ -1,19 +1,28 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.errors import ApiError
 from app.models import Pet
-from app.services.pet import advance, pet_payload, stage_for, status_for
+from app.services.pet import advance, apply_action, pet_payload, stage_for, status_for
+from app.utils import LOCAL_TZ
 
 T0 = datetime(2026, 11, 14, 0, 0)
 
 
 def _make_pet(db, **overrides):
-    pet = Pet(user_id=1, name="旺财", last_tick_at=T0, **overrides)
+    values = {"user_id": 1, "name": "旺财", "last_tick_at": T0}
+    values.update(overrides)
+    pet = Pet(**values)
     db.add(pet)
     db.commit()
     db.refresh(pet)
     return pet
+
+
+def _local_noon(day_offset=0):
+    local = datetime(2026, 11, 14, 12, 0, tzinfo=LOCAL_TZ) + timedelta(days=day_offset)
+    return local.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def test_get_pet_before_adoption_is_empty(auth):
@@ -203,3 +212,155 @@ def test_sick_clears_at_75(db):
     advance(pet, T0 + timedelta(hours=4))
     assert pet.health == pytest.approx(75.3333, abs=1e-4)
     assert pet.sick_since is None
+
+
+def test_feed_caps_and_sets_cooldown(auth):
+    pet = auth.post("/api/v1/pet", json={}).json()["pet"]
+    resp = auth.post("/api/v1/pet/actions", json={"action": "feed"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["event"] == "fed"
+    assert body["pet"]["stats"]["satiety"] == 100
+    assert 1790 <= body["pet"]["cooldowns"]["feed"] <= 1800
+
+    second = auth.post("/api/v1/pet/actions", json={"action": "feed"})
+    assert second.status_code == 409
+    assert second.json()["code"] == "PET_COOLDOWN"
+    assert second.json()["details"]["remaining_seconds"] > 0
+
+
+def test_feed_rejects_when_too_full(db):
+    pet = _make_pet(db, satiety=95)
+    with pytest.raises(ApiError) as exc:
+        apply_action(pet, "feed", T0)
+    assert exc.value.code == "PET_TOO_FULL"
+
+
+def test_treat_consumes_snack_and_needs_one(db):
+    pet = _make_pet(db, treats=0)
+    with pytest.raises(ApiError) as exc:
+        apply_action(pet, "treat", T0)
+    assert exc.value.code == "PET_NO_TREAT"
+
+    pet.treats = 1
+    event, _ = apply_action(pet, "treat", T0)
+    assert event == "treated"
+    assert pet.treats == 0
+    assert pet.satiety == pytest.approx(85)
+    assert pet.mood == pytest.approx(88)
+
+
+def test_wash_clears_poop_and_costs_energy(db):
+    pet = _make_pet(db, cleanliness=40, energy=80, poop_count=3, poop_progress=8)
+    event, _ = apply_action(pet, "wash", T0)
+    assert event == "washed"
+    assert pet.cleanliness == pytest.approx(90)
+    assert pet.energy == pytest.approx(75)
+    assert pet.poop_count == 0
+    assert pet.poop_progress == 0
+
+
+def test_play_requires_energy(db):
+    pet = _make_pet(db, energy=19)
+    with pytest.raises(ApiError) as exc:
+        apply_action(pet, "play", T0)
+    assert exc.value.code == "PET_TOO_TIRED"
+
+    pet.energy = 20
+    event, _ = apply_action(pet, "play", T0)
+    assert event == "played"
+    assert pet.mood == pytest.approx(100)
+    assert pet.energy == pytest.approx(12)
+
+
+def test_play_blocks_sick_but_not_recovering_band(db):
+    pet = _make_pet(db, energy=80, sick_since=T0 - timedelta(hours=1))
+    with pytest.raises(ApiError) as exc:
+        apply_action(pet, "play", T0)
+    assert exc.value.code == "PET_SICK"
+
+    pet.sick_since = None
+    pet.health = 70
+    pet.last_played_at = None
+    assert apply_action(pet, "play", T0)[0] == "played"
+
+
+def test_walk_is_daytime_only_and_costs_needs(db):
+    night = datetime(2026, 11, 14, 22, 0, tzinfo=LOCAL_TZ).astimezone(timezone.utc).replace(tzinfo=None)
+    pet = _make_pet(db, energy=80, satiety=80, mood=50, last_tick_at=night)
+    with pytest.raises(ApiError) as exc:
+        apply_action(pet, "walk", night)
+    assert exc.value.code == "PET_DAYTIME_ONLY"
+
+    noon = _local_noon()
+    pet.last_tick_at = noon
+    pet.last_walked_at = None
+    event, _ = apply_action(pet, "walk", noon)
+    assert event == "walked"
+    assert pet.mood == pytest.approx(75)
+    assert pet.satiety == pytest.approx(74)
+    assert pet.energy == pytest.approx(68)
+
+
+def test_vet_heals_only_when_needed(db):
+    pet = _make_pet(db, health=50, sick_since=T0 - timedelta(days=1))
+    event, _ = apply_action(pet, "vet", T0)
+    assert event == "vetted"
+    assert pet.health == pytest.approx(70)
+    assert pet.sick_since is not None
+
+    pet.health = 90
+    pet.last_vet_at = None
+    with pytest.raises(ApiError) as exc:
+        apply_action(pet, "vet", T0)
+    assert exc.value.code == "PET_NOT_SICK"
+
+
+def test_sleep_blocks_other_actions_until_wake(db):
+    pet = _make_pet(db)
+    assert apply_action(pet, "sleep", T0)[0] == "slept"
+    assert pet.sleeping is True
+    with pytest.raises(ApiError) as exc:
+        apply_action(pet, "feed", T0)
+    assert exc.value.code == "PET_SLEEPING"
+    assert apply_action(pet, "wake", T0)[0] == "woke"
+    assert pet.sleeping is False
+    assert apply_action(pet, "feed", T0)[0] == "fed"
+
+
+def test_care_days_increment_once_per_local_day(db):
+    pet = _make_pet(db)
+    assert pet.care_days == 0
+    apply_action(pet, "feed", T0)
+    assert pet.care_days == 1
+    apply_action(pet, "wash", T0 + timedelta(hours=2))
+    assert pet.care_days == 1
+    apply_action(pet, "feed", T0 + timedelta(days=1))
+    assert pet.care_days == 2
+
+
+def test_pet_cap_and_no_care(db):
+    pet = _make_pet(db, mood=0)
+    now = T0
+    for _ in range(5):
+        pet.last_tick_at = now
+        event, _ = apply_action(pet, "pet", now)
+        assert event == "petted"
+        now += timedelta(seconds=5)
+    assert pet.mood == pytest.approx(15)
+    assert pet.care_days == 0
+    assert pet.pet_bonus_total == 15
+
+    with pytest.raises(ApiError) as exc:
+        apply_action(pet, "pet", now)
+    assert exc.value.code == "PET_PET_LIMIT"
+    assert exc.value.details["retry_after_seconds"] > 0
+
+
+def test_exact_cooldown_boundary_allows_action(db):
+    pet = _make_pet(db, satiety=50)
+    apply_action(pet, "feed", T0)
+    with pytest.raises(ApiError) as exc:
+        apply_action(pet, "feed", T0 + timedelta(seconds=1799))
+    assert exc.value.details["remaining_seconds"] == 1
+    assert apply_action(pet, "feed", T0 + timedelta(seconds=1800))[0] == "fed"

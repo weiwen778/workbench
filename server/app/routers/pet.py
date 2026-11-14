@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -9,7 +11,7 @@ from ..db import get_db
 from ..deps import get_current_user
 from ..errors import ApiError, field_error
 from ..models import Pet, User, utcnow
-from ..services.pet import advance, claim_daily_bonus, pet_payload
+from ..services.pet import advance, apply_action, claim_daily_bonus, pet_payload
 
 router = APIRouter(tags=["pet"], dependencies=[Depends(get_current_user)])
 
@@ -20,6 +22,10 @@ class PetCreate(BaseModel):
 
 class PetRename(BaseModel):
     name: str
+
+
+class PetAction(BaseModel):
+    action: Literal["feed", "treat", "wash", "play", "walk", "sleep", "wake", "vet", "pet"]
 
 
 def _clean_name(value: str, default: str | None = None) -> str:
@@ -73,3 +79,13 @@ def rename(body: PetRename, db: Session = Depends(get_db), user: User = Depends(
     db.commit()
     db.refresh(pet)
     return {"pet": pet_payload(pet, now)}
+
+
+@router.post("/pet/actions")
+def act(body: PetAction, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    pet = _owned(db, user)
+    now = utcnow()
+    event, message = apply_action(pet, body.action, now)
+    db.commit()
+    db.refresh(pet)
+    return {"pet": pet_payload(pet, now), "event": event, "message": message}
