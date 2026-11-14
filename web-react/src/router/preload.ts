@@ -11,12 +11,9 @@ const loaders: Array<[string, () => Promise<unknown>]> = [
   ['/convert', () => import('@/pages/Convert')],
   ['/color', () => import('@/pages/Color')],
   ['/codes', () => import('@/pages/Codes')],
-  ['/media', () => import('@/pages/Media')],
-  ['/feeds', () => import('@/pages/Feeds')],
   ['/docs', () => import('@/pages/Docs')],
   ['/whiteboards', () => import('@/pages/Whiteboards')],
   ['/bookmarks', () => import('@/pages/Bookmarks')],
-  ['/pet', () => import('@/pages/Pet')],
   ['/settings', () => import('@/pages/Settings')],
 ]
 

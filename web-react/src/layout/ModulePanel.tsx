@@ -1,7 +1,7 @@
 import { useMemo, useState, useTransition } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
-  Box, Button, IconButton, List, ListItemButton, ListItemText, Stack, TextField, Tooltip,
+  Box, IconButton, List, ListItemButton, ListItemText, Stack, TextField, Tooltip,
   Typography,
 } from '@mui/material'
 import { Add, ChevronLeft, Edit, Search } from '@mui/icons-material'
@@ -21,7 +21,6 @@ export default function ModulePanel({
   const navigate = useNavigate()
   const location = useLocation()
   const [query, setQuery] = useState('')
-  const [showAll, setShowAll] = useState(false)
   const [, startTransition] = useTransition()
   const go = (path: string) => {
     preloadPath(path)
@@ -34,7 +33,8 @@ export default function ModulePanel({
 
   const normalized = query.trim().toLowerCase()
   const items = normalized ? group.items.filter((item) => item.label.toLowerCase().includes(normalized)) : group.items
-  const visible = showAll || normalized ? items : items.slice(0, 12)
+  // 侧边栏不再限制展示数量：筛选状态之外一律渲染全部项目
+  const visible = items
 
   const isActive = (path: string) => {
     const [pathname, search = ''] = path.split('?')
@@ -71,7 +71,7 @@ export default function ModulePanel({
             placeholder="筛选"
             aria-label="筛选导航项目"
             InputProps={{ startAdornment: <Search sx={{ fontSize: 16, mr: 0.75, color: 'text.secondary' }} /> }}
-            onChange={(event) => { setQuery(event.target.value); setShowAll(false) }}
+            onChange={(event) => setQuery(event.target.value)}
           />
         </Box>
       ) : null}
@@ -98,9 +98,6 @@ export default function ModulePanel({
         ))}
         {!items.length ? <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 1.5, py: 1 }}>{query ? '没有匹配项' : '暂无项目'}</Typography> : null}
       </List>
-      {items.length > visible.length ? (
-        <Button size="small" onClick={() => setShowAll(true)} sx={{ mx: 1, mb: 0.5 }}>显示其余 {items.length - visible.length} 项</Button>
-      ) : null}
     </Box>
   )
 }

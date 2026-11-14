@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
 import { useSession } from '@/session'
-import { APP_NAV_KEYS, DEFAULT_PINNED_KEYS, MAX_PINNED } from '@/layout/app-nav'
+import { APP_NAV_KEYS, DEFAULT_PINNED_KEYS } from '@/layout/app-nav'
 import { ManageNavDialog } from '@/layout/NavPanels'
 import { readPinnedKeys, readSidebarMode, writePinnedKeys, writeSidebarMode, type SidebarMode } from '@/layout/sidebar-order'
 import { Card } from '../SettingsSections'
@@ -24,7 +24,7 @@ export default function NavigationSection() {
     writeSidebarMode(userId, next)
   }
   const changePinned = (keys: string[]) => {
-    const next = keys.slice(0, MAX_PINNED)
+    const next = keys
     setPinned(next)
     writePinnedKeys(userId, next)
   }
@@ -50,7 +50,7 @@ export default function NavigationSection() {
           <div>
             <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.5 }}>固定导航</Typography>
             <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
-              已固定 {pinned.length} / {MAX_PINNED} 个。其余功能收在侧栏「全部功能」里。
+              已固定 {pinned.length} 个，数量不限。其余功能收在侧栏「全部功能」里。
             </Typography>
           </div>
           <Stack direction="row" spacing={1}>

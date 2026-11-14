@@ -12,7 +12,7 @@ import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, v
 import { CSS } from '@dnd-kit/utilities'
 import { Close, DragIndicator, Search, Setting } from '@/icons'
 import {
-  APP_NAV_GROUPS, APP_NAV_ITEMS, DEFAULT_PINNED_KEYS, MAX_PINNED, appNavItem, type AppNavItem,
+  APP_NAV_GROUPS, APP_NAV_ITEMS, DEFAULT_PINNED_KEYS, appNavItem, type AppNavItem,
 } from './app-nav'
 
 function matches(query: string, label: string) {
@@ -70,12 +70,11 @@ export function NavAllDrawer({
                       <ListItemIcon sx={{ minWidth: 28 }}><Icon sx={{ fontSize: 19 }} /></ListItemIcon>
                       <ListItemText primary={item.label} primaryTypographyProps={{ fontSize: 13 }} />
                     </ListItemButton>
-                    <Tooltip title={isPinned ? '从侧栏移除' : pinned.length >= MAX_PINNED ? `侧栏最多固定 ${MAX_PINNED} 个` : '固定到侧栏'}>
+                    <Tooltip title={isPinned ? '从侧栏移除' : '固定到侧栏'}>
                       <span style={{ paddingRight: 4 }}>
                         <IconButton
                           size="small"
                           aria-label={isPinned ? `取消固定${item.label}` : `固定${item.label}`}
-                          disabled={!isPinned && pinned.length >= MAX_PINNED}
                           onClick={() => onTogglePin(item.key)}
                         >
                           <PushPin sx={{ fontSize: 16, color: isPinned ? 'primary.main' : 'text.disabled' }} />
@@ -157,7 +156,7 @@ export function ManageNavDialog({
 
   const unpin = (key: string) => onChange(pinned.filter((value) => value !== key))
   const pin = (key: string) => {
-    if (pinned.length >= MAX_PINNED || pinned.includes(key)) return
+    if (pinned.includes(key)) return
     onChange([...pinned, key])
   }
   const onDragEnd = (event: DragEndEvent) => {
@@ -174,7 +173,7 @@ export function ManageNavDialog({
       <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>管理导航</DialogTitle>
       <DialogContent>
         <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 1.5 }}>
-          固定项最多 {MAX_PINNED} 个；顺序和宽窄模式按账号保存在当前浏览器。
+          固定项数量不限；顺序和宽窄模式按账号保存在当前浏览器。
         </Typography>
         <TextField
           fullWidth size="small" value={query} placeholder="搜索模块"
@@ -201,12 +200,11 @@ export function ManageNavDialog({
               <Typography sx={{ px: 1.25, py: 0.75, fontSize: 11, color: 'text.disabled', bgcolor: 'action.hover' }}>{group.label}</Typography>
               {group.items.map((item) => {
                 const Icon = item.icon
-                const full = pinned.length >= MAX_PINNED
                 return (
-                  <ListItemButton key={item.key} disabled={full} aria-label={full ? `侧栏已满，无法固定${item.label}` : `固定${item.label}`} onClick={() => pin(item.key)} sx={{ minHeight: 38, gap: 1, px: 1.25 }}>
+                  <ListItemButton key={item.key} aria-label={`固定${item.label}`} onClick={() => pin(item.key)} sx={{ minHeight: 38, gap: 1, px: 1.25 }}>
                     <ListItemIcon sx={{ minWidth: 28 }}><Icon sx={{ fontSize: 18 }} /></ListItemIcon>
                     <ListItemText primary={item.label} primaryTypographyProps={{ fontSize: 13 }} />
-                    <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>{full ? '已满' : '固定'}</Typography>
+                    <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>固定</Typography>
                   </ListItemButton>
                 )
               })}

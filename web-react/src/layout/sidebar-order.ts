@@ -1,4 +1,3 @@
-import { MAX_PINNED } from './app-nav'
 
 export const SIDEBAR_ORDER_EVENT = 'wb:sidebar-order-changed'
 export const SIDEBAR_MODE_EVENT = 'wb:sidebar-mode-changed'
@@ -37,25 +36,25 @@ export function readPinnedKeys(userId: number | undefined, defaults: string[], a
     if (raw) {
       const values = JSON.parse(raw)
       const valid = validKeys(values, allKeys)
-      const parsed = valid.slice(0, MAX_PINNED)
+      const parsed = valid
       // Older orders can contain dynamic entries (for example a table id).
       // Fill defaults only when entries were dropped during migration; an
       // intentionally unpinned list must stay short, including an empty one.
       if (Array.isArray(values) && valid.length < values.length) {
         const seen = new Set(parsed)
-        return [...parsed, ...defaults.filter((key) => !seen.has(key))].slice(0, MAX_PINNED)
+        return [...parsed, ...defaults.filter((key) => !seen.has(key))]
       }
       if (Array.isArray(values)) return parsed
     }
   } catch {
     /* localStorage may be unavailable */
   }
-  return defaults.slice(0, MAX_PINNED)
+  return defaults
 }
 
 export function writePinnedKeys(userId: number | undefined, keys: string[]) {
   try {
-    localStorage.setItem(sidebarOrderKey(userId), JSON.stringify(keys.slice(0, MAX_PINNED)))
+    localStorage.setItem(sidebarOrderKey(userId), JSON.stringify(keys))
   } catch {
     /* localStorage may be unavailable */
   }

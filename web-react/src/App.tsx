@@ -23,13 +23,10 @@ const ImagesPage = lazy(() => import('@/pages/Images'))
 const ConvertPage = lazy(() => import('@/pages/Convert'))
 const ColorPage = lazy(() => import('@/pages/Color'))
 const CodesPage = lazy(() => import('@/pages/Codes'))
-const MediaPage = lazy(() => import('@/pages/Media'))
-const FeedsPage = lazy(() => import('@/pages/Feeds'))
 const DocsPage = lazy(() => import('@/pages/Docs'))
 const WhiteboardsPage = lazy(() => import('@/pages/Whiteboards'))
 const WhiteboardEditorPage = lazy(() => import('@/pages/WhiteboardEditor'))
 const BookmarksPage = lazy(() => import('@/pages/Bookmarks'))
-const PetPage = lazy(() => import('@/pages/Pet'))
 const SettingsPage = lazy(() => import('@/pages/Settings'))
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -83,13 +80,10 @@ function Root() {
               <Route path="/convert" element={<ConvertPage />} />
               <Route path="/color" element={<ColorPage />} />
               <Route path="/codes" element={<CodesPage />} />
-              <Route path="/media" element={<MediaPage />} />
-              <Route path="/feeds" element={<FeedsPage />} />
               <Route path="/docs" element={<DocsPage />} />
               <Route path="/whiteboards" element={<WhiteboardsPage />} />
               <Route path="/whiteboards/:boardId" element={<WhiteboardEditorPage />} />
               <Route path="/bookmarks" element={<BookmarksPage />} />
-              <Route path="/pet" element={<PetPage />} />
               <Route path="/tasks" element={<Navigate to="/checkins" replace />} />
               <Route path="/search" element={<Navigate to="/checkins" replace />} />
               <Route path="/activity" element={<Navigate to="/checkins" replace />} />

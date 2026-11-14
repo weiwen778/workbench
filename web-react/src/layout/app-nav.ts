@@ -8,18 +8,15 @@ import {
   Insights,
   Link,
   MenuBook,
-  Newspaper,
   Palette,
-  Pets,
   QrCode2,
   StickyNote2,
   SwapHoriz,
   TableChart,
   Translate,
-  VideoLibrary,
 } from '@mui/icons-material'
 
-export type AppNavGroup = 'work' | 'content' | 'info' | 'tools' | 'life'
+export type AppNavGroup = 'work' | 'content' | 'info' | 'tools'
 
 export interface AppNavItem {
   key: string
@@ -34,7 +31,6 @@ export const APP_NAV_GROUPS: Array<{ key: AppNavGroup; label: string }> = [
   { key: 'content', label: '内容' },
   { key: 'info', label: '信息' },
   { key: 'tools', label: '工具' },
-  { key: 'life', label: '生活' },
 ]
 
 export const APP_NAV_ITEMS: AppNavItem[] = [
@@ -44,7 +40,6 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
   { key: 'notes', label: '笔记', path: '/notes', icon: MenuBook, group: 'content' },
   { key: 'memos', label: '便利贴', path: '/memos', icon: StickyNote2, group: 'content' },
   { key: 'visualizations', label: '看板', path: '/visualizations', icon: Insights, group: 'work' },
-  { key: 'feeds', label: '信息聚合', path: '/feeds', icon: Newspaper, group: 'info' },
   { key: 'docs', label: '文档工作台', path: '/docs', icon: Description, group: 'content' },
   { key: 'bookmarks', label: '网址', path: '/bookmarks', icon: Link, group: 'info' },
   { key: 'translate', label: '翻译', path: '/translate', icon: Translate, group: 'info' },
@@ -52,9 +47,7 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
   { key: 'convert', label: '格式转换', path: '/convert', icon: SwapHoriz, group: 'tools' },
   { key: 'color', label: '取色对比', path: '/color', icon: Palette, group: 'tools' },
   { key: 'codes', label: '二维码条码', path: '/codes', icon: QrCode2, group: 'tools' },
-  { key: 'media', label: '视频解析', path: '/media', icon: VideoLibrary, group: 'tools' },
   { key: 'whiteboards', label: '白板', path: '/whiteboards', icon: Brush, group: 'content' },
-  { key: 'pet', label: '宠物', path: '/pet', icon: Pets, group: 'life' },
 ]
 
 export const APP_NAV_KEYS = APP_NAV_ITEMS.map((item) => item.key)
@@ -66,10 +59,7 @@ export const DEFAULT_PINNED_KEYS = [
   'notes',
   'memos',
   'visualizations',
-  'feeds',
   'docs',
 ]
-
-export const MAX_PINNED = 8
 
 export const appNavItem = (key: string) => APP_NAV_ITEMS.find((item) => item.key === key)

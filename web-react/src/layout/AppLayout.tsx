@@ -11,7 +11,7 @@ import {
 import AppRail from './AppRail'
 import ModuleTabs from './ModuleTabs'
 import { ManageNavDialog, NavAllDrawer } from './NavPanels'
-import { APP_NAV_KEYS, DEFAULT_PINNED_KEYS, MAX_PINNED } from './app-nav'
+import { APP_NAV_KEYS, DEFAULT_PINNED_KEYS } from './app-nav'
 import { readPinnedKeys, readSidebarMode, writePinnedKeys, writeSidebarMode, SIDEBAR_MODE_EVENT, SIDEBAR_ORDER_EVENT, type SidebarMode } from './sidebar-order'
 import GlobalSearchDialog from '@/components/GlobalSearchDialog'
 import WorkspaceToolsDialog from '@/components/WorkspaceToolsDialog'
@@ -158,14 +158,14 @@ export default function AppLayout() {
   }
 
   const updatePinned = (keys: string[]) => {
-    const next = keys.slice(0, MAX_PINNED)
+    const next = keys
     setPinned(next)
     writePinnedKeys(session.user?.id, next)
   }
 
   const togglePin = (key: string) => {
     if (pinned.includes(key)) updatePinned(pinned.filter((value) => value !== key))
-    else if (pinned.length < MAX_PINNED) updatePinned([...pinned, key])
+    else updatePinned([...pinned, key])
   }
 
   useEffect(() => {

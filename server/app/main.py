@@ -32,11 +32,8 @@ def create_app() -> FastAPI:
         if settings.env != "production":
             init_db()
         bootstrap()
-        from .services.media import apply_cookie_env
-        apply_cookie_env()
         task = None
         worker = None
-        feed_task = None
         if settings.env == "production":
             from .maintenance import maintenance_loop
             task = asyncio.create_task(maintenance_loop())
@@ -45,17 +42,11 @@ def create_app() -> FastAPI:
             start_metrics()
             from .services.jobs import worker_loop
             worker=asyncio.create_task(worker_loop())
-            if settings.feed_enabled:
-                from .services.feed_service import refresh_loop as feed_refresh_loop
-                feed_task=asyncio.create_task(feed_refresh_loop())
         try:
             yield
         finally:
             from .services.server_metrics import stop as stop_metrics
             stop_metrics()
-            if feed_task is not None:
-                feed_task.cancel()
-                with suppress(asyncio.CancelledError): await feed_task
             if worker is not None:
                 worker.cancel()
                 with suppress(asyncio.CancelledError): await worker
@@ -150,11 +141,9 @@ def create_app() -> FastAPI:
         document_projects,
         files,
         health,
-        feeds,
         memos,
         bookmarks,
         notes,
-        pet,
         preferences,
         tables,
         table_workspaces,
@@ -164,7 +153,6 @@ def create_app() -> FastAPI:
         transfers,
         whiteboards,
         translate,
-        media,
         trash,
     )
 
@@ -191,14 +179,11 @@ def create_app() -> FastAPI:
     app.include_router(transfers.router, prefix=api)
     app.include_router(files.router, prefix=api)
     app.include_router(whiteboards.router, prefix=api)
-    app.include_router(feeds.router, prefix=api)
     app.include_router(document_projects.router, prefix=api)
     app.include_router(notes.router, prefix=api)
     app.include_router(memos.router, prefix=api)
-    app.include_router(pet.router, prefix=api)
     app.include_router(bookmarks.router, prefix=api)
     app.include_router(translate.router, prefix=api)
-    app.include_router(media.router, prefix=api)
     from .routers import ai_tables
     app.include_router(ai_tables.router, prefix=api)
     app.include_router(trash.router, prefix=api)
