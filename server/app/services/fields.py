@@ -155,7 +155,7 @@ def validate_value(db: Session, field, raw, *, table_id: int) -> object:
         if file_obj.status == "staged" and file_obj.expires_at is not None and file_obj.expires_at <= utcnow():
             _fail(fname, "附件已过期，请重新上传")
         if file_obj.status == "bound" and not _file_owned_by(db, file_id, table_id):
-            pass
+            _fail(fname, "该附件已绑定到其他表格，请重新上传")
         return file_id
 
     _fail(fname, "未知列类型")

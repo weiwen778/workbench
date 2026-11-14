@@ -352,6 +352,8 @@ def pet_payload(pet: Pet, now: datetime) -> dict:
         "stage": stage,
         "stage_label": stage_label,
         "care_days": pet.care_days,
+        # 遛狗时段等“本地时间”规则由后端裁定，前端不得用浏览器时钟自行判断。
+        "local_hour": utc_to_local(now).hour,
         "stats": {key: round_stat(getattr(pet, key)) for key in STAT_KEYS + ("health",)},
         "status": status,
         "status_label": status_label,

@@ -28,7 +28,9 @@ CSRF_EXEMPT = {"/api/v1/auth/login"}
 def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        init_db()
+        # 生产只走 alembic：create_all 只建表不加列，会掩盖迁移并造成结构漂移。
+        if settings.env != "production":
+            init_db()
         bootstrap()
         from .services.media import apply_cookie_env
         apply_cookie_env()

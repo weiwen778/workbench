@@ -32,7 +32,8 @@ export default function ActionBar({
   }, [])
   // 冷却起点用 TanStack Query 的 dataUpdatedAt，绝不拿当前时间当起点。
   const elapsed = Math.max(0, Math.floor((now - syncedAt) / 1000))
-  const hour = new Date().getHours()
+  // 遛狗时段以后端返回的本地小时为准，避免浏览器时区与服务端不一致时按钮可点但请求 409。
+  const hour = pet.local_hour ?? new Date().getHours()
 
   const reasons = useMemo<Record<string, string>>(() => {
     const result: Record<string, string> = {}

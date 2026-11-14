@@ -182,7 +182,7 @@ def calendar(
     end: date = Query(...),
     db: Session = Depends(get_db),
 ):
-    if end < start or (end - start).days > 62:
+    if end < start or (end - start).days + 1 > 62:
         raise ApiError("INVALID_RANGE", "日期范围最多 62 天", 422)
     return service.calendar_payload(db, start, end)
 

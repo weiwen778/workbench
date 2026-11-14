@@ -62,7 +62,10 @@ export default function PetPage() {
     <Page>
       <PageToolbar>
         <Typography variant="h5" sx={{ fontWeight: 700 }}>{pet.name}</Typography>
-        <Typography variant="body2" color="text.secondary">{pet.stage_label} · {pet.status_label}</Typography>
+        <Typography variant="body2" color="text.secondary">
+          {pet.stage_label} · {pet.status_label} · 第 {pet.care_days} 天
+          {pet.next_stage_in_days ? ` · 下次成长还差 ${pet.next_stage_in_days} 天` : ''}
+        </Typography>
         <Box sx={{ flex: 1 }} />
         <Button onClick={() => { setRenameValue(pet.name); setRenameOpen(true) }}>改名</Button>
       </PageToolbar>

@@ -11,6 +11,7 @@ export interface PetPayload {
   stage: PetStage
   stage_label: string
   care_days: number
+  local_hour: number
   stats: { satiety: number; cleanliness: number; mood: number; energy: number; health: number }
   status: PetStatus
   status_label: string
