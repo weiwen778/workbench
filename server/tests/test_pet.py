@@ -1,7 +1,9 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+
+import pytest
 
 from app.models import Pet
-from app.services.pet import pet_payload, stage_for, status_for
+from app.services.pet import advance, pet_payload, stage_for, status_for
 
 T0 = datetime(2026, 11, 14, 0, 0)
 
@@ -91,3 +93,113 @@ def test_payload_rounds_half_up(db):
     assert payload["stats"]["mood"] == 79
     assert payload["stats"]["energy"] == 79
     assert payload["updated_at"].endswith("Z")
+
+
+def test_one_hour_of_decay(db):
+    pet = _make_pet(db)
+    advance(pet, T0 + timedelta(hours=1))
+    assert pet.satiety == pytest.approx(68.5)
+    assert pet.cleanliness == pytest.approx(89.2)
+    assert pet.mood == pytest.approx(78.8)
+    assert pet.energy == pytest.approx(78.5)
+    assert pet.health == pytest.approx(100)
+    assert pet.poop_count == 0
+
+
+def test_half_hour_is_fractional(db):
+    pet = _make_pet(db)
+    advance(pet, T0 + timedelta(minutes=30))
+    assert pet.satiety == pytest.approx(69.25)
+    assert pet.cleanliness == pytest.approx(89.6)
+    assert pet.mood == pytest.approx(79.4)
+    assert pet.energy == pytest.approx(79.25)
+
+
+def test_24h_makes_three_poops_and_drops_needs(db):
+    pet = _make_pet(db)
+    advance(pet, T0 + timedelta(hours=24))
+    assert pet.poop_count == 3
+    assert pet.poop_progress == pytest.approx(8)
+    assert pet.satiety == pytest.approx(34)
+    assert pet.cleanliness == pytest.approx(61.2)
+    assert pet.mood == pytest.approx(44)
+    assert pet.energy == pytest.approx(44)
+    assert pet.health == pytest.approx(100)
+
+
+def test_72h_is_collapsed_but_not_sick(db):
+    pet = _make_pet(db)
+    advance(pet, T0 + timedelta(hours=72))
+    assert pet.satiety == pytest.approx(0)
+    assert pet.cleanliness == pytest.approx(0)
+    assert pet.mood == pytest.approx(0)
+    assert pet.energy == pytest.approx(0)
+    assert pet.health == pytest.approx(100 - (72 - 53) * 20 / 24, abs=1e-4)
+    assert pet.sick_since is None
+
+
+def test_101h_enters_sick(db):
+    pet = _make_pet(db)
+    advance(pet, T0 + timedelta(hours=101))
+    assert pet.health == pytest.approx(60, abs=1e-4)
+    assert pet.sick_since is not None
+    assert status_for(pet) == ("sick", "生病了")
+
+
+def test_90_days_keeps_health_floor_and_life(db):
+    pet = _make_pet(db)
+    advance(pet, T0 + timedelta(days=120))
+    assert pet.health == pytest.approx(10)
+    assert pet.sick_since is not None
+    assert pet.last_tick_at == T0 + timedelta(days=120)
+
+
+def test_sleeping_recovers_energy_and_halves_decay(db):
+    pet = _make_pet(db, energy=20, sleeping=True, sleep_started_at=T0)
+    advance(pet, T0 + timedelta(hours=1))
+    assert pet.energy == pytest.approx(32)
+    assert pet.satiety == pytest.approx(69.25)
+    assert pet.cleanliness == pytest.approx(89.6)
+    assert pet.mood == pytest.approx(79.4)
+    assert pet.poop_count == 0
+    assert pet.sleeping is True
+
+
+def test_sleep_auto_wakes_at_100(db):
+    pet = _make_pet(db, energy=99, sleeping=True, sleep_started_at=T0)
+    advance(pet, T0 + timedelta(hours=1))
+    assert pet.sleeping is False
+    assert pet.energy == pytest.approx(98.625)
+
+
+def test_clock_backwards_is_noop(db):
+    pet = _make_pet(db, satiety=42)
+    advance(pet, T0 - timedelta(hours=1))
+    assert pet.satiety == pytest.approx(42)
+    assert pet.last_tick_at == T0
+
+
+def test_three_poops_stop_progress(db):
+    pet = _make_pet(db, poop_count=3, poop_progress=8)
+    advance(pet, T0 + timedelta(hours=8))
+    assert pet.poop_count == 3
+    assert pet.poop_progress == pytest.approx(8)
+
+
+def test_health_regenerates_when_all_needs_are_above_40(db):
+    pet = _make_pet(
+        db, health=65, satiety=80, cleanliness=80, mood=80, energy=80,
+        neglect_since=None,
+    )
+    advance(pet, T0 + timedelta(hours=24))
+    assert pet.health == pytest.approx(73)
+
+
+def test_sick_clears_at_75(db):
+    pet = _make_pet(
+        db, health=74, satiety=80, cleanliness=80, mood=80, energy=80,
+        sick_since=T0, neglect_since=None,
+    )
+    advance(pet, T0 + timedelta(hours=4))
+    assert pet.health == pytest.approx(75.3333, abs=1e-4)
+    assert pet.sick_since is None
