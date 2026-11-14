@@ -176,9 +176,9 @@ export function DataTable<T>({
       width: baseWidth,
       minWidth: savedWidth ?? (!fixed && typeof column.width === 'number' ? column.width : undefined),
       flex: fixed || savedWidth || hasSavedWidths ? 0 : typeof column.width === 'number' ? column.width : 1,
-      // 表头一律靠左；单元格内容按“水平居中”开关，可在居左/居中之间切换
+      // 表头与单元格共用「水平居中」开关：勾选一起居中，不勾一起靠左
       align: column.align ?? (centerX ? 'center' : 'left'),
-      headerAlign: 'left' as const,
+      headerAlign: centerX ? 'center' : 'left',
       sortable: Boolean(column.sortable && onSort),
       hideable: !(pinnedActions || tailActions || field === '__select'),
       disableColumnMenu: field === '__select',
