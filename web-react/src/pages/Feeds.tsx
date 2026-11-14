@@ -3,17 +3,18 @@ import { Box, Tab, Tabs } from '@mui/material'
 import { Page, PageToolbar } from '@/ui/common'
 import HotPanel from '@/feeds/HotPanel'
 import SubscriptionsPanel from '@/feeds/SubscriptionsPanel'
-import CommonPanel from '@/feeds/CommonPanel'
+import CalendarDashboard from '@/feeds/CalendarDashboard'
 
 const TABS = [
   { key: 'hot', label: '热榜' },
   { key: 'subscriptions', label: '我的订阅' },
-  { key: 'sources', label: '常用信息源' },
+  { key: 'calendar', label: '日历' },
 ]
 
 export default function FeedsPage() {
   const [params, setParams] = useSearchParams()
-  const tab = TABS.some((item) => item.key === params.get('tab')) ? params.get('tab')! : 'hot'
+  const requested = params.get('tab')
+  const tab = requested === 'sources' ? 'calendar' : TABS.some((item) => item.key === requested) ? requested! : 'hot'
 
   return (
     <Page variant="bleed" sx={{ minHeight: 0 }}>
@@ -28,7 +29,7 @@ export default function FeedsPage() {
         <Box sx={{ flex: 1 }} />
       </PageToolbar>
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        {tab === 'hot' ? <HotPanel /> : tab === 'subscriptions' ? <SubscriptionsPanel /> : <CommonPanel />}
+        {tab === 'hot' ? <HotPanel /> : tab === 'subscriptions' ? <SubscriptionsPanel /> : <CalendarDashboard />}
       </Box>
     </Page>
   )
