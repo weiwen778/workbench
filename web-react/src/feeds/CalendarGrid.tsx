@@ -121,13 +121,14 @@ export default function CalendarGrid({ month, events, onMonthChange, onRefresh, 
                     '&:nth-of-type(7n)': { borderRight: 0 },
                     '&:nth-of-type(n+36)': { borderBottom: 0 },
                     opacity: isCurrentMonth ? 1 : 0.45,
+                    overflow: 'hidden',
                     '&:hover': dayEvents.length > 0 ? { bgcolor: 'action.hover' } : undefined,
                   }}
                 >
                   <Typography sx={{ fontSize: 11.5, fontWeight: isToday ? 700 : 500, color: isToday ? 'primary.main' : 'text.primary' }}>
                     {date.getDate()}
                   </Typography>
-                  <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 0.3 }}>
+                  <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 0.3 }}>
                     {visible.map((event, index) => (
                       <Tooltip key={`${event.kind}-${index}`} title={event.title} disableHoverListener={event.title.length <= 18}>
                         <Chip
@@ -137,6 +138,8 @@ export default function CalendarGrid({ month, events, onMonthChange, onRefresh, 
                             height: 18,
                             fontSize: 9.5,
                             borderRadius: 0.75,
+                            maxWidth: '100%',
+                            minWidth: 0,
                             bgcolor: event.kind === 'holiday' ? alpha(theme.palette.warning.main, 0.14) : alpha(theme.palette.primary.main, 0.12),
                             color: event.kind === 'holiday' ? theme.palette.warning.dark : theme.palette.primary.dark,
                             borderColor: 'transparent',

@@ -292,8 +292,10 @@ def fetch_runsignup_all(
 ) -> tuple[dict[str, list[dict] | None], int]:
     """Fetch RunSignup races for many countries concurrently.
 
-    US is expanded into per-state queries; the whole country counts as one
-    failure if any state query fails.
+    US is expanded into per-state queries. Failed US state queries are logged
+    and count as one country failure, but successful state rows are still
+    combined into ``results["US"]``. ``results["US"]`` is ``None`` only when
+    all US state queries failed.
     """
     if countries is None:
         countries = runsignup_countries()
@@ -338,9 +340,7 @@ def fetch_runsignup_all(
                     failures += 1
                 results[country] = rows
 
-    if us_failed:
-        results["US"] = None
-    elif us_state_rows:
+    if us_state_rows:
         combined: list[dict] = []
         seen: set[tuple[str, str]] = set()
         for rows in us_state_rows:
@@ -352,6 +352,8 @@ def fetch_runsignup_all(
                 combined.append(row)
         combined.sort(key=lambda row: (row["date"], row["title"]))
         results["US"] = combined
+    elif us_failed:
+        results["US"] = None
 
     return results, failures
 
@@ -413,11 +415,11 @@ def fetch_1688_rules() -> list[dict]:
         {
             "pageIndex": 1,
             "pageSize": 10,
-            "lastCategoryId": 0,
-            "parentCategoryId": 0,
-            "identityCode": "",
+            "lastCategoryId": None,
+            "parentCategoryId": None,
+            "identityCode": "4",
             "terminal": "PC",
-            "buCode": "CNA1688",
+            "buCode": 333,
         },
         ensure_ascii=False,
         separators=(",", ":"),

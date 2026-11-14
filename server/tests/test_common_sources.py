@@ -2,6 +2,7 @@ import hashlib
 import json
 from datetime import date, datetime
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -83,6 +84,24 @@ def test_fetch_runsignup_country_uses_start_date_end_date(monkeypatch):
 
 
 def test_fetch_runsignup_all_counts_us_failure_once(monkeypatch):
+    calls = []
+
+    def fake(country, start, end, state=None):
+        calls.append(state)
+        if state == "CA":
+            return [{"kind": "race", "date": "2026-11-14", "title": "CA Race", "country": "US", "url": "u1", "city": "", "distance": ""}]
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(common_sources, "RUNSIGNUP_US_STATES", ("CA", "NY"))
+    monkeypatch.setattr(common_sources, "fetch_runsignup_country", fake)
+    results, failures = common_sources.fetch_runsignup_all(
+        date(2026, 11, 14), date(2026, 12, 14), countries=("US",), concurrency=2,
+    )
+    assert [row["title"] for row in results["US"]] == ["CA Race"]
+    assert failures == 1
+
+
+def test_fetch_runsignup_all_us_none_when_all_states_fail(monkeypatch):
     def fake(*args, **kwargs):
         raise RuntimeError("boom")
 
@@ -165,6 +184,37 @@ def test_fetch_1688_rules_sends_both_cookies_and_signature(monkeypatch):
     assert "_m_h5_tk=abc_1794673644525" in headers["Cookie"]
     assert "_m_h5_tk_enc=xyz" in headers["Cookie"]
     assert "sign=" in calls[1][0] and "data=" in calls[1][0]
+
+
+def test_fetch_1688_rules_uses_exact_mtop_business_payload(monkeypatch):
+    calls = []
+
+    def fake(url, **kwargs):
+        calls.append(url)
+        if len(calls) == 1:
+            return SimpleNamespace(status=200, body=b"{}", headers={}, set_cookies=[
+                "_m_h5_tk=abc_1794673644525; Path=/", "_m_h5_tk_enc=xyz; Path=/",
+            ])
+        body = json.dumps({"ret": ["SUCCESS::success"], "data": {"model": [{
+            "ruleId": "1", "ruleTitle": "规则", "modifiedTime": "2026-09-28 17:56:08",
+            "lastCategoryName": "更新公示", "lastCategoryId": "2",
+        }]}}).encode()
+        return SimpleNamespace(status=200, body=body, headers={}, set_cookies=[])
+
+    monkeypatch.setattr(common_sources, "fetch_public", fake)
+    monkeypatch.setattr(common_sources.time, "time", lambda: 1700000000.0)
+    rows = common_sources.fetch_1688_rules()
+    assert rows[0]["title"] == "规则"
+    api_url = calls[1]
+    data_param = parse_qs(urlparse(api_url).query)["data"][0]
+    payload = json.loads(data_param)
+    assert payload["identityCode"] == "4"
+    assert payload["buCode"] == 333
+    assert payload["lastCategoryId"] is None
+    assert payload["parentCategoryId"] is None
+    assert payload["pageIndex"] == 1
+    assert payload["pageSize"] == 10
+    assert payload["terminal"] == "PC"
 
 
 def test_parse_runsignup_filters_promoted_and_out_of_range():
