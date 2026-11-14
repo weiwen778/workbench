@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Avatar, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Drawer,
+  Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Drawer,
   IconButton, InputAdornment, List, ListItemButton, ListItemIcon, ListItemText, Stack, TextField, Tooltip, Typography,
 } from '@mui/material'
 import PushPin from '@mui/icons-material/PushPin'
@@ -10,8 +10,7 @@ import {
 } from '@dnd-kit/core'
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Close, DragIndicator, Search, Setting, SwitchButton } from '@/icons'
-import { logout, useSession } from '@/session'
+import { Close, DragIndicator, Search, Setting } from '@/icons'
 import {
   APP_NAV_GROUPS, APP_NAV_ITEMS, DEFAULT_PINNED_KEYS, MAX_PINNED, appNavItem, type AppNavItem,
 } from './app-nav'
@@ -21,19 +20,16 @@ function matches(query: string, label: string) {
 }
 
 export function NavAllDrawer({
-  open, onClose, pinned, onTogglePin, onManage, showFooter = false,
+  open, onClose, pinned, onTogglePin, onManage,
 }: {
   open: boolean
   onClose: () => void
   pinned: string[]
   onTogglePin: (key: string) => void
   onManage: () => void
-  showFooter?: boolean
 }) {
   const navigate = useNavigate()
-  const session = useSession()
   const [query, setQuery] = useState('')
-  const [busy, setBusy] = useState(false)
 
   const go = (path: string) => {
     onClose()
@@ -98,23 +94,7 @@ export function NavAllDrawer({
       <Stack direction="row" spacing={0.5} sx={{ p: 1 }}>
         <Button size="small" startIcon={<Setting fontSize="small" />} onClick={() => { onClose(); navigate('/settings') }}>设置</Button>
         <Box sx={{ flex: 1 }} />
-        {showFooter ? (
-          <>
-            <Stack direction="row" spacing={0.75} alignItems="center" sx={{ px: 0.75, minWidth: 0 }}>
-              <Avatar sx={{ width: 24, height: 24, fontSize: 12 }}>{session.user?.username?.slice(0, 1).toUpperCase()}</Avatar>
-              <Typography noWrap sx={{ fontSize: 12, color: 'text.secondary', maxWidth: 100 }}>{session.user?.username}</Typography>
-            </Stack>
-            <Tooltip title="退出登录">
-              <IconButton
-                size="small" aria-label="退出登录" disabled={busy}
-                onClick={async () => { setBusy(true); try { await logout(); navigate('/login', { replace: true }) } finally { setBusy(false) } }}
-              >
-                <SwitchButton sx={{ fontSize: 17 }} />
-              </IconButton>
-            </Tooltip>
-          </>
-        ) : null}
-        <Button size="small" onClick={onManage}>管理导航</Button>
+        <Button size="small" onClick={() => { onClose(); onManage() }}>管理导航</Button>
       </Stack>
     </Drawer>
   )

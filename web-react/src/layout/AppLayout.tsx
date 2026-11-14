@@ -278,7 +278,6 @@ export default function AppLayout() {
           groups={groups}
           onToggleMode={toggleNavMode}
           onOpenAll={() => setAllNavOpen(true)}
-          onManage={() => setManageNavOpen(true)}
         />
       ) : null}
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', flex: 1, minWidth: 0 }}>
@@ -360,7 +359,6 @@ export default function AppLayout() {
         pinned={pinned}
         onTogglePin={togglePin}
         onManage={() => { setDrawerOpen(false); setAllNavOpen(false); setManageNavOpen(true) }}
-        showFooter={narrow}
       />
 
       <ManageNavDialog

@@ -1,13 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import {
-  Avatar, Box, Collapse, Divider, IconButton, Menu, MenuItem, ListItemIcon, ListItemText, Tooltip, Typography, useTheme,
-} from '@mui/material'
+import { Box, Collapse, Divider, Tooltip, Typography, useTheme } from '@mui/material'
 import ChevronLeft from '@mui/icons-material/ChevronLeft'
 import ChevronRight from '@mui/icons-material/ChevronRight'
-import { Logout, Person, Settings, Tune } from '@mui/icons-material'
+import { Settings } from '@mui/icons-material'
 import GridView from '@mui/icons-material/GridView'
-import { logout, useSession } from '@/session'
 import { preloadPath } from '@/router/preload'
 import { appNavItem } from './app-nav'
 import { activeGroupKey, type NavGroup } from './nav'
@@ -21,16 +18,13 @@ interface AppRailProps {
   groups: NavGroup[]
   onToggleMode: () => void
   onOpenAll: () => void
-  onManage: () => void
 }
 
-export default function AppRail({ mode, pinned, groups, onToggleMode, onOpenAll, onManage }: AppRailProps) {
+export default function AppRail({ mode, pinned, groups, onToggleMode, onOpenAll }: AppRailProps) {
   const navigate = useNavigate()
   const location = useLocation()
-  const session = useSession()
   const theme = useTheme()
   const accent = theme.palette.primary.main
-  const [userAnchor, setUserAnchor] = useState<HTMLElement | null>(null)
   const [openKey, setOpenKey] = useState<string | null>(() => activeGroupKey(window.location.pathname, groups) || null)
   const wide = mode === 'wide'
   const activeGroup = activeGroupKey(location.pathname, groups) || null
@@ -139,10 +133,6 @@ export default function AppRail({ mode, pinned, groups, onToggleMode, onOpenAll,
     </Box>
   )
 
-  useEffect(() => {
-    setUserAnchor(null)
-  }, [location.pathname])
-
   return (
     <Box
       component="nav"
@@ -196,23 +186,6 @@ export default function AppRail({ mode, pinned, groups, onToggleMode, onOpenAll,
               Nexus
             </Typography>
           </Box>
-        </Tooltip>
-        <Tooltip title={wide ? '收起侧栏' : '展开侧栏'}>
-          <IconButton
-            size="small"
-            aria-label={wide ? '收起侧栏' : '展开侧栏'}
-            aria-expanded={wide}
-            onClick={onToggleMode}
-            sx={{
-              position: 'absolute', top: '50%', right: wide ? 8 : 2, transform: 'translateY(-50%)',
-              width: wide ? 27 : 22, height: wide ? 27 : 22,
-              border: 1, borderColor: 'divider', bgcolor: 'background.paper', color: 'text.secondary',
-              transition: 'width 160ms ease, height 160ms ease, background-color 120ms ease',
-              '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
-            }}
-          >
-            {wide ? <ChevronLeft sx={{ fontSize: 17 }} /> : <ChevronRight sx={{ fontSize: 16 }} />}
-          </IconButton>
         </Tooltip>
       </Box>
       <Divider sx={{ width: wide ? 'calc(100% - 20px)' : 32, mb: 0.5 }} />
@@ -275,40 +248,13 @@ export default function AppRail({ mode, pinned, groups, onToggleMode, onOpenAll,
       <Divider sx={{ width: wide ? 'calc(100% - 20px)' : 32, my: 0.5 }} />
       <Box sx={{ width: '100%', px: wide ? 0.75 : 0.5, display: 'flex', flexDirection: 'column', alignItems: wide ? 'stretch' : 'center', gap: 0.25 }}>
         {bottomItem('设置', <Settings sx={{ fontSize: wide ? 20 : 19 }} />, location.pathname.startsWith('/settings'), () => go('/settings'))}
-        <Box
-          role="button"
-          tabIndex={0}
-          aria-label="账号"
-          onClick={(event) => setUserAnchor(event.currentTarget)}
-          onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setUserAnchor(event.currentTarget) } }}
-          sx={itemSx(false)}
-        >
-          <Avatar sx={{ width: 23, height: 23, fontSize: 12, bgcolor: `${accent}20`, color: accent }}>
-            {session.user?.username?.slice(0, 1).toUpperCase()}
-          </Avatar>
-          <Typography component="span" sx={{ fontSize: wide ? 13 : 10, lineHeight: 1.15, color: 'text.secondary', whiteSpace: 'nowrap' }}>账号</Typography>
-        </Box>
+        {bottomItem(
+          wide ? '收起侧栏' : '展开侧栏',
+          wide ? <ChevronLeft sx={{ fontSize: 19 }} /> : <ChevronRight sx={{ fontSize: 19 }} />,
+          false,
+          onToggleMode,
+        )}
       </Box>
-
-      <Menu anchorEl={userAnchor} open={Boolean(userAnchor)} onClose={() => setUserAnchor(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}>
-        <MenuItem disabled>
-          <ListItemIcon><Person fontSize="small" /></ListItemIcon>
-          <ListItemText>{session.user?.username}</ListItemText>
-        </MenuItem>
-        <Divider />
-        <MenuItem onClick={() => { setUserAnchor(null); onManage() }}>
-          <ListItemIcon><Tune fontSize="small" /></ListItemIcon>
-          <ListItemText>管理导航</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={() => { setUserAnchor(null); go('/settings') }}>
-          <ListItemIcon><Settings fontSize="small" /></ListItemIcon>
-          <ListItemText>设置</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={async () => { setUserAnchor(null); await logout(); navigate('/login', { replace: true }) }}>
-          <ListItemIcon><Logout fontSize="small" /></ListItemIcon>
-          <ListItemText>退出登录</ListItemText>
-        </MenuItem>
-      </Menu>
     </Box>
   )
 }
