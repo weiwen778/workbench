@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
-  Alert, Box, Button, Divider, Drawer, List, ListItemButton, ListItemIcon, ListItemText,
-  Stack, TextField, ToggleButton, ToggleButtonGroup, Typography, useMediaQuery,
+  Alert, Box, Button, Divider, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText,
+  Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography, useMediaQuery,
 } from '@mui/material'
-import { Delete, InfoFilled, Lock, Menu, Moon, Palette, Search, Sunny, Todo, Translate, Tune } from '@/icons'
+import { ArrowLeft, ArrowRight, Delete, InfoFilled, Lock, Menu, Moon, Palette, Search, Sunny, Todo, Translate, Tune } from '@/icons'
 import BackupIcon from '@mui/icons-material/Backup'
 import SpeedIcon from '@mui/icons-material/Speed'
 import { apiError } from '@/api/client'
 import { setTheme, setThemeColor, useSession } from '@/session'
+import { useReducedMotion } from 'framer-motion'
 import { Card, AgentsSection, AiSection, SystemSection, TranslationSection } from './SettingsSections'
 import ContentDisplaySection from './settings/ContentDisplaySection'
 import NavigationSection from './settings/NavigationSection'
@@ -52,25 +53,83 @@ const allItems = groups.flatMap((group) => group.items)
 export default function SettingsPage({ section: explicitSection }: { section?: string }) {
   const params = useParams()
   const navigate = useNavigate()
+  const session = useSession()
   const section = explicitSection || params.section || 'appearance'
   const canonical = section === 'account' ? 'security' : section === 'system' ? 'backup' : section
   const current = allItems.find((item) => item.key === canonical) || allItems[0]
   const [search, setSearch] = useState('')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const mobile = useMediaQuery('(max-width:899.95px)')
+  const reduceMotion = useReducedMotion()
+  const navKey = `wb_settings_nav_${session.user?.id || 'guest'}`
+  const [navCollapsed, setNavCollapsed] = useState(() => localStorage.getItem(navKey) === '1')
   const [feedback, setFeedback] = useState('')
   const [feedbackError, setFeedbackError] = useState(false)
   const notify = (message: string, error = false) => { setFeedback(message); setFeedbackError(error) }
+
+  useEffect(() => {
+    setNavCollapsed(localStorage.getItem(navKey) === '1')
+  }, [navKey])
 
   useEffect(() => {
     if (section === 'account') navigate('/settings/security', { replace: true })
     if (section === 'system') navigate('/settings/backup', { replace: true })
   }, [section, navigate])
 
+  const toggleNav = () => {
+    setNavCollapsed((value) => {
+      const next = !value
+      localStorage.setItem(navKey, next ? '1' : '0')
+      return next
+    })
+  }
+
   const filtered = useMemo(() => allItems.filter((item) => (item.label + item.keywords).toLowerCase().includes(search.trim().toLowerCase())), [search])
 
-  const nav = (compact = false) => (
+  const collapsedNav = (
+    <Box sx={{ py: 1.5, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.25 }}>
+      <Tooltip title="展开设置目录" placement="right">
+        <IconButton size="small" aria-label="展开设置目录" aria-expanded={false} onClick={toggleNav}>
+          <ArrowRight sx={{ fontSize: 18 }} />
+        </IconButton>
+      </Tooltip>
+      {groups.map((group, groupIndex) => (
+        <Box key={group.name} sx={{ width: '100%' }}>
+          {group.items.map((item) => {
+            const Icon = item.icon
+            return (
+              <Tooltip key={item.key} title={item.label} placement="right">
+                <ListItemButton
+                  selected={canonical === item.key}
+                  aria-label={item.label}
+                  onClick={() => navigate(item.key === 'appearance' ? '/settings' : `/settings/${item.key}`)}
+                  sx={{ justifyContent: 'center', px: 0, minHeight: 38 }}
+                >
+                  <ListItemIcon sx={{ minWidth: 0, justifyContent: 'center' }}><Icon sx={{ fontSize: 20 }} /></ListItemIcon>
+                </ListItemButton>
+              </Tooltip>
+            )
+          })}
+          {groupIndex < groups.length - 1 ? <Divider sx={{ mx: 1.5, my: 0.5 }} /> : null}
+        </Box>
+      ))}
+    </Box>
+  )
+
+  const nav = (compact = false, collapsed = false) => {
+    if (collapsed) return collapsedNav
+    return (
     <Box sx={{ p: compact ? 2 : { xs: 2, md: '20px 12px' }, minWidth: 0 }}>
+      {!compact ? (
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
+          <Typography sx={{ fontSize: 13, fontWeight: 600 }}>设置</Typography>
+          <Tooltip title="收起设置目录">
+            <IconButton size="small" aria-label="收起设置目录" aria-expanded onClick={toggleNav}>
+              <ArrowLeft sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Tooltip>
+        </Stack>
+      ) : null}
       <TextField
         fullWidth size="small" value={search} placeholder="搜索设置" aria-label="搜索设置"
         onChange={(event) => setSearch(event.target.value)}
@@ -106,12 +165,17 @@ export default function SettingsPage({ section: explicitSection }: { section?: s
       })}
       {!filtered.length ? <Typography sx={{ fontSize: 12, color: 'text.secondary', p: 1 }}>没有匹配的设置</Typography> : null}
     </Box>
-  )
+    )
+  }
 
   return (
-    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '210px minmax(0,1fr)' }, minHeight: 'calc(100vh - 44px)', width: '100%' }}>
-      {!mobile ? <Box component="aside" aria-label="设置分类" sx={{ borderRight: 1, borderColor: 'divider', minWidth: 0 }}>
-        <Box sx={{ position: 'sticky', top: 0, maxHeight: 'calc(100vh - 44px)', overflowY: 'auto' }}>{nav()}</Box>
+    <Box sx={{
+      display: 'grid', gridTemplateColumns: mobile ? '1fr' : `${navCollapsed ? 64 : 210}px minmax(0,1fr)`,
+      transition: reduceMotion ? 'none' : 'grid-template-columns 160ms ease',
+      minHeight: 'calc(100vh - 44px)', width: '100%',
+    }}>
+      {!mobile ? <Box component="aside" aria-label={navCollapsed ? '设置分类（已收起）' : '设置分类'} sx={{ borderRight: 1, borderColor: 'divider', minWidth: 0, overflow: 'hidden' }}>
+        <Box sx={{ position: 'sticky', top: 0, maxHeight: 'calc(100vh - 44px)', overflowY: 'auto', overflowX: 'hidden' }}>{nav(false, navCollapsed)}</Box>
       </Box> : null}
 
       <Box component="main" sx={{ p: { xs: 2, md: '24px 28px' }, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
