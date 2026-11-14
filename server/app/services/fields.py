@@ -6,10 +6,11 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlparse
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..errors import ApiError
-from ..models import FileObject, utcnow
+from ..models import DataRecord, FileObject, FileRef, utcnow
 
 FIELD_TYPES = {
     "short_text",
@@ -163,8 +164,16 @@ def validate_value(db: Session, field, raw, *, table_id: int) -> object:
 
 
 def _file_owned_by(db: Session, file_id: int, table_id: int) -> bool:
-    """已绑定文件在替换前保持可用，这里只做存在性校验。"""
-    return True
+    """附件是否可用于该表格：未被记录引用，或只被本表记录引用。"""
+    owner_tables = db.scalars(
+        select(DataRecord.table_id)
+        .join(FileRef, FileRef.owner_id == DataRecord.id)
+        .where(
+            FileRef.file_id == file_id,
+            FileRef.owner_type.in_(("record", "table_change_record")),
+        )
+    ).all()
+    return all(owner_table == table_id for owner_table in owner_tables)
 
 
 def validate_record(db: Session, fields: list, data: dict, *, table_id: int) -> dict:

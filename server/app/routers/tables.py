@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Query
@@ -714,3 +715,11 @@ def _sync_file_refs(db: Session, owner_type: str, owner_id: int, fields: list[Da
         )
         if ref:
             db.delete(ref)
+            db.flush()
+            remaining = len(db.scalars(select(FileRef.id).where(FileRef.file_id == file_id)).all())
+            if remaining == 0:
+                file_obj = db.get(FileObject, file_id)
+                # 解绑后回到暂存态，24 小时内可由清理任务回收，避免永久 bound 既不可删也 409
+                if file_obj is not None and file_obj.status == "bound":
+                    file_obj.status = "staged"
+                    file_obj.expires_at = utcnow() + timedelta(hours=24)
