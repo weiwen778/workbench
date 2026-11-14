@@ -30,6 +30,8 @@ def create_app() -> FastAPI:
     async def lifespan(_app: FastAPI):
         init_db()
         bootstrap()
+        from .services.media import apply_cookie_env
+        apply_cookie_env()
         task = None
         worker = None
         feed_task = None
@@ -159,6 +161,7 @@ def create_app() -> FastAPI:
         transfers,
         whiteboards,
         translate,
+        media,
         trash,
     )
 
@@ -189,6 +192,7 @@ def create_app() -> FastAPI:
     app.include_router(memos.router, prefix=api)
     app.include_router(bookmarks.router, prefix=api)
     app.include_router(translate.router, prefix=api)
+    app.include_router(media.router, prefix=api)
     from .routers import ai_tables
     app.include_router(ai_tables.router, prefix=api)
     app.include_router(trash.router, prefix=api)

@@ -254,6 +254,7 @@ export default function AppLayout() {
       '/convert': '格式转换',
       '/color': '取色与可读性检查',
       '/codes': '二维码与条码',
+      '/media': '视频解析',
       '/feeds': '信息聚合',
       '/docs': '文档工作台',
       '/whiteboards': '白板',

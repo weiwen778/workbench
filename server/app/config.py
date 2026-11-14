@@ -84,6 +84,19 @@ class Settings(BaseSettings):
     feed_runsignup_interval_seconds: int = Field(default=21600, ge=3600, le=86400)
     feed_runsignup_window_days: int = Field(default=90, ge=30, le=365)
 
+    # 视频解析：随 FastAPI 进程内嵌运行，不需要额外容器。
+    media_enabled: bool = True
+    media_platforms: str = "douyin,xhs,kuaishou"
+    media_timeout_seconds: float = Field(default=60.0, gt=1, le=120)
+    media_max_concurrency: int = Field(default=2, ge=1, le=8)
+    media_max_download_bytes: int = Field(default=300_000_000, ge=1_000_000, le=2_000_000_000)
+    media_download_ttl_seconds: int = Field(default=7200, ge=60, le=86400)
+    # 仅测试使用：允许媒体解析/下载访问回环地址；生产保持 False。
+    media_allow_loopback: bool = False
+    media_douyin_cookie: str | None = None
+    media_xhs_cookie: str | None = None
+    media_kuaishou_cookie: str | None = None
+
     max_bytes_baidu: int = 6000
     max_chars_youdao: int = 5000
     max_chars_deepseek: int = 4000

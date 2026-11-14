@@ -15,6 +15,7 @@ import {
   SwapHoriz,
   TableChart,
   Translate,
+  VideoLibrary,
 } from '@mui/icons-material'
 
 export type AppNavGroup = 'work' | 'content' | 'info' | 'tools'
@@ -49,6 +50,7 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
   { key: 'convert', label: '格式转换', path: '/convert', icon: SwapHoriz, group: 'tools' },
   { key: 'color', label: '取色对比', path: '/color', icon: Palette, group: 'tools' },
   { key: 'codes', label: '二维码条码', path: '/codes', icon: QrCode2, group: 'tools' },
+  { key: 'media', label: '视频解析', path: '/media', icon: VideoLibrary, group: 'tools' },
   { key: 'whiteboards', label: '白板', path: '/whiteboards', icon: Brush, group: 'content' },
 ]
 
