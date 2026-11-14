@@ -138,6 +138,7 @@ def test_whiteboard_orphan_assets_are_cleaned_after_grace(auth, db):
         old = utcnow() - timedelta(hours=48)
         for asset in session.scalars(select(WhiteboardAsset)).all():
             asset.created_at = old
+            asset.orphaned_at = old
         session.commit()
         orphan = session.get(WhiteboardAsset, (1, 'orphan-asset'))
         keep = session.get(WhiteboardAsset, (1, 'keep-asset'))
@@ -147,3 +148,37 @@ def test_whiteboard_orphan_assets_are_cleaned_after_grace(auth, db):
     result = run_cleanup()
     assert result['whiteboard_assets'] == 1
     assert not orphan_path.exists() and keep_path.exists()
+
+
+def test_whiteboard_asset_cleanup_is_account_scoped(auth):
+    from datetime import timedelta
+    from fastapi.testclient import TestClient
+    from sqlalchemy import select
+    from app.main import app
+    from app.maintenance import run_cleanup
+    from app.models import User, WhiteboardAsset, utcnow
+    from app.security import hash_password
+
+    board = auth.post('/api/v1/whiteboards', json={'title': '账号资源'}).json()
+    assert auth.post('/api/v1/whiteboards/assets', data={'file_id': 'same-hash'}, files={'file': ('a.png', PNG, 'image/png')}).status_code == 201
+    assert auth.put(f"/api/v1/whiteboards/{board['id']}", json={
+        'elements': [{'id': 'img', 'type': 'image', 'fileId': 'same-hash'}], 'app_state': {}, 'version': 1,
+    }).status_code == 200
+    with SessionLocal() as session:
+        session.add(User(username='asset-other', password_hash=hash_password('other12345')))
+        session.commit()
+    with TestClient(app) as other:
+        other.get('/api/v1/health')
+        assert other.post('/api/v1/auth/login', json={'username': 'asset-other', 'password': 'other12345'}).status_code == 200
+        other.headers.update({'X-CSRF-Token': other.cookies.get('wb_csrf') or ''})
+        assert other.post('/api/v1/whiteboards/assets', data={'file_id': 'same-hash'}, files={'file': ('b.png', PNG, 'image/png')}).status_code == 201
+        with SessionLocal() as session:
+            old = utcnow() - timedelta(hours=48)
+            for asset in session.scalars(select(WhiteboardAsset).where(WhiteboardAsset.id == 'same-hash')).all():
+                asset.orphaned_at = old
+            session.commit()
+        result = run_cleanup()
+        assert result['whiteboard_assets'] == 1
+        with SessionLocal() as session:
+            assert session.get(WhiteboardAsset, (1, 'same-hash')) is not None
+            assert session.get(WhiteboardAsset, (2, 'same-hash')) is None

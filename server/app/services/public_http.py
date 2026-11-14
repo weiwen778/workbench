@@ -55,8 +55,7 @@ def public_target(url: str, *, allow_loopback: bool = False) -> tuple[object, in
     if parts.username is not None or parts.password is not None:
         raise PublicHttpError("URL_REJECTED", "来源地址不能包含账号密码")
     port = _port(parts)
-    host_is_loopback = parts.hostname in {"127.0.0.1", "localhost", "::1"}
-    if port not in {80, 443} and not (allow_loopback and host_is_loopback):
+    if port not in {80, 443} and not allow_loopback:
         raise PublicHttpError("URL_REJECTED", "只允许公开网页端口 80 或 443")
     try:
         infos = socket.getaddrinfo(parts.hostname, port, type=socket.SOCK_STREAM)
@@ -71,7 +70,7 @@ def public_target(url: str, *, allow_loopback: bool = False) -> tuple[object, in
         raise PublicHttpError("DNS_FAILED", "无法解析来源域名")
     addresses = [info[4][0] for info in infos]
     only_loopback = all(ipaddress.ip_address(address).is_loopback for address in addresses)
-    if allow_loopback and host_is_loopback and only_loopback:
+    if allow_loopback and only_loopback:
         return parts, port, addresses[0]
     if any(not ipaddress.ip_address(address).is_global for address in addresses):
         raise PublicHttpError("PRIVATE_ADDRESS", "来源地址指向非公开网络")

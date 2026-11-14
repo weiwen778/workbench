@@ -25,20 +25,20 @@ def run_cleanup():
             )
         ).rowcount
         candidates.update(db.scalars(select(FileObject.id).where(FileObject.status == "staged", FileObject.expires_at <= now)).all())
-        referenced_assets: set[str] = set()
+        orphan_assets = db.scalars(
+            select(WhiteboardAsset).where(
+                WhiteboardAsset.orphaned_at < now - timedelta(hours=settings.whiteboard_asset_grace_hours)
+            ).with_for_update()
+        ).all()
+        referenced_assets: set[tuple[int, str]] = set()
         for board in db.scalars(select(Whiteboard)).all():
             for element in (board.scene or {}).get("elements", []):
                 if isinstance(element, dict) and element.get("type") == "image" and element.get("fileId") and not element.get("isDeleted"):
-                    referenced_assets.add(str(element["fileId"]))
-        orphan_assets = db.scalars(
-            select(WhiteboardAsset).where(
-                WhiteboardAsset.created_at < now - timedelta(hours=settings.whiteboard_asset_grace_hours)
-            )
-        ).all()
+                    referenced_assets.add((board.user_id, str(element["fileId"])))
         whiteboard_assets = 0
         storage = settings.storage_dir.resolve()
         for asset in orphan_assets:
-            if asset.id in referenced_assets:
+            if (asset.user_id, asset.id) in referenced_assets:
                 continue
             path = (storage / asset.storage_key).resolve()
             if path.is_relative_to(storage):

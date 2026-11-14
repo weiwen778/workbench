@@ -129,7 +129,6 @@ async function uploadableImage(dataUrl: string): Promise<{ blob: Blob; extension
 
 export default function DocEditor() {
   const [markdown, setMarkdown] = useState('')
-  useUnloadWarning(Boolean(markdown.trim()))
   const [title, setTitle] = useState('未命名文档')
   const [format, setFormat] = useState('markdown')
   const [current, setCurrent] = useState<ProjectDetail | null>(null)
@@ -138,6 +137,14 @@ export default function DocEditor() {
   const [warnings, setWarnings] = useState<string[]>([])
   const [draft, setDraft] = useState<{ title: string; markdown: string; format: string; savedAt: string } | null>(null)
   const [draftError, setDraftError] = useState('')
+  const [savedBaseline, setSavedBaseline] = useState<{ title: string; markdown: string; format: string } | null>(null)
+  const hasContentRef = useRef(false)
+  const pendingSaveRef = useRef<{ title: string; markdown: string; format: string } | null>(null)
+  const dirty = Boolean(markdown.trim()) && (!savedBaseline
+    || savedBaseline.title !== title
+    || savedBaseline.markdown !== markdown
+    || savedBaseline.format !== format)
+  useUnloadWarning(dirty)
   const [view, setView] = useState<'split' | 'edit' | 'preview'>('split')
   const [findOpen, setFindOpen] = useState(false)
   const [findText, setFindText] = useState('')
@@ -154,6 +161,7 @@ export default function DocEditor() {
       return cleanHtml(typeof raw === 'string' ? raw : '')
     } catch { return '<p>Markdown 暂时无法渲染</p>' }
   }, [markdown])
+  const markdownBytes = useMemo(() => new Blob([markdown]).size, [markdown])
 
   const plainText = useMemo(() => new DOMParser().parseFromString(previewHtml, 'text/html').body.textContent || '', [previewHtml])
 
@@ -167,7 +175,16 @@ export default function DocEditor() {
   }, [])
 
   useEffect(() => {
-    if (!markdown.trim()) return
+    if (!markdown.trim()) {
+      if (hasContentRef.current) {
+        hasContentRef.current = false
+        try { localStorage.removeItem(DRAFT_KEY) } catch { /* ignore */ }
+        setDraft(null)
+        setDraftError('')
+      }
+      return
+    }
+    hasContentRef.current = true
     const timer = window.setTimeout(() => {
       try {
         if (new Blob([markdown]).size > DRAFT_MAX_BYTES) {
@@ -188,7 +205,8 @@ export default function DocEditor() {
   const restoreDraft = () => {
     if (!draft) return
     setMarkdown(draft.markdown); setTitle(draft.title || '未命名文档'); setFormat(draft.format || 'markdown')
-    setCurrent(null); setWarnings([]); setError(''); setDraft(null)
+    setCurrent(null); setWarnings([]); setError(''); setDraft(null); setSavedBaseline(null)
+    hasContentRef.current = Boolean(draft.markdown.trim())
     toast.success('已恢复浏览器本地草稿')
   }
 
@@ -206,7 +224,9 @@ export default function DocEditor() {
       setFormat(result.format)
       setCurrent(null)
       setWarnings(result.warnings)
-      setDraft(null)
+      setSavedBaseline(null)
+      pendingSaveRef.current = null
+      discardDraft()
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '文档无法打开')
     } finally { setLoading(false) }
@@ -220,6 +240,9 @@ export default function DocEditor() {
     setFormat(state.sourceFormat || 'markdown')
     setCurrent(detail)
     setError(''); setWarnings([]); setDraft(null)
+    setSavedBaseline({ title: detail.title, markdown: state.markdown, format: state.sourceFormat || 'markdown' })
+    pendingSaveRef.current = null
+    discardDraft()
   }
 
   const buildSave = async () => {
@@ -236,6 +259,7 @@ export default function DocEditor() {
     if (text !== markdown) setMarkdown(text)
     const referenced = new Set<number>()
     for (const match of text.matchAll(/\/api\/v1\/files\/(\d+)\/content/g)) referenced.add(Number(match[1]))
+    pendingSaveRef.current = { title, markdown: text, format }
     return {
       state: { markdown: text, sourceFormat: format },
       attachmentIds: [...referenced],
@@ -296,6 +320,8 @@ export default function DocEditor() {
 
   const newDocument = () => {
     setMarkdown(''); setTitle('未命名文档'); setCurrent(null); setFormat('markdown'); setWarnings([]); setError('')
+    setSavedBaseline(null)
+    pendingSaveRef.current = null
     discardDraft()
   }
 
@@ -307,7 +333,7 @@ export default function DocEditor() {
         <TextField size="small" value={title} onChange={(event) => setTitle(event.target.value)} aria-label="文档标题" inputProps={{ maxLength: 200, 'aria-label': '文档标题' }} sx={{ width: { xs: 130, sm: 220 }, '& .MuiInputBase-input': { fontSize: 13, fontWeight: 600, py: 0.5 } }} />
         <Chip size="small" variant="outlined" label={format.toUpperCase()} />
         <Box sx={{ flex: 1 }} />
-        <ProjectActions kind="document" kindLabel="文档" title={title} onTitleChange={setTitle} current={current} onCurrentChange={(project) => { setCurrent(project); if (project) discardDraft() }} buildSave={buildSave} onOpen={openProject} />
+        <ProjectActions kind="document" kindLabel="文档" title={title} onTitleChange={setTitle} current={current} onCurrentChange={(project) => { setCurrent(project); if (project) discardDraft() }} onSaved={() => { const saved = pendingSaveRef.current; if (saved) { setSavedBaseline(saved); pendingSaveRef.current = null } }} buildSave={buildSave} onOpen={openProject} />
         <Button size="small" startIcon={<Upload fontSize="small" />} onClick={() => inputRef.current?.click()}>导入</Button>
         <Button size="small" onClick={newDocument}>新建</Button>
         <Button size="small" startIcon={<Download fontSize="small" />} onClick={(event) => setExportAnchor(event.currentTarget)}>导出</Button>
@@ -354,6 +380,7 @@ export default function DocEditor() {
         </Alert>
       ) : null}
       {draftError ? <Alert severity="warning" variant="outlined" sx={{ mx: 1.25, mt: 0.5, py: 0.2, fontSize: 11.5 }} onClose={() => setDraftError('')}>{draftError}</Alert> : null}
+      {markdownBytes > 4.5 * 1024 * 1024 ? <Alert severity="warning" variant="outlined" sx={{ mx: 1.25, mt: 0.5, py: 0.2, fontSize: 11.5 }}>当前正文约 {(markdownBytes / 1024 / 1024).toFixed(1)} MB，项目状态上限为 5 MB；请先导出或拆分内容，保存可能失败。</Alert> : null}
 
       <Box sx={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: { xs: '1fr', md: view === 'split' ? '1fr 1fr' : '1fr' }, overflow: 'hidden' }}>
         {(view === 'edit' || view === 'split') ? (

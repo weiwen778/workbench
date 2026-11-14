@@ -383,3 +383,63 @@ def test_base_url_rejects_private_https_and_dns_failure(auth, monkeypatch):
     )
     assert missing.status_code == 400, missing.text
     assert missing.json()["code"] == "UPSTREAM_DNS_FAILED"
+
+
+def test_public_http_connects_to_validated_ip_and_rejects_redirect(monkeypatch):
+    import json
+    import socket
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from app.services import public_http
+    from app.services.public_http import PublicHttpError, fetch_public
+
+    seen: list[tuple[str, str]] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+        def do_GET(self):  # noqa: N802
+            seen.append((self.path, self.headers.get("Host") or ""))
+            if self.path == "/redirect":
+                self.send_response(302)
+                self.send_header("Location", "http://evil.test/steal")
+                self.end_headers()
+                return
+            body = b'{"ok":true}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    port = server.server_port
+    real_getaddrinfo = socket.getaddrinfo
+
+    def pinned(host, target_port, *args, **kwargs):
+        if host == "pinned.test":
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", target_port))]
+        return real_getaddrinfo(host, target_port, *args, **kwargs)
+
+    monkeypatch.setattr(public_http.socket, "getaddrinfo", pinned)
+    try:
+        response = fetch_public(
+            f"http://pinned.test:{port}/ok", timeout=2, max_bytes=1024,
+            max_redirects=0, allow_loopback=True,
+        )
+        assert json.loads(response.body) == {"ok": True}
+        assert seen[0] == ("/ok", f"pinned.test:{port}")
+        try:
+            fetch_public(
+                f"http://pinned.test:{port}/redirect", timeout=2, max_bytes=1024,
+                max_redirects=0, allow_loopback=True,
+            )
+            raise AssertionError("redirect should be rejected")
+        except PublicHttpError as error:
+            assert error.code == "TOO_MANY_REDIRECTS"
+        assert all(path != "/steal" for path, _ in seen)
+    finally:
+        server.shutdown()

@@ -25,6 +25,7 @@ interface Props {
   onTitleChange: (value: string) => void
   current: ProjectDetail | null
   onCurrentChange: (project: ProjectDetail | null) => void
+  onSaved?: (project: ProjectDetail) => void
   buildSave: () => Promise<ProjectSavePayload>
   onOpen: (project: ProjectDetail) => void | Promise<void>
   saving?: boolean
@@ -37,7 +38,7 @@ function when(value: string) {
 }
 
 export default function ProjectActions({
-  kind, kindLabel, title, onTitleChange, current, onCurrentChange, buildSave, onOpen, saving, disabled,
+  kind, kindLabel, title, onTitleChange, current, onCurrentChange, onSaved, buildSave, onOpen, saving, disabled,
 }: Props) {
   const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState(false)
@@ -76,6 +77,7 @@ export default function ProjectActions({
         if (sequence !== operationSeq.current) return
         onCurrentChange(saved)
         onTitleChange(saved.title)
+        onSaved?.(saved)
         toast.success(current ? '项目已保存' : '项目已创建')
       } catch (reason: any) {
         if (sequence !== operationSeq.current) return
@@ -89,6 +91,7 @@ export default function ProjectActions({
             const saved = await createProject({ kind, title: `${name} 副本`, state: payload.state, attachment_ids: attachmentIds })
             if (sequence !== operationSeq.current) return
             onCurrentChange(saved); onTitleChange(saved.title)
+            onSaved?.(saved)
             toast.success('已另存为新项目')
           }
         } else throw reason

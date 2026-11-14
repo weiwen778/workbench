@@ -94,10 +94,25 @@ def _validate_scene(db: Session, user: User, elements: list, app_state: dict) ->
     if not ids:
         return
     owned = set(db.scalars(select(WhiteboardAsset.id).where(
-        WhiteboardAsset.user_id == user.id, WhiteboardAsset.id.in_(ids))).all())
+        WhiteboardAsset.user_id == user.id, WhiteboardAsset.id.in_(ids)).with_for_update()).all())
     missing = ids - owned
     if missing:
         raise ApiError("ASSET_MISSING", "白板引用的图片尚未保存，请重试", 422, {"missing": sorted(missing)[:10]})
+
+
+def _refresh_asset_lifecycle(db: Session, user: User) -> None:
+    """Mark assets orphaned when their last board reference disappears."""
+    referenced: set[str] = set()
+    for board in db.scalars(select(Whiteboard).where(Whiteboard.user_id == user.id)).all():
+        for element in (board.scene or {}).get("elements", []):
+            if isinstance(element, dict) and element.get("type") == "image" and element.get("fileId") and not element.get("isDeleted"):
+                referenced.add(str(element["fileId"]))
+    now = utcnow()
+    for asset in db.scalars(select(WhiteboardAsset).where(WhiteboardAsset.user_id == user.id).with_for_update()).all():
+        if asset.id in referenced:
+            asset.orphaned_at = None
+        elif asset.orphaned_at is None:
+            asset.orphaned_at = now
 
 
 @router.get("/whiteboards")
@@ -145,7 +160,7 @@ def upload_asset(
     target.write_bytes(raw)
     asset = WhiteboardAsset(
         id=file_id, user_id=user.id, storage_key=storage_key,
-        content_type=content_type, size=len(raw), created_at=utcnow(),
+        content_type=content_type, size=len(raw), created_at=utcnow(), orphaned_at=utcnow(),
     )
     db.add(asset)
     try:
@@ -191,6 +206,8 @@ def save_board(board_id: int, data: BoardSave, user: User = Depends(get_current_
     board.scene = {"elements": data.elements, "appState": data.app_state}
     board.version += 1
     board.updated_at = utcnow()
+    db.flush()
+    _refresh_asset_lifecycle(db, user)
     db.commit()
     db.refresh(board)
     return _board_payload(board, detail=True)
@@ -213,6 +230,8 @@ def duplicate_board(board_id: int, user: User = Depends(get_current_user), db: S
         user_id=user.id, title=f"{source.title} 副本"[:120], scene=source.scene, version=1,
     )
     db.add(copy)
+    db.flush()
+    _refresh_asset_lifecycle(db, user)
     db.commit()
     db.refresh(copy)
     return _board_payload(copy, detail=True)
@@ -222,5 +241,7 @@ def duplicate_board(board_id: int, user: User = Depends(get_current_user), db: S
 def delete_board(board_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     board = _get_board(db, user, board_id)
     db.delete(board)
+    db.flush()
+    _refresh_asset_lifecycle(db, user)
     db.commit()
     return {"ok": True}

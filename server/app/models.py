@@ -423,6 +423,7 @@ class WhiteboardAsset(Base):
     content_type: Mapped[str] = mapped_column(String(120), nullable=False)
     size: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    orphaned_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
 
 
 # ---------------------------------------------------------------- 信息聚合

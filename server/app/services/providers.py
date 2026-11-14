@@ -126,7 +126,7 @@ def _request(
             target,
             timeout=TIMEOUT_SECONDS,
             max_bytes=2_000_000,
-            max_redirects=3,
+            max_redirects=0,
             headers=request_headers,
             method=method,
             body=body,
@@ -139,6 +139,8 @@ def _request(
             raise UpstreamError("UPSTREAM_RATE_LIMITED", "翻译服务访问频率受限", 429)
         if error.code in {"URL_REJECTED", "PRIVATE_ADDRESS"}:
             raise UpstreamError("UPSTREAM_URL_REJECTED", "翻译服务地址不合法", 400)
+        if error.code == "TOO_MANY_REDIRECTS":
+            raise UpstreamError("UPSTREAM_REDIRECT_REJECTED", "翻译服务返回了重定向，已拒绝以避免凭据泄露", 502)
         if error.code == "HTTP_ERROR" and error.status in {401, 403}:
             raise UpstreamError("UPSTREAM_AUTH", "翻译服务拒绝了认证，请检查密钥", 401)
         raise UpstreamError("UPSTREAM_NETWORK", "无法连接翻译服务", 502)
