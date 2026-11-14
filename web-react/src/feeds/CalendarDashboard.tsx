@@ -146,7 +146,14 @@ export default function CalendarDashboard() {
         }),
       }}
     >
-      <Box sx={{ gridArea: isNarrow ? undefined : 'calendar', minHeight: 0, height: isNarrow ? 'auto' : '100%', display: 'flex' }}>
+      <Box sx={{
+        gridArea: isNarrow ? undefined : 'calendar',
+        minHeight: 0,
+        flex: isNarrow ? '0 0 auto' : undefined,
+        height: isNarrow ? 'auto' : '100%',
+        display: 'flex',
+        ...(isNarrow && { '& > .MuiPaper-root': { height: 'auto' } }),
+      }}>
         <CalendarGrid
           month={month}
           events={calendarQuery.data?.events || []}
@@ -157,7 +164,13 @@ export default function CalendarDashboard() {
           error={calendarError}
         />
       </Box>
-      <Box sx={{ gridArea: isNarrow ? undefined : 'data1', minHeight: 0, height: isNarrow ? 'auto' : '100%', display: 'flex' }}>
+      <Box sx={{
+        gridArea: isNarrow ? undefined : 'data1',
+        minHeight: 0,
+        flex: isNarrow ? '0 0 auto' : undefined,
+        height: isNarrow ? 'auto' : '100%',
+        display: 'flex',
+      }}>
         <DataPanels
           section="subscriptions"
           data={panelsQuery.data}
@@ -167,7 +180,13 @@ export default function CalendarDashboard() {
           error={panelsError}
         />
       </Box>
-      <Box sx={{ gridArea: isNarrow ? undefined : 'data2', minHeight: 0, height: isNarrow ? 'auto' : '100%', display: 'flex' }}>
+      <Box sx={{
+        gridArea: isNarrow ? undefined : 'data2',
+        minHeight: 0,
+        flex: isNarrow ? '0 0 auto' : undefined,
+        height: isNarrow ? 'auto' : '100%',
+        display: 'flex',
+      }}>
         <DataPanels
           section="alibaba"
           data={panelsQuery.data}
@@ -177,7 +196,13 @@ export default function CalendarDashboard() {
           error={panelsError}
         />
       </Box>
-      <Box sx={{ gridArea: isNarrow ? undefined : 'data3', minHeight: 0, height: isNarrow ? 'auto' : '100%', display: 'flex' }}>
+      <Box sx={{
+        gridArea: isNarrow ? undefined : 'data3',
+        minHeight: 0,
+        flex: isNarrow ? '0 0 auto' : undefined,
+        height: isNarrow ? 'auto' : '100%',
+        display: 'flex',
+      }}>
         <DataPanels
           section="1688"
           data={panelsQuery.data}
@@ -187,7 +212,13 @@ export default function CalendarDashboard() {
           error={panelsError}
         />
       </Box>
-      <Box sx={{ gridArea: isNarrow ? undefined : 'data4', minHeight: 0, height: isNarrow ? 'auto' : '100%', display: 'flex' }}>
+      <Box sx={{
+        gridArea: isNarrow ? undefined : 'data4',
+        minHeight: 0,
+        flex: isNarrow ? '0 0 auto' : undefined,
+        height: isNarrow ? 'auto' : '100%',
+        display: 'flex',
+      }}>
         <DataPanels
           section="links"
           data={panelsQuery.data}
