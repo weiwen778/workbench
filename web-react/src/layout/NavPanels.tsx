@@ -42,7 +42,7 @@ export function NavAllDrawer({
   })).filter((group) => group.items.length), [query])
 
   return (
-    <Drawer open={open} onClose={onClose} anchor="left" slotProps={{ paper: { sx: { width: 'min(340px, 100vw)', display: 'flex', flexDirection: 'column' } } }}>
+    <Drawer open={open} onClose={onClose} anchor="left" slotProps={{ paper: { sx: { width: 'min(374px, 100vw)', display: 'flex', flexDirection: 'column' } } }}>
       <Stack direction="row" alignItems="center" spacing={1} sx={{ px: 2, minHeight: 52 }}>
         <Typography sx={{ flex: 1, fontSize: 15, fontWeight: 600 }}>全部功能</Typography>
         <IconButton size="small" aria-label="关闭全部功能" onClick={onClose}><Close fontSize="small" /></IconButton>

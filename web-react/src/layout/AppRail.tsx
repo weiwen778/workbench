@@ -139,7 +139,7 @@ export default function AppRail({ mode, pinned, groups, onToggleMode, onOpenAll 
       component="nav"
       aria-label="主导航"
       sx={{
-        width: wide ? 208 : 84,
+        width: wide ? 229 : 92,
         flexShrink: 0,
         bgcolor: theme.palette.mode === 'dark' ? '#11181B' : '#FBFCFB',
         borderRight: 1,
@@ -213,8 +213,9 @@ export default function AppRail({ mode, pinned, groups, onToggleMode, onOpenAll 
                     <Box
                       aria-label={`${item.label}二级导航`}
                       sx={{
-                        width: '100%', maxHeight: 'min(300px, max(96px, calc(100vh - 520px)))', overflowY: 'auto',
-                        mt: 0.25, mb: 0.5, pl: 2.75, pr: 0.5,
+                        width: '100%', maxHeight: 'min(60vh, 480px)', overflowY: 'auto',
+                        display: 'flex', flexDirection: 'column', gap: '3px', py: 0.25,
+                        mt: 0.25, mb: 0.5, pl: 2.5, pr: 0.5,
                         borderLeft: '1px solid', borderColor: 'divider',
                       }}
                     >
@@ -232,9 +233,9 @@ export default function AppRail({ mode, pinned, groups, onToggleMode, onOpenAll 
                               type="button"
                               onClick={(event) => { event.stopPropagation(); go(sub.path) }}
                               sx={{
-                                width: '100%', minHeight: 26, display: 'flex', alignItems: 'center', gap: 0.75,
+                                width: '100%', minHeight: 28, display: 'flex', alignItems: 'center', gap: 0.75,
                                 border: 0, borderRadius: 0.75, bgcolor: active ? 'action.selected' : 'transparent',
-                                color: active ? 'primary.main' : 'text.secondary', px: 0.75, py: 0.25,
+                                color: active ? 'primary.main' : 'text.secondary', px: 0.75, py: 0.5,
                                 textAlign: 'left', cursor: 'pointer',
                                 '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
                               }}
