@@ -34,6 +34,9 @@ export function AgentsSection() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [reviewNote, setReviewNote] = useState('')
   const [reviewing, setReviewing] = useState<number | null>(null)
+  const [splitOpen, setSplitOpen] = useState(false)
+  const [splitIndices, setSplitIndices] = useState<number[]>([])
+  const [splitting, setSplitting] = useState(false)
   const [form, setForm] = useState({ name: '', scopes: ['all:read', 'all:stage'], expires_in_days: 90 })
   const [creating, setCreating] = useState(false)
 
@@ -172,6 +175,20 @@ export function AgentsSection() {
       toast.error(apiError(error).message)
       await loadChanges()
     } finally { setReviewing(null) }
+  }
+
+  const splitSelected = async () => {
+    if (!detail || !splitIndices.length) { toast.warning('请选择至少一个操作'); return }
+    if (splitIndices.length >= (detail.preview?.length || 0)) { toast.warning('至少保留一个操作在原批次'); return }
+    setSplitting(true)
+    try {
+      await http.post(`/agent-changes/${detail.id}/split`, { version: detail.version, indices: splitIndices })
+      toast.success('已拆分为两个待审核批次')
+      setSplitOpen(false)
+      setDetailOpen(false)
+      await Promise.all([loadChanges(), loadActivity()])
+    } catch (error) { toast.error(apiError(error).message) }
+    finally { setSplitting(false) }
   }
 
   const approveAll = async () => {
@@ -468,6 +485,9 @@ export function AgentsSection() {
           {detail?.status === 'pending' ? (
             <Button size="small" disabled={detailLoading || Boolean(reviewing)} onClick={() => void refreshDetail()}>重新预览</Button>
           ) : null}
+          {detail?.status === 'pending' && (detail.preview?.length || 0) > 1 ? (
+            <Button size="small" disabled={detailLoading || Boolean(reviewing)} onClick={() => { setSplitIndices([]); setSplitOpen(true) }}>拆分所选</Button>
+          ) : null}
           <Box sx={{ flex: 1 }} />
           <Button size="small" onClick={() => setDetailOpen(false)}>关闭</Button>
           {detail?.status === 'pending' ? (
@@ -478,6 +498,29 @@ export function AgentsSection() {
               </Button>
             </>
           ) : null}
+        </DialogActions>
+      </Dialog>
+      <Dialog open={splitOpen} onClose={() => !splitting && setSplitOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>拆分暂存批次</DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          <Alert severity="info" sx={{ mb: 1.5 }}>
+            勾选要拆到新批次的操作用于单独审核；原请求会标记为已拆分，不会作为完整批次合并。
+          </Alert>
+          <Stack spacing={0.5}>
+            {(detail?.preview || []).map((op: any, index: number) => (
+              <FormControlLabel
+                key={index}
+                control={<Checkbox checked={splitIndices.includes(index)} onChange={(event) => setSplitIndices((current) => event.target.checked ? [...current, index] : current.filter((item) => item !== index))} />}
+                label={<Typography sx={{ fontSize: 12.5 }}>#{index + 1} · {op.summary || op.method || '变更'} <Typography component="span" sx={{ fontSize: 11, color: 'text.secondary' }}>{op.path}</Typography></Typography>}
+              />
+            ))}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button size="small" disabled={splitting} onClick={() => setSplitOpen(false)}>取消</Button>
+          <Button size="small" variant="contained" disabled={splitting || !splitIndices.length} onClick={() => void splitSelected()}>
+            {splitting ? '拆分中…' : `拆分 ${splitIndices.length} 项`}
+          </Button>
         </DialogActions>
       </Dialog>
     </>

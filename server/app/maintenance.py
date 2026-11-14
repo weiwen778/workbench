@@ -5,7 +5,7 @@ from datetime import timedelta
 from sqlalchemy import delete, select
 from .config import settings
 from .db import SessionLocal
-from .models import DataTransferJob, FileObject, FileRef, LoginAttempt, utcnow
+from .models import DataTransferJob, FileObject, FileRef, LoginAttempt, Whiteboard, WhiteboardAsset, utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,26 @@ def run_cleanup():
             )
         ).rowcount
         candidates.update(db.scalars(select(FileObject.id).where(FileObject.status == "staged", FileObject.expires_at <= now)).all())
+        referenced_assets: set[str] = set()
+        for board in db.scalars(select(Whiteboard)).all():
+            for element in (board.scene or {}).get("elements", []):
+                if isinstance(element, dict) and element.get("type") == "image" and element.get("fileId") and not element.get("isDeleted"):
+                    referenced_assets.add(str(element["fileId"]))
+        orphan_assets = db.scalars(
+            select(WhiteboardAsset).where(
+                WhiteboardAsset.created_at < now - timedelta(hours=settings.whiteboard_asset_grace_hours)
+            )
+        ).all()
+        whiteboard_assets = 0
+        storage = settings.storage_dir.resolve()
+        for asset in orphan_assets:
+            if asset.id in referenced_assets:
+                continue
+            path = (storage / asset.storage_key).resolve()
+            if path.is_relative_to(storage):
+                path.unlink(missing_ok=True)
+            db.delete(asset)
+            whiteboard_assets += 1
         removed = 0
         for file_id in candidates:
             if db.scalar(select(FileRef.id).where(FileRef.file_id == file_id).limit(1)):
@@ -39,7 +59,7 @@ def run_cleanup():
                 db.delete(obj)
                 removed += 1
         db.commit()
-        return {"purged": result["purged"], "files": removed, "jobs": len(jobs), "login_attempts": login_attempts}
+        return {"purged": result["purged"], "files": removed, "jobs": len(jobs), "login_attempts": login_attempts, "whiteboard_assets": whiteboard_assets}
 
 async def maintenance_loop():
     while True:

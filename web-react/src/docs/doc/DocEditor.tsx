@@ -20,6 +20,8 @@ import '@/docs/doc/doc.css'
 
 const ACCEPT = '.docx,.txt,.md,.markdown,.html,.htm'
 const MAX_BYTES = 20 * 1024 * 1024
+const DRAFT_KEY = 'wb_docs_document_draft_v1'
+const DRAFT_MAX_BYTES = 4 * 1024 * 1024
 
 function isSafeResourceUrl(value: string) {
   const raw = value.trim()
@@ -134,6 +136,8 @@ export default function DocEditor() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [warnings, setWarnings] = useState<string[]>([])
+  const [draft, setDraft] = useState<{ title: string; markdown: string; format: string; savedAt: string } | null>(null)
+  const [draftError, setDraftError] = useState('')
   const [view, setView] = useState<'split' | 'edit' | 'preview'>('split')
   const [findOpen, setFindOpen] = useState(false)
   const [findText, setFindText] = useState('')
@@ -153,6 +157,46 @@ export default function DocEditor() {
 
   const plainText = useMemo(() => new DOMParser().parseFromString(previewHtml, 'text/html').body.textContent || '', [previewHtml])
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed.markdown === 'string' && parsed.markdown.trim()) setDraft(parsed)
+    } catch { /* ignore malformed local draft */ }
+  }, [])
+
+  useEffect(() => {
+    if (!markdown.trim()) return
+    const timer = window.setTimeout(() => {
+      try {
+        if (new Blob([markdown]).size > DRAFT_MAX_BYTES) {
+          setDraftError('内容超过 4 MB，未写入浏览器本地草稿；请保存项目或导出')
+          return
+        }
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({
+          title, markdown, format, savedAt: new Date().toISOString(),
+        }))
+        setDraftError('')
+      } catch {
+        setDraftError('浏览器本地草稿写入失败（可能空间不足），请保存项目或导出')
+      }
+    }, 700)
+    return () => window.clearTimeout(timer)
+  }, [markdown, title, format])
+
+  const restoreDraft = () => {
+    if (!draft) return
+    setMarkdown(draft.markdown); setTitle(draft.title || '未命名文档'); setFormat(draft.format || 'markdown')
+    setCurrent(null); setWarnings([]); setError(''); setDraft(null)
+    toast.success('已恢复浏览器本地草稿')
+  }
+
+  const discardDraft = () => {
+    try { localStorage.removeItem(DRAFT_KEY) } catch { /* ignore */ }
+    setDraft(null); setDraftError('')
+  }
+
   const importFile = async (file: File) => {
     setLoading(true); setError(''); setWarnings([])
     try {
@@ -162,6 +206,7 @@ export default function DocEditor() {
       setFormat(result.format)
       setCurrent(null)
       setWarnings(result.warnings)
+      setDraft(null)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '文档无法打开')
     } finally { setLoading(false) }
@@ -174,7 +219,7 @@ export default function DocEditor() {
     setTitle(detail.title)
     setFormat(state.sourceFormat || 'markdown')
     setCurrent(detail)
-    setError(''); setWarnings([])
+    setError(''); setWarnings([]); setDraft(null)
   }
 
   const buildSave = async () => {
@@ -251,6 +296,7 @@ export default function DocEditor() {
 
   const newDocument = () => {
     setMarkdown(''); setTitle('未命名文档'); setCurrent(null); setFormat('markdown'); setWarnings([]); setError('')
+    discardDraft()
   }
 
   return (
@@ -261,7 +307,7 @@ export default function DocEditor() {
         <TextField size="small" value={title} onChange={(event) => setTitle(event.target.value)} aria-label="文档标题" inputProps={{ maxLength: 200, 'aria-label': '文档标题' }} sx={{ width: { xs: 130, sm: 220 }, '& .MuiInputBase-input': { fontSize: 13, fontWeight: 600, py: 0.5 } }} />
         <Chip size="small" variant="outlined" label={format.toUpperCase()} />
         <Box sx={{ flex: 1 }} />
-        <ProjectActions kind="document" kindLabel="文档" title={title} onTitleChange={setTitle} current={current} onCurrentChange={setCurrent} buildSave={buildSave} onOpen={openProject} />
+        <ProjectActions kind="document" kindLabel="文档" title={title} onTitleChange={setTitle} current={current} onCurrentChange={(project) => { setCurrent(project); if (project) discardDraft() }} buildSave={buildSave} onOpen={openProject} />
         <Button size="small" startIcon={<Upload fontSize="small" />} onClick={() => inputRef.current?.click()}>导入</Button>
         <Button size="small" onClick={newDocument}>新建</Button>
         <Button size="small" startIcon={<Download fontSize="small" />} onClick={(event) => setExportAnchor(event.currentTarget)}>导出</Button>
@@ -301,6 +347,13 @@ export default function DocEditor() {
       {!markdown ? <Alert severity="info" variant="outlined" sx={{ mx: 1.25, mt: 0.5, py: 0.2, fontSize: 11.5 }}>支持导入 DOCX、TXT、Markdown、HTML，并导出 DOCX / HTML / Markdown / TXT / PDF。DOC/RTF/ODT 暂未开放；DOCX 页眉页脚、分页、复杂表格、修订记录可能与 Word 有差异。</Alert> : null}
       {error ? <Alert severity="error" sx={{ mx: 1.25, mt: 0.5, py: 0.2, fontSize: 12 }} onClose={() => setError('')}>{error}</Alert> : null}
       {warnings.length ? <Alert severity="warning" variant="outlined" sx={{ mx: 1.25, mt: 0.5, py: 0.2, fontSize: 11.5 }}>{warnings.join('；')}</Alert> : null}
+      {draft ? (
+        <Alert severity="info" variant="outlined" sx={{ mx: 1.25, mt: 0.5, py: 0.2, fontSize: 11.5 }}
+          action={<Stack direction="row" spacing={0.5}><Button size="small" onClick={restoreDraft}>恢复</Button><Button size="small" onClick={discardDraft}>丢弃</Button></Stack>}>
+          发现浏览器本地草稿「{draft.title || '未命名文档'}」{draft.savedAt ? `（${new Date(draft.savedAt).toLocaleString('zh-CN', { hour12: false })}）` : ''}
+        </Alert>
+      ) : null}
+      {draftError ? <Alert severity="warning" variant="outlined" sx={{ mx: 1.25, mt: 0.5, py: 0.2, fontSize: 11.5 }} onClose={() => setDraftError('')}>{draftError}</Alert> : null}
 
       <Box sx={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: { xs: '1fr', md: view === 'split' ? '1fr 1fr' : '1fr' }, overflow: 'hidden' }}>
         {(view === 'edit' || view === 'split') ? (

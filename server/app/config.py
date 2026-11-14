@@ -52,6 +52,7 @@ class Settings(BaseSettings):
 
     max_upload_bytes: int = 20_000_000
     staged_ttl_hours: int = 24
+    whiteboard_asset_grace_hours: int = Field(default=24, ge=1, le=720)
     trash_days: int = 30
     maintenance_interval_seconds: int = 3600
 

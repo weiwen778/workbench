@@ -113,3 +113,37 @@ def test_same_file_id_is_scoped_per_user(auth):
         assert uploaded.status_code == 201, uploaded.text
         assert other.get('/api/v1/whiteboards/assets/shared-hash/content').content == PNG + b'other'
     assert auth.get('/api/v1/whiteboards/assets/shared-hash/content').content == PNG
+
+
+def test_whiteboard_orphan_assets_are_cleaned_after_grace(auth, db):
+    from datetime import timedelta
+    from sqlalchemy import select
+    from app.config import settings
+    from app.maintenance import run_cleanup
+    from app.models import WhiteboardAsset, utcnow
+
+    board = auth.post('/api/v1/whiteboards', json={'title': '清理白板'}).json()
+    for file_id in ('keep-asset', 'orphan-asset'):
+        response = auth.post(
+            '/api/v1/whiteboards/assets', data={'file_id': file_id},
+            files={'file': (file_id + '.png', PNG, 'image/png')},
+        )
+        assert response.status_code == 201, response.text
+    saved = auth.put(f"/api/v1/whiteboards/{board['id']}", json={
+        'elements': [{'id': 'img', 'type': 'image', 'fileId': 'keep-asset'}],
+        'app_state': {}, 'version': 1,
+    })
+    assert saved.status_code == 200, saved.text
+    with SessionLocal() as session:
+        old = utcnow() - timedelta(hours=48)
+        for asset in session.scalars(select(WhiteboardAsset)).all():
+            asset.created_at = old
+        session.commit()
+        orphan = session.get(WhiteboardAsset, (1, 'orphan-asset'))
+        keep = session.get(WhiteboardAsset, (1, 'keep-asset'))
+        orphan_path = settings.storage_dir / orphan.storage_key
+        keep_path = settings.storage_dir / keep.storage_key
+        assert orphan_path.exists() and keep_path.exists()
+    result = run_cleanup()
+    assert result['whiteboard_assets'] == 1
+    assert not orphan_path.exists() and keep_path.exists()
