@@ -37,7 +37,7 @@ expect(railMetrics.scrollHeight <= railMetrics.clientHeight + 1, '主导航出�
 expect((await rail.innerText()).includes('全部功能'), '主导航缺少全部功能入口')
 
 // 宽窄切换并持久化
-await page.getByRole('button', { name: '展开侧栏' }).click()
+await page.getByRole('button', { name: '展开侧栏', exact: true }).click()
 await page.waitForTimeout(250)
 expect((await rail.evaluate((element) => element.clientWidth)) >= 200, '宽版侧栏宽度不正确')
 await page.reload({ waitUntil: 'networkidle' })

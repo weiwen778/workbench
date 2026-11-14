@@ -190,22 +190,32 @@ export default function AppRail({ mode, pinned, onToggleMode, onOpenAll, onManag
         {items.map((item) => item ? (
           <Box key={`rail-${item.key}`} sx={{ position: 'relative', width: '100%' }}>
             {renderItem(item, item.key === 'checkin')}
-            {wide && item.key === 'checkin' ? (
+            {item.key === 'checkin' ? (
               <>
                 <IconButton
                   size="small"
-                  aria-label={checkinOpen ? '收起打卡项目' : '展开打卡项目'}
-                  aria-expanded={checkinOpen}
-                  onClick={() => setCheckinOpen((value) => !value)}
+                  aria-label={wide ? (checkinOpen ? '收起打卡项目' : '展开打卡项目') : '打开打卡项目'}
+                  aria-expanded={wide ? checkinOpen : false}
+                  onClick={() => {
+                    if (!wide) {
+                      onToggleMode()
+                      setCheckinOpen(true)
+                      return
+                    }
+                    setCheckinOpen((value) => !value)
+                  }}
                   sx={{
-                    position: 'absolute', right: 2, top: 18, transform: 'translateY(-50%)',
-                    width: 22, height: 22, p: 0, color: 'text.disabled',
+                    position: 'absolute', right: wide ? 2 : 0, top: wide ? 18 : 3, transform: wide ? 'translateY(-50%)' : 'none',
+                    width: wide ? 22 : 16, height: wide ? 22 : 16, p: 0, color: 'text.disabled',
                     '&:hover': { color: 'text.primary', bgcolor: 'action.hover' },
                   }}
                 >
-                  <ChevronRight sx={{ fontSize: 16, transition: 'transform 160ms ease', transform: checkinOpen ? 'rotate(90deg)' : 'none' }} />
+                  <ChevronRight sx={{
+                    fontSize: wide ? 16 : 12, transition: 'transform 160ms ease',
+                    transform: wide && checkinOpen ? 'rotate(90deg)' : 'none',
+                  }} />
                 </IconButton>
-                <CheckinSubnav open={checkinOpen} />
+                {wide ? <CheckinSubnav open={checkinOpen} /> : null}
               </>
             ) : null}
           </Box>
