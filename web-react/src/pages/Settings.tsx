@@ -8,7 +8,7 @@ import { ArrowLeft, ArrowRight, Delete, InfoFilled, Lock, Menu, Moon, Palette, S
 import BackupIcon from '@mui/icons-material/Backup'
 import SpeedIcon from '@mui/icons-material/Speed'
 import { apiError } from '@/api/client'
-import { setTheme, setThemeColor, useSession } from '@/session'
+import { setTheme, useSession } from '@/session'
 import { useReducedMotion } from 'framer-motion'
 import { Card, AgentsSection, AiSection, SystemSection, TranslationSection } from './SettingsSections'
 import ContentDisplaySection from './settings/ContentDisplaySection'
@@ -20,7 +20,7 @@ const groups = [
   {
     name: '偏好',
     items: [
-      { key: 'appearance', label: '外观', icon: Palette, description: '调整工作台的明暗主题和强调色。', keywords: '主题 深色 浅色 颜色 强调色 外观 色板' },
+      { key: 'appearance', label: '外观', icon: Palette, description: '调整工作台的明暗主题。', keywords: '主题 深色 浅色 颜色 外观' },
       { key: 'content', label: '内容显示', icon: Tune, description: '设置表格、便利贴、笔记和看板的默认显示方式。', keywords: '表格 行高 斑马纹 居中 每页 便利贴 列数 笔记 宽度 看板 卡片 列表 视图 默认' },
       { key: 'navigation', label: '导航', icon: Menu, description: '设置侧栏宽窄，管理固定项和顺序。', keywords: '侧栏 导航 宽窄 固定 排序 顺序 菜单 全部功能' },
     ],
@@ -222,11 +222,6 @@ function AppearanceSection({ notify }: { notify: (message: string, error?: boole
     try { await setTheme(value); notify('主题已保存到账号。') }
     catch (error) { notify(apiError(error).message + '，已恢复原主题。', true) }
   }
-  const changeColor = async (value: string) => {
-    try { await setThemeColor(value); notify('强调色已保存到账号。') }
-    catch (error) { notify(apiError(error).message + '，已恢复原强调色。', true) }
-  }
-  const presets = ['#0f766e', '#2563eb', '#7c3aed', '#c2410c', '#be123c', '#475569']
   return (
     <Stack spacing={2}>
       <Card>
@@ -238,30 +233,6 @@ function AppearanceSection({ notify }: { notify: (message: string, error?: boole
           <ToggleButton value="light"><Sunny sx={{ mr: 1 }} />浅色</ToggleButton>
           <ToggleButton value="dark"><Moon sx={{ mr: 1 }} />深色</ToggleButton>
         </ToggleButtonGroup>
-      </Card>
-      <Card>
-        <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.5 }}>强调色</Typography>
-        <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 1.5 }}>用于主按钮、选中状态和导航高亮。</Typography>
-        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-          {presets.map((color) => (
-            <Box
-              key={color}
-              component="button"
-              type="button"
-              aria-label={`使用强调色 ${color}`}
-              onClick={() => void changeColor(color)}
-              sx={{
-                width: 28, height: 28, p: 0, borderRadius: '50%', bgcolor: color, cursor: 'pointer',
-                border: 2, borderColor: session.themeColor.toLowerCase() === color ? 'text.primary' : 'transparent',
-                outline: '1px solid', outlineColor: 'divider',
-              }}
-            />
-          ))}
-          <Box component="input" type="color" aria-label="自定义强调色" value={session.themeColor} disabled={session.appearanceSaving}
-            onChange={(event) => void changeColor(event.target.value)}
-            sx={{ width: 38, height: 30, p: 0, border: 1, borderColor: 'divider', borderRadius: 1, bgcolor: 'transparent', cursor: 'pointer' }} />
-          <Typography sx={{ fontSize: 12, color: 'text.secondary', fontFamily: 'monospace' }}>{session.themeColor}</Typography>
-        </Stack>
       </Card>
     </Stack>
   )
