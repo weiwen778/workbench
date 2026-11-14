@@ -191,7 +191,7 @@ export default function AppRail({ mode, pinned, groups, onToggleMode, onOpenAll 
       </Box>
       <Divider sx={{ width: wide ? 'calc(100% - 20px)' : 32, mb: 0.5 }} />
 
-      <Box sx={{ width: '100%', px: wide ? 0.75 : 0.5, display: 'flex', flexDirection: 'column', alignItems: wide ? 'stretch' : 'center', gap: 0.5 }}>
+      <Box sx={{ width: '100%', flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', px: wide ? 0.75 : 0.5, pb: 0.5, display: 'flex', flexDirection: 'column', alignItems: wide ? 'stretch' : 'center', gap: 0.5, scrollbarWidth: 'thin' }}>
         {items.map((item) => {
           if (!item) return null
           const group = groups.find((entry) => entry.key === item.key)
@@ -213,7 +213,7 @@ export default function AppRail({ mode, pinned, groups, onToggleMode, onOpenAll 
                     <Box
                       aria-label={`${item.label}二级导航`}
                       sx={{
-                        width: '100%', maxHeight: 'min(60vh, 480px)', overflowY: 'auto',
+                        width: '100%', maxHeight: 'min(42vh, 340px)', overflowY: 'auto', overflowX: 'hidden',
                         display: 'flex', flexDirection: 'column', gap: '3px', py: 0.25,
                         mt: 0.25, mb: 0.5, pl: 2.5, pr: 0.5,
                         borderLeft: '1px solid', borderColor: 'divider',
@@ -256,8 +256,6 @@ export default function AppRail({ mode, pinned, groups, onToggleMode, onOpenAll 
           )
         })}
       </Box>
-
-      <Box sx={{ flex: 1, minHeight: 0 }} />
 
       <Box sx={{ width: '100%', px: wide ? 0.75 : 0.5, display: 'flex', flexDirection: 'column', alignItems: wide ? 'stretch' : 'center', gap: 0.25 }}>
         {bottomItem('全部功能', <GridView sx={{ fontSize: wide ? 20 : 19 }} />, false, onOpenAll)}
