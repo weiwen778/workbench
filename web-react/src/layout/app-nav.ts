@@ -10,6 +10,7 @@ import {
   MenuBook,
   Newspaper,
   Palette,
+  Pets,
   QrCode2,
   StickyNote2,
   SwapHoriz,
@@ -18,7 +19,7 @@ import {
   VideoLibrary,
 } from '@mui/icons-material'
 
-export type AppNavGroup = 'work' | 'content' | 'info' | 'tools'
+export type AppNavGroup = 'work' | 'content' | 'info' | 'tools' | 'life'
 
 export interface AppNavItem {
   key: string
@@ -33,6 +34,7 @@ export const APP_NAV_GROUPS: Array<{ key: AppNavGroup; label: string }> = [
   { key: 'content', label: '内容' },
   { key: 'info', label: '信息' },
   { key: 'tools', label: '工具' },
+  { key: 'life', label: '生活' },
 ]
 
 export const APP_NAV_ITEMS: AppNavItem[] = [
@@ -52,6 +54,7 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
   { key: 'codes', label: '二维码条码', path: '/codes', icon: QrCode2, group: 'tools' },
   { key: 'media', label: '视频解析', path: '/media', icon: VideoLibrary, group: 'tools' },
   { key: 'whiteboards', label: '白板', path: '/whiteboards', icon: Brush, group: 'content' },
+  { key: 'pet', label: '宠物', path: '/pet', icon: Pets, group: 'life' },
 ]
 
 export const APP_NAV_KEYS = APP_NAV_ITEMS.map((item) => item.key)

@@ -16,6 +16,7 @@ const loaders: Array<[string, () => Promise<unknown>]> = [
   ['/docs', () => import('@/pages/Docs')],
   ['/whiteboards', () => import('@/pages/Whiteboards')],
   ['/bookmarks', () => import('@/pages/Bookmarks')],
+  ['/pet', () => import('@/pages/Pet')],
   ['/settings', () => import('@/pages/Settings')],
 ]
 
