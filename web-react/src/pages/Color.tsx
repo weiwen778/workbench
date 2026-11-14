@@ -2,68 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Alert, Box, Button, Chip, IconButton, Paper, Slider, Stack, TextField, Typography,
 } from '@mui/material'
-import {
-  Check, Close, Lock, LockOpen, Picture, Upload,
-} from '@/icons'
+import { Lock, LockOpen, Picture, Upload } from '@/icons'
 import { copyText } from '@/api/client'
+import ColorFormats from '@/components/ColorFormats'
 import { EmptyHint, Page, PageBody, PageToolbar } from '@/ui/common'
 import { toast } from '@/ui/feedback'
 import { decodeImageFile } from '@/convert/image'
-import {
-  compositeOver, contrastReport, parseColor, rgbToHsl, toHex, toHslString, toRgbaString,
-  type RGBA,
-} from '@/color/color'
+import { rgbToHsl, toHex, toHslString, toRgbaString, type RGBA } from '@/color/color'
 
 const MAX_PIXELS = 24_000_000
 const CHECKER = 'repeating-conic-gradient(#d9dddb 0% 25%, #ffffff 0% 50%) 50% / 16px 16px'
-
-function ColorField({ label, color, onChange }: { label: string; color: RGBA; onChange: (color: RGBA) => void }) {
-  const [text, setText] = useState(() => toHex(color))
-  const [error, setError] = useState(false)
-  useEffect(() => { setText(toHex(color)); setError(false) }, [color])
-  const commit = () => {
-    const parsed = parseColor(text)
-    if (!parsed) { setError(true); return }
-    setError(false)
-    onChange(parsed)
-  }
-  return (
-    <Stack direction="row" spacing={0.75} alignItems="flex-start" flexWrap="wrap" useFlexGap>
-      <Box
-        component="input" type="color" aria-label={`${label}取色器`} value={toHex({ ...color, a: 1 })}
-        onChange={(event) => {
-          const parsed = parseColor(event.target.value)
-          if (parsed) onChange({ ...parsed, a: color.a })
-        }}
-        sx={{ width: 34, height: 34, p: 0, mt: 0.5, border: 1, borderColor: 'divider', borderRadius: 1, bgcolor: 'transparent', cursor: 'pointer' }}
-      />
-      <TextField
-        size="small" label={label} value={text} error={error} onChange={(event) => setText(event.target.value)}
-        onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') commit() }}
-        helperText={error ? '支持 #RRGGBB、rgb()、hsl()' : ''}
-        sx={{ width: 156, '& .MuiFormHelperText-root': { mt: 0.25 } }}
-      />
-      <TextField
-        size="small" type="number" label="透明度%" value={Math.round(color.a * 100)}
-        inputProps={{ min: 0, max: 100 }} onChange={(event) => onChange({ ...color, a: Math.max(0, Math.min(100, Number(event.target.value) || 0)) / 100 })}
-        sx={{ width: 92 }}
-      />
-    </Stack>
-  )
-}
-
-function ContrastLine({ label, threshold, passed, testId }: { label: string; threshold: string; passed: boolean; testId: string }) {
-  return (
-    <Stack data-testid={testId} direction="row" alignItems="center" spacing={0.75} sx={{ py: 0.5, borderBottom: 1, borderColor: 'divider' }}>
-      <Box sx={{ flex: 1, fontSize: 12.5 }}>{label}</Box>
-      <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>{threshold}</Typography>
-      <Stack direction="row" spacing={0.4} alignItems="center" sx={{ color: passed ? 'success.main' : 'error.main', minWidth: 74 }}>
-        {passed ? <Check sx={{ fontSize: 15 }} /> : <Close sx={{ fontSize: 15 }} />}
-        <Typography sx={{ fontSize: 12, fontWeight: 600 }}>{passed ? '通过' : '未通过'}</Typography>
-      </Stack>
-    </Stack>
-  )
-}
 
 export default function ColorPage() {
   const fileInput = useRef<HTMLInputElement>(null)
@@ -78,18 +26,7 @@ export default function ColorPage() {
   const [hoverAt, setHoverAt] = useState<{ x: number; y: number } | null>(null)
   const [locked, setLocked] = useState<RGBA | null>(null)
   const [loading, setLoading] = useState(false)
-  const [foreground, setForeground] = useState<RGBA>({ r: 26, g: 36, b: 38, a: 1 })
-  const [background, setBackground] = useState<RGBA>({ r: 255, g: 255, b: 255, a: 1 })
-  const [baseColor, setBaseColor] = useState<RGBA>({ r: 255, g: 255, b: 255, a: 1 })
-  const [chineseText, setChineseText] = useState('中文正文预览：清晰的对比度让阅读更轻松。')
-  const [englishText, setEnglishText] = useState('English body preview: good contrast keeps text readable.')
-  const [headingText, setHeadingText] = useState('大字号标题预览')
-  const [buttonText, setButtonText] = useState('按钮文字')
   const sample = locked || hover
-  const effectiveBackground = background.a < 1 ? compositeOver(background, { ...baseColor, a: 1 }) : background
-  const effectiveForeground = foreground.a < 1 ? compositeOver(foreground, effectiveBackground) : foreground
-  const fullyTransparent = foreground.a === 0
-  const report = fullyTransparent ? null : contrastReport(effectiveForeground, effectiveBackground)
   const hsl = sample ? rgbToHsl(sample) : null
 
   const drawMagnifier = useCallback((canvas: HTMLCanvasElement | null, x: number, y: number) => {
@@ -187,16 +124,6 @@ export default function ColorPage() {
     else toast.warning('浏览器不允许自动复制，请手动选择文本')
   }
 
-  const setAsForeground = () => {
-    if (!sample) return
-    if (sample.a === 0) { toast.warning('全透明像素不能直接作为前景色'); return }
-    setForeground(sample)
-  }
-  const setAsBackground = () => {
-    if (!sample) return
-    if (sample.a === 0) { toast.warning('全透明像素不能直接作为背景色'); return }
-    setBackground(sample)
-  }
 
   return (
     <Page variant="dense">
@@ -206,7 +133,7 @@ export default function ColorPage() {
           <Typography sx={{ fontSize: 12, color: 'text.secondary' }}><Picture sx={{ fontSize: 14, verticalAlign: -2, mr: 0.5 }} />本地处理 · 图片不上传</Typography>
         </Stack>
         <div className="spacer" />
-        <Chip size="small" variant="outlined" label="WCAG 2.2 · sRGB" />
+        <Chip size="small" variant="outlined" label="sRGB · HEX / RGB / HSL / HSV / CMYK" />
       </PageToolbar>
       <PageBody>
         <Box className="scroll-area" sx={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(0,1fr) 430px' }, gridAutoRows: 'max-content', gap: 1.25, alignItems: 'start' }}>
@@ -283,75 +210,13 @@ export default function ColorPage() {
                   <Button size="small" onClick={() => void copy(toHex(sample), 'HEX')}>复制 HEX</Button>
                   <Button size="small" onClick={() => void copy(toRgbaString(sample), 'RGB')}>复制 RGB</Button>
                   <Button size="small" onClick={() => void copy(toHslString(sample), 'HSL')}>复制 HSL</Button>
-                  <Button size="small" disabled={sample.a === 0} onClick={setAsForeground}>设为前景</Button>
-                  <Button size="small" disabled={sample.a === 0} onClick={setAsBackground}>设为背景</Button>
                 </Stack>
               ) : null}
-              {sample?.a === 0 ? <Alert severity="warning" sx={{ mt: 0.75, py: 0, fontSize: 11.5 }}>全透明像素不能当作黑色或白色使用；请选择有实色的笔画像素。</Alert> : null}
-              <Typography sx={{ mt: 0.75, fontSize: 10.5, color: 'text.disabled' }}>提示：抗锯齿边缘可能混合了前后景色，请选择笔画实色和对应的纯色背景再计算。</Typography>
+              {sample?.a === 0 ? <Alert severity="warning" sx={{ mt: 0.75, py: 0, fontSize: 11.5 }}>这是全透明像素；如需换算颜色格式，请选择有实色的笔画像素。</Alert> : null}
+              <Typography sx={{ mt: 0.75, fontSize: 10.5, color: 'text.disabled' }}>提示：抗锯齿边缘可能混合了背景色，取色时请选择笔画实色区域。</Typography>
             </Paper>
 
-            <Paper variant="outlined" sx={{ p: 1.25 }}>
-              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-                <Typography sx={{ fontSize: 13.5, fontWeight: 600, flex: 1 }}>可读性检查</Typography>
-                <Button size="small" onClick={() => { const old = foreground; setForeground(background); setBackground(old) }}>交换两色</Button>
-              </Stack>
-              <Stack spacing={1}>
-                <ColorField label="前景色" color={foreground} onChange={setForeground} />
-                <ColorField label="背景色" color={background} onChange={setBackground} />
-                {background.a < 1 ? (
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>背景含透明度，需指定底色</Typography>
-                    <Box
-                      component="input" type="color" aria-label="背景底色" value={toHex({ ...baseColor, a: 1 })}
-                      onChange={(event) => { const parsed = parseColor(event.target.value); if (parsed) setBaseColor({ ...parsed, a: 1 }) }}
-                      sx={{ width: 30, height: 30, p: 0, border: 1, borderColor: 'divider', borderRadius: 1, bgcolor: 'transparent', cursor: 'pointer' }}
-                    />
-                    <Typography sx={{ fontSize: 11.5, fontFamily: 'monospace' }}>{toHex({ ...baseColor, a: 1 })}</Typography>
-                  </Stack>
-                ) : null}
-                {foreground.a < 1 && !fullyTransparent ? <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>前景已与背景合成后再计算（实际前景 {toHex(effectiveForeground)}）。</Typography> : null}
-                {background.a < 1 ? <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>背景已与底色合成（实际背景 {toHex(effectiveBackground)}）。</Typography> : null}
-                {fullyTransparent ? (
-                  <Alert severity="warning" sx={{ py: 0, fontSize: 11.5 }}>前景完全透明，不能计算对比度；请选择实色前景。</Alert>
-                ) : report ? (
-                  <>
-                    <Stack direction="row" alignItems="baseline" spacing={1}>
-                      <Typography data-testid="contrast-ratio" sx={{ fontSize: 32, fontWeight: 650, fontVariantNumeric: 'tabular-nums' }}>{report.ratio.toFixed(2)}</Typography>
-                      <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>: 1 对比度</Typography>
-                      <Box sx={{ flex: 1 }} />
-                      <Typography sx={{ fontSize: 10.5, color: 'text.disabled' }}>判定使用未舍入值</Typography>
-                    </Stack>
-                    <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
-                      <ContrastLine testId="contrast-normal-aa" label="普通文字 AA" threshold="≥ 4.5" passed={report.normalAA} />
-                      <ContrastLine testId="contrast-normal-aaa" label="普通文字 AAA" threshold="≥ 7.0" passed={report.normalAAA} />
-                      <ContrastLine testId="contrast-large-aa" label="大文字 AA（≥18pt / 14pt 粗体）" threshold="≥ 3.0" passed={report.largeAA} />
-                      <ContrastLine testId="contrast-large-aaa" label="大文字 AAA" threshold="≥ 4.5" passed={report.largeAAA} />
-                      <ContrastLine testId="contrast-ui" label="界面组件与图形（相邻颜色）" threshold="≥ 3.0" passed={report.ui} />
-                    </Box>
-                  </>
-                ) : null}
-              </Stack>
-            </Paper>
-
-            <Paper variant="outlined" sx={{ p: 1.25 }}>
-              <Typography sx={{ fontSize: 13, fontWeight: 600, mb: 0.75 }}>实时预览</Typography>
-              <Box sx={{ bgcolor: toRgbaString(effectiveBackground), color: toRgbaString(effectiveForeground), p: 1.5, borderRadius: 1, border: 1, borderColor: 'divider' }}>
-                <Typography component="h2" sx={{ fontSize: 24, fontWeight: 700, lineHeight: 1.25, mb: 0.75 }}>{headingText}</Typography>
-                <Typography sx={{ fontSize: 13.5, lineHeight: 1.65, mb: 0.5 }}>{chineseText}</Typography>
-                <Typography sx={{ fontSize: 13.5, lineHeight: 1.65, mb: 1 }}>{englishText}</Typography>
-                <Box component="button" type="button" sx={{ px: 1.75, py: 0.75, border: 2, borderColor: 'currentColor', borderRadius: 1, bgcolor: 'transparent', color: 'inherit', font: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{buttonText}</Box>
-              </Box>
-              <Stack spacing={0.75} sx={{ mt: 1 }}>
-                <TextField size="small" label="中文预览文案" value={chineseText} onChange={(event) => setChineseText(event.target.value)} />
-                <TextField size="small" label="英文预览文案" value={englishText} onChange={(event) => setEnglishText(event.target.value)} />
-                <Stack direction="row" spacing={0.75}>
-                  <TextField size="small" label="标题文案" value={headingText} onChange={(event) => setHeadingText(event.target.value)} sx={{ flex: 1 }} />
-                  <TextField size="small" label="按钮文案" value={buttonText} onChange={(event) => setButtonText(event.target.value)} sx={{ flex: 1 }} />
-                </Stack>
-              </Stack>
-              <Typography sx={{ mt: 0.75, fontSize: 10.5, color: 'text.disabled' }}>依据 WCAG 2.2：sRGB 相对亮度与对比度公式；抗锯齿边缘可能产生混合色，取色时请选择实色笔画和纯背景。</Typography>
-            </Paper>
+            <ColorFormats color={sample} />
           </Stack>
         </Box>
       </PageBody>

@@ -15,7 +15,7 @@ import { APP_NAV_KEYS, DEFAULT_PINNED_KEYS } from './app-nav'
 import { readPinnedKeys, readSidebarMode, writePinnedKeys, writeSidebarMode, SIDEBAR_MODE_EVENT, SIDEBAR_ORDER_EVENT, type SidebarMode } from './sidebar-order'
 import GlobalSearchDialog from '@/components/GlobalSearchDialog'
 import WorkspaceToolsDialog from '@/components/WorkspaceToolsDialog'
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import PageTransition from '@/motion/components/PageTransition'
 import { buildGroups, toolItems, type SidebarData } from './nav'
 import { http, apiError } from '@/api/client'
 import { toggleTheme, useSession } from '@/session'
@@ -49,7 +49,6 @@ export default function AppLayout() {
   const session = useSession()
   const navigate = useNavigate()
   const location = useLocation()
-  const reduceMotion = useReducedMotion()
   const [narrow, setNarrow] = useState(() => window.innerWidth < 900)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [allNavOpen, setAllNavOpen] = useState(false)
@@ -252,7 +251,7 @@ export default function AppLayout() {
       '/translate': '翻译',
       '/images': '图片处理',
       '/convert': '格式转换',
-      '/color': '取色与可读性检查',
+      '/color': '取色与颜色格式',
       '/codes': '二维码与条码',
       '/media': '视频解析',
       '/feeds': '信息聚合',
@@ -353,25 +352,19 @@ export default function AppLayout() {
         ) : null}
 
         <Box sx={{ flex: 1, minHeight: 0, overflow: scrollable ? 'auto' : 'hidden', pb: narrow ? 7 : 0 }}>
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={location.key}
-              initial={reduceMotion ? false : { opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -6 }}
-              transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
-              style={{ height: scrollable ? 'auto' : '100%', minHeight: scrollable ? '100%' : 0 }}
-            >
-              <Suspense fallback={(
-                <Stack direction="row" spacing={1.5} alignItems="center" sx={{ p: 3, color: 'text.secondary' }}>
-                  <CircularProgress size={18} />
-                  <Typography variant="body2">正在打开…</Typography>
-                </Stack>
-              )}>
-                <Outlet />
-              </Suspense>
-            </motion.div>
-          </AnimatePresence>
+          <PageTransition
+            narrow={narrow}
+            style={{ height: scrollable ? 'auto' : '100%', minHeight: scrollable ? '100%' : 0 }}
+          >
+            <Suspense fallback={(
+              <Stack direction="row" spacing={1.5} alignItems="center" sx={{ p: 3, color: 'text.secondary' }}>
+                <CircularProgress size={18} />
+                <Typography variant="body2">正在打开…</Typography>
+              </Stack>
+            )}>
+              <Outlet />
+            </Suspense>
+          </PageTransition>
         </Box>
       </Box>
 
