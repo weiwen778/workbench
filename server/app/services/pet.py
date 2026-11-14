@@ -3,11 +3,12 @@ from __future__ import annotations
 import math
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..errors import ApiError
-from ..models import Pet
-from ..utils import iso_z, utc_to_local
+from ..models import CheckinInstance, Pet, Todo
+from ..utils import iso_z, local_midnight_utc, utc_to_local
 
 STAT_KEYS = ("satiety", "cleanliness", "mood", "energy")
 AWAY_DECAY = {"satiety": 1.5, "cleanliness": 0.8, "mood": 1.2, "energy": 1.5}
@@ -289,8 +290,36 @@ def apply_action(pet: Pet, action: str, now: datetime) -> tuple[str, str]:
 
 
 def claim_daily_bonus(db: Session, pet: Pet, now: datetime) -> dict | None:
-    """Task 4 实现。"""
-    return None
+    day = utc_to_local(now).date()
+    if pet.daily_bonus_date == day:
+        return None
+
+    start = local_midnight_utc(day)
+    end = local_midnight_utc(day + timedelta(days=1))
+    has_checkin = db.scalar(
+        select(CheckinInstance.id)
+        .where(CheckinInstance.completed_at >= start, CheckinInstance.completed_at < end)
+        .limit(1)
+    ) is not None
+    has_todo = False
+    if not has_checkin:
+        has_todo = db.scalar(
+            select(Todo.id)
+            .where(Todo.completed_at >= start, Todo.completed_at < end)
+            .limit(1)
+        ) is not None
+    if not (has_checkin or has_todo):
+        return None
+
+    pet.daily_bonus_date = day
+    pet.mood = _clamp(pet.mood + 6)
+    pet.treats = min(5, pet.treats + 1)
+    return {
+        "mood": 6,
+        "treats": 1,
+        "source": "checkin" if has_checkin else "todo",
+        "date": day.isoformat(),
+    }
 
 
 def pet_payload(pet: Pet, now: datetime) -> dict:

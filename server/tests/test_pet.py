@@ -1,10 +1,25 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
 from app.errors import ApiError
-from app.models import Pet
-from app.services.pet import advance, apply_action, pet_payload, stage_for, status_for
+from app.models import (
+    CheckinGroup,
+    CheckinInstance,
+    CheckinRule,
+    Pet,
+    Todo,
+    TodoList,
+    WorkTarget,
+)
+from app.services.pet import (
+    advance,
+    apply_action,
+    claim_daily_bonus,
+    pet_payload,
+    stage_for,
+    status_for,
+)
 from app.utils import LOCAL_TZ
 
 T0 = datetime(2026, 11, 14, 0, 0)
@@ -364,3 +379,86 @@ def test_exact_cooldown_boundary_allows_action(db):
         apply_action(pet, "feed", T0 + timedelta(seconds=1799))
     assert exc.value.details["remaining_seconds"] == 1
     assert apply_action(pet, "feed", T0 + timedelta(seconds=1800))[0] == "fed"
+
+
+def _completed_todo(db, when):
+    row = TodoList(name="默认")
+    db.add(row)
+    db.flush()
+    db.add(Todo(list_id=row.id, title="完成的事", completed_at=when))
+    db.commit()
+
+
+def _completed_checkin(db, when):
+    target = WorkTarget(kind="shop", name="测试店")
+    group = CheckinGroup(name="默认分组")
+    db.add_all([target, group])
+    db.flush()
+    rule = CheckinRule(target_id=target.id, group_id=group.id, title="每日打卡")
+    db.add(rule)
+    db.flush()
+    db.add(CheckinInstance(
+        rule_id=rule.id, target_id=target.id, target_name=target.name,
+        group_id=group.id, group_name=group.name, period_type="daily",
+        period_start=when.date(), period_end=when.date(),
+        title=rule.title, completed_at=when,
+    ))
+    db.commit()
+
+
+def test_daily_bonus_none_without_completed_work(db):
+    pet = _make_pet(db)
+    assert claim_daily_bonus(db, pet, T0) is None
+    assert pet.daily_bonus_date is None
+
+
+def test_daily_bonus_once_from_checkin(db):
+    pet = _make_pet(db)
+    _completed_checkin(db, T0)
+    bonus = claim_daily_bonus(db, pet, T0)
+    assert bonus == {"mood": 6, "treats": 1, "source": "checkin", "date": "2026-11-14"}
+    assert pet.mood == pytest.approx(86)
+    assert pet.treats == 1
+    assert pet.daily_bonus_date == date(2026, 11, 14)
+    assert claim_daily_bonus(db, pet, T0) is None
+    assert pet.mood == pytest.approx(86)
+    assert pet.treats == 1
+
+
+def test_daily_bonus_from_todo_and_yesterday_does_not_count(db):
+    pet = _make_pet(db)
+    _completed_todo(db, T0 - timedelta(hours=12))
+    assert claim_daily_bonus(db, pet, T0) is None
+
+    _completed_todo(db, T0)
+    bonus = claim_daily_bonus(db, pet, T0)
+    assert bonus["source"] == "todo"
+
+
+def test_daily_bonus_prefers_checkin_when_both_sources_match(db):
+    pet = _make_pet(db)
+    _completed_todo(db, T0)
+    _completed_checkin(db, T0)
+
+    bonus = claim_daily_bonus(db, pet, T0)
+
+    assert bonus["source"] == "checkin"
+
+
+def test_daily_bonus_treat_cap(db):
+    pet = _make_pet(db, treats=5)
+    _completed_todo(db, T0)
+    bonus = claim_daily_bonus(db, pet, T0)
+    assert bonus["treats"] == 1
+    assert pet.treats == 5
+
+
+def test_get_pet_claims_bonus_once(auth, db):
+    auth.post("/api/v1/pet", json={})
+    _completed_todo(db, datetime.utcnow())
+    first = auth.get("/api/v1/pet").json()
+    assert first["daily_bonus"]["source"] == "todo"
+    assert first["pet"]["stats"]["mood"] == 86
+    second = auth.get("/api/v1/pet").json()
+    assert second["daily_bonus"] is None
+    assert second["pet"]["stats"]["mood"] <= 86
