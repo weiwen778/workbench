@@ -123,6 +123,19 @@ def test_five_failures_from_one_address_still_lock(auth):
     assert response.status_code == 429, response.text
 
 
+def test_cleanup_removes_expired_login_attempts(auth, db):
+    from datetime import timedelta
+    from sqlalchemy import func, select
+    from app.maintenance import run_cleanup
+    from app.models import LoginAttempt, utcnow
+
+    db.add(LoginAttempt(username='old-user', ip='198.51.100.1', success=False, created_at=utcnow() - timedelta(days=30)))
+    db.commit()
+    result = run_cleanup()
+    assert result['login_attempts'] >= 1
+    assert db.scalar(select(func.count(LoginAttempt.id)).where(LoginAttempt.username == 'old-user')) == 0
+
+
 def test_checkin_navigation_labels_persist_without_affecting_other_preferences(auth):
     initial = auth.get('/api/v1/preferences').json()
     assert initial['checkin_shop_label'] == '店铺打卡'

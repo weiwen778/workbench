@@ -364,13 +364,19 @@ def test_base_url_rejects_non_public_http_targets(auth):
     assert response.json()["code"] == "UPSTREAM_URL_REJECTED"
 
 
-def test_base_url_rejects_private_https_and_dns_failure(auth):
+def test_base_url_rejects_private_https_and_dns_failure(auth, monkeypatch):
     private = auth.put(
         "/api/v1/translation-connections/baidu",
         json={"config": {"app_id": "a1234567", "secret": "b1234567", "base_url": "https://169.254.169.254"}},
     )
     assert private.status_code == 400, private.text
     assert private.json()["code"] == "UPSTREAM_URL_REJECTED"
+    import socket
+
+    def fail_dns(*_args, **_kwargs):
+        raise socket.gaierror("mock NXDOMAIN")
+
+    monkeypatch.setattr("app.services.providers.socket.getaddrinfo", fail_dns)
     missing = auth.put(
         "/api/v1/translation-connections/baidu",
         json={"config": {"app_id": "a1234567", "secret": "b1234567", "base_url": "https://does-not-exist.invalid"}},

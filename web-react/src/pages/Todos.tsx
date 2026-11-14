@@ -46,7 +46,10 @@ export default function TodosPage() {
   const currentList = lists.find((list) => list.id === listId) || null
   const viewActive = useRef(true)
   const loadRequest = useRef(0)
-  useEffect(() => () => { viewActive.current = false }, [])
+  useEffect(() => {
+    viewActive.current = true
+    return () => { viewActive.current = false }
+  }, [])
 
   const dueText = (item: any) => !item.due_date ? '' : item.due_time ? `${item.due_date} ${item.due_time}` : item.due_date
   const formatTime = (value: string) => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : ''

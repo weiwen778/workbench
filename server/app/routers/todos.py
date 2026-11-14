@@ -382,6 +382,12 @@ def move_todo(todo_id: int, payload: MoveIn, db: Session = Depends(get_db)):
         raise ApiError("NOT_FOUND", "待办不存在", 404)
     if not db.get(TodoList, payload.list_id):
         raise ApiError("NOT_FOUND", "清单不存在", 404)
+    if todo.parent_id is not None and payload.list_id != todo.list_id:
+        raise ApiError(
+            "CHILD_MOVE",
+            "子任务不能单独移动到其他清单，请移动父任务",
+            409,
+        )
     old_parent = todo.parent_id
     todo.list_id = payload.list_id
     for child in db.scalars(select(Todo).where(Todo.parent_id == todo.id)).all():

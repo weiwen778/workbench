@@ -4,7 +4,7 @@ import time
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -319,7 +319,7 @@ def history(
     if q:
         like = f"%{q.strip()}%"
         stmt = stmt.where(or_(TranslationHistory.source_text.like(like), TranslationHistory.target_text.like(like)))
-    total = len(db.scalars(stmt).all())
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = db.scalars(stmt.offset((page - 1) * page_size).limit(page_size)).all()
     return {
         "total": total,

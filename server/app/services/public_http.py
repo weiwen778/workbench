@@ -44,7 +44,7 @@ def _port(parts) -> int:
         raise PublicHttpError("URL_REJECTED", "来源地址端口不合法")
 
 
-def public_target(url: str) -> tuple[object, int, str]:
+def public_target(url: str, *, allow_loopback: bool = False) -> tuple[object, int, str]:
     """Validate a URL and return (parsed URL, port, validated IP)."""
     raw = (url or "").strip()
     if not raw or len(raw) > 2048 or any(ord(ch) < 32 for ch in raw):
@@ -55,7 +55,8 @@ def public_target(url: str) -> tuple[object, int, str]:
     if parts.username is not None or parts.password is not None:
         raise PublicHttpError("URL_REJECTED", "来源地址不能包含账号密码")
     port = _port(parts)
-    if port not in {80, 443}:
+    host_is_loopback = parts.hostname in {"127.0.0.1", "localhost", "::1"}
+    if port not in {80, 443} and not (allow_loopback and host_is_loopback):
         raise PublicHttpError("URL_REJECTED", "只允许公开网页端口 80 或 443")
     try:
         infos = socket.getaddrinfo(parts.hostname, port, type=socket.SOCK_STREAM)
@@ -69,6 +70,9 @@ def public_target(url: str) -> tuple[object, int, str]:
     if not infos:
         raise PublicHttpError("DNS_FAILED", "无法解析来源域名")
     addresses = [info[4][0] for info in infos]
+    only_loopback = all(ipaddress.ip_address(address).is_loopback for address in addresses)
+    if allow_loopback and host_is_loopback and only_loopback:
+        return parts, port, addresses[0]
     if any(not ipaddress.ip_address(address).is_global for address in addresses):
         raise PublicHttpError("PRIVATE_ADDRESS", "来源地址指向非公开网络")
     return parts, port, addresses[0]
@@ -116,13 +120,16 @@ def fetch_public(
     headers: dict[str, str] | None = None,
     etag: str | None = None,
     last_modified: str | None = None,
+    method: str = "GET",
+    body: bytes | None = None,
+    allow_loopback: bool = False,
 ) -> PublicResponse:
     started = time.monotonic()
     deadline = started + max(0.1, timeout)
     current = url
     redirects = 0
     while True:
-        parts, port, address = public_target(current)
+        parts, port, address = public_target(current, allow_loopback=allow_loopback)
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise PublicHttpError("TIMEOUT", "来源请求超时")
@@ -158,7 +165,7 @@ def fetch_public(
             if parts.query:
                 path += "?" + parts.query
             try:
-                connection.request("GET", path, headers=request_headers)
+                connection.request(method.upper(), path, body=body, headers=request_headers)
                 response = connection.getresponse()
             except (TimeoutError, socket.timeout):
                 raise PublicHttpError("TIMEOUT", "来源请求超时")

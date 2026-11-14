@@ -180,6 +180,10 @@ def test_move_parent_moves_children(auth):
     assert [i["title"] for i in payload["pending"]] == ["搬家的父任务"]
     assert payload["pending"][0]["children"][0]["title"] == "跟着搬"
 
+    rejected = auth.post(f"/api/v1/todos/{child['id']}/move", json={"list_id": lst["id"]})
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()["code"] == "CHILD_MOVE"
+
 
 def test_auto_sort_puts_no_due_last(auth):
     lst = make_list(auth)

@@ -57,6 +57,7 @@ class Settings(BaseSettings):
 
     login_max_failures: int = 5
     login_lock_seconds: int = 300
+    login_attempt_retention_days: int = Field(default=7, ge=1, le=90)
 
     # 仅测试环境使用：允许翻译服务指向 http:// 本机地址
     allow_insecure_upstream: bool = False

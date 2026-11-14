@@ -7,17 +7,17 @@ from __future__ import annotations
 
 import hashlib
 import ipaddress
+import json
 import socket
 import time
-from urllib.parse import urlparse
-
-import httpx
+from urllib.parse import urlencode, urlparse
 
 from ..config import settings
 from ..errors import ApiError
 from .languages import to_provider_code
+from .public_http import PublicHttpError, fetch_public
 
-TIMEOUT = httpx.Timeout(60.0, connect=10.0)
+TIMEOUT_SECONDS = 60.0
 
 
 class UpstreamError(Exception):
@@ -99,38 +99,61 @@ def _masked_base(url: str) -> str:
     return validate_base_url(url)
 
 
-def _post(url: str, **kwargs) -> dict:
+def _request(
+    method: str,
+    url: str,
+    *,
+    params: dict | None = None,
+    data: dict | list[tuple[str, str]] | None = None,
+    json_body: dict | None = None,
+    headers: dict[str, str] | None = None,
+) -> dict:
+    target = _masked_base(url)
+    if params:
+        separator = "&" if "?" in target else "?"
+        target += separator + urlencode(params, doseq=True)
+    body: bytes | None = None
+    request_headers = dict(headers or {})
+    request_headers.setdefault("Accept", "application/json, text/plain, */*")
+    if data is not None:
+        body = urlencode(data, doseq=True).encode("utf-8")
+        request_headers.setdefault("Content-Type", "application/x-www-form-urlencoded")
+    elif json_body is not None:
+        body = json.dumps(json_body, ensure_ascii=False).encode("utf-8")
+        request_headers.setdefault("Content-Type", "application/json")
     try:
-        resp = httpx.post(_masked_base(url), timeout=TIMEOUT, **kwargs)
-    except httpx.ConnectTimeout:
-        raise UpstreamError("UPSTREAM_TIMEOUT", "连接翻译服务超时（10 秒），请稍后重试", 504)
-    except httpx.ReadTimeout:
-        raise UpstreamError("UPSTREAM_TIMEOUT", "翻译服务响应超时（60 秒），请稍后重试", 504)
-    except httpx.HTTPError:
-        raise UpstreamError("UPSTREAM_NETWORK", "网络异常，无法连接翻译服务", 502)
-    if resp.status_code >= 500:
-        raise UpstreamError("UPSTREAM_ERROR", f"翻译服务暂时不可用（HTTP {resp.status_code}）", 502)
+        response = fetch_public(
+            target,
+            timeout=TIMEOUT_SECONDS,
+            max_bytes=2_000_000,
+            max_redirects=3,
+            headers=request_headers,
+            method=method,
+            body=body,
+            allow_loopback=settings.allow_insecure_upstream,
+        )
+    except PublicHttpError as error:
+        if error.code == "TIMEOUT":
+            raise UpstreamError("UPSTREAM_TIMEOUT", "翻译服务响应超时，请稍后重试", 504)
+        if error.code == "RATE_LIMITED":
+            raise UpstreamError("UPSTREAM_RATE_LIMITED", "翻译服务访问频率受限", 429)
+        if error.code in {"URL_REJECTED", "PRIVATE_ADDRESS"}:
+            raise UpstreamError("UPSTREAM_URL_REJECTED", "翻译服务地址不合法", 400)
+        if error.code == "HTTP_ERROR" and error.status in {401, 403}:
+            raise UpstreamError("UPSTREAM_AUTH", "翻译服务拒绝了认证，请检查密钥", 401)
+        raise UpstreamError("UPSTREAM_NETWORK", "无法连接翻译服务", 502)
     try:
-        return resp.json()
-    except ValueError:
+        return json.loads(response.body.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
         raise UpstreamError("UPSTREAM_BAD_RESPONSE", "翻译服务返回了无法解析的内容", 502)
+
+
+def _post(url: str, **kwargs) -> dict:
+    return _request("POST", url, **kwargs)
 
 
 def _get(url: str, **kwargs) -> dict:
-    try:
-        resp = httpx.get(_masked_base(url), timeout=TIMEOUT, **kwargs)
-    except httpx.ConnectTimeout:
-        raise UpstreamError("UPSTREAM_TIMEOUT", "连接翻译服务超时（10 秒），请稍后重试", 504)
-    except httpx.ReadTimeout:
-        raise UpstreamError("UPSTREAM_TIMEOUT", "翻译服务响应超时（60 秒），请稍后重试", 504)
-    except httpx.HTTPError:
-        raise UpstreamError("UPSTREAM_NETWORK", "网络异常，无法连接翻译服务", 502)
-    if resp.status_code >= 500:
-        raise UpstreamError("UPSTREAM_ERROR", f"翻译服务暂时不可用（HTTP {resp.status_code}）", 502)
-    try:
-        return resp.json()
-    except ValueError:
-        raise UpstreamError("UPSTREAM_BAD_RESPONSE", "翻译服务返回了无法解析的内容", 502)
+    return _request("GET", url, **kwargs)
 
 
 def translate_baidu(text: str, source: str, target: str, config: dict) -> str:
@@ -230,7 +253,7 @@ def _translate_llm(text: str, source: str, target: str, config: dict, provider: 
             {"role": "user", "content": f"{source_hint}目标语言：{target_name}。待翻译内容如下：\n\n{text}"},
         ],
     }
-    data = _post(base, json=body, headers={"Authorization": f"Bearer {api_key}"})
+    data = _post(base, json_body=body, headers={"Authorization": f"Bearer {api_key}"})
     choices = data.get("choices") or []
     if not choices:
         raise UpstreamError("UPSTREAM_EMPTY", "翻译服务没有返回译文", 502)
@@ -294,7 +317,7 @@ def translate_libretranslate(text: str, source: str, target: str, config: dict) 
     }
     if config.get("api_key"):
         body["api_key"] = config["api_key"]
-    result = _post(base, json=body)
+    result = _post(base, json_body=body)
     translated = result.get("translatedText") or ""
     if not translated:
         message = result.get("error") or "LibreTranslate 没有返回译文"

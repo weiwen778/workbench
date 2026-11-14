@@ -1,10 +1,11 @@
 """Production retention cleanup; each pass uses its own database session."""
 import asyncio
 import logging
-from sqlalchemy import select
+from datetime import timedelta
+from sqlalchemy import delete, select
 from .config import settings
 from .db import SessionLocal
-from .models import DataTransferJob, FileObject, FileRef, utcnow
+from .models import DataTransferJob, FileObject, FileRef, LoginAttempt, utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,11 @@ def run_cleanup():
         exported_files = {job.file_id for job in jobs if job.kind == "export" and job.file_id}
         for job in jobs:
             db.delete(job)
+        login_attempts = db.execute(
+            delete(LoginAttempt).where(
+                LoginAttempt.created_at < now - timedelta(days=settings.login_attempt_retention_days)
+            )
+        ).rowcount
         candidates.update(db.scalars(select(FileObject.id).where(FileObject.status == "staged", FileObject.expires_at <= now)).all())
         removed = 0
         for file_id in candidates:
@@ -33,7 +39,7 @@ def run_cleanup():
                 db.delete(obj)
                 removed += 1
         db.commit()
-        return {"purged": result["purged"], "files": removed, "jobs": len(jobs)}
+        return {"purged": result["purged"], "files": removed, "jobs": len(jobs), "login_attempts": login_attempts}
 
 async def maintenance_loop():
     while True:

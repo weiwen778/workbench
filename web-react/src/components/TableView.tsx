@@ -110,7 +110,10 @@ export default function TableView({ tableId }: { tableId: number }) {
 
   const viewActive = useRef(true)
   const recordsRequest = useRef(0)
-  useEffect(() => () => { viewActive.current = false }, [])
+  useEffect(() => {
+    viewActive.current = true
+    return () => { viewActive.current = false }
+  }, [])
 
   const sortableFields = fields.filter((field) => !['long_text', 'multiselect', 'attachment'].includes(field.type))
   const fieldType = (key: string) => fields.find((field) => field.key === key)?.type || 'short_text'

@@ -54,7 +54,10 @@ export default function CheckinPage() {
 
   const viewActive = useRef(true)
   const requestVersion = useRef(0)
-  useEffect(() => () => { viewActive.current = false }, [])
+  useEffect(() => {
+    viewActive.current = true
+    return () => { viewActive.current = false }
+  }, [])
 
   const periodLabel = { daily: '今天', weekly: '本周', monthly: '本月' }[period]
   const periodUnit = { daily: '日', weekly: '周', monthly: '月' }[period]
