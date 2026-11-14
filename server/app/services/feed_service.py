@@ -5,10 +5,11 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from urllib.parse import urlsplit
 
 from sqlalchemy import func, or_, select
@@ -20,7 +21,8 @@ from ..db import SessionLocal
 from ..errors import ApiError
 from ..models import FeedEntry, FeedSnapshot, FeedSubscription, utcnow
 from ..utils import iso_z
-from .feed_catalog import DIRECT_PROVIDERS, HOT_SECTIONS, HOT_SOURCE_IDS, HOT_SOURCES, DEFAULT_SUBSCRIPTIONS
+from .common_sources import COMMON_SOURCES, fetch_runsignup_all, merge_runsignup_entries
+from .feed_catalog import COMMON_BY_KEY, DIRECT_PROVIDERS, HOT_SECTIONS, HOT_SOURCE_IDS, HOT_SOURCES, DEFAULT_SUBSCRIPTIONS
 from .feed_parsers import (
     FeedParseError, normalize_link, parse_dailyhot, parse_direct_bilibili,
     parse_direct_weibo, parse_direct_zhihu, parse_feed, parse_google_trends, safe_http_url,
@@ -214,7 +216,9 @@ def _fetch_hot_payload(source: dict, etag: str | None, last_modified: str | None
         raise fallback_error
 
 
-def _claim_snapshot(db: Session, source_id: str, force: bool) -> tuple[dict | None, str]:
+def _claim_snapshot(
+    db: Session, source_id: str, force: bool, lock_seconds: int | None = None,
+) -> tuple[dict | None, str]:
     now = utcnow()
     row = db.get(FeedSnapshot, source_id)
     if row is None:
@@ -235,12 +239,13 @@ def _claim_snapshot(db: Session, source_id: str, force: bool) -> tuple[dict | No
         return None, "joined"
     if not force and row.next_attempt_at and row.next_attempt_at > now:
         return None, "skipped"
-    row.locked_until = now + timedelta(seconds=settings.feed_timeout_seconds + 15)
+    lock_seconds = lock_seconds if lock_seconds is not None else settings.feed_timeout_seconds + 15
+    row.locked_until = now + timedelta(seconds=lock_seconds)
     row.last_attempt_at = now
     db.commit()
     return {
         "etag": row.etag, "last_modified": row.last_modified,
-        "failures": row.consecutive_failures,
+        "failures": row.consecutive_failures, "entries": row.entries or [],
     }, "started"
 
 
@@ -280,6 +285,33 @@ def _record_hot_success(source_id: str, payload: dict) -> None:
         row.error_code = None
         row.consecutive_failures = 0
         row.next_attempt_at = now + timedelta(seconds=settings.feed_hot_interval_seconds)
+        row.locked_until = None
+        db.commit()
+
+
+def _record_common_success(
+    source_id: str,
+    entries: list[dict],
+    provider: str,
+    note: str,
+    interval: int,
+    upstream_updated_at: datetime | None = None,
+) -> None:
+    with SessionLocal() as db:
+        row = db.get(FeedSnapshot, source_id)
+        if not row:
+            return
+        now = utcnow()
+        row.entries = [_serialize_entry(entry) for entry in entries]
+        row.provider = (provider or row.provider or "")[:120]
+        row.provider_note = (note or "")[:300]
+        row.upstream_updated_at = upstream_updated_at
+        row.fetched_at = now
+        row.last_success_at = now
+        row.last_error = None
+        row.error_code = None
+        row.consecutive_failures = 0
+        row.next_attempt_at = now + timedelta(seconds=interval)
         row.locked_until = None
         db.commit()
 
@@ -343,6 +375,161 @@ def request_hot_refresh(source_ids: list[str], force: bool) -> tuple[list[str], 
         return [], []
     started, joined = _reserve([f"hot:{source_id}" for source_id in ids])
     return [key.split(":", 1)[1] for key in started], [key.split(":", 1)[1] for key in joined]
+
+
+# ---------------------------------------------------------------- common sources
+
+
+COMMON_LINK_KEYS = ("temu-seller", "pinterest-trends", "runsignup")
+
+
+def refresh_common_source(key: str, force: bool = False) -> dict:
+    source = COMMON_SOURCES.get(key)
+    if not source:
+        raise ApiError("UNKNOWN_COMMON_SOURCE", "未知通用信息源", 404)
+    if not settings.feed_common_enabled:
+        return {"key": key, "status": "disabled"}
+    sid = f"common:{key}"
+    with SessionLocal() as db:
+        lock_seconds = 600 if key == "runsignup" else 60
+        claim, state = _claim_snapshot(db, sid, force, lock_seconds=lock_seconds)
+    if not claim:
+        return {"key": key, "status": state}
+    started = time.monotonic()
+    try:
+        if key == "runsignup":
+            start = date.today()
+            end = start + timedelta(days=settings.feed_runsignup_window_days)
+            results, _failures = fetch_runsignup_all(
+                start, end, concurrency=settings.feed_runsignup_concurrency,
+            )
+            successes = sum(v is not None for v in results.values())
+            if successes == 0:
+                raise PublicHttpError("ALL_COUNTRIES_FAILED", "所有国家赛事抓取失败")
+            entries = merge_runsignup_entries(claim["entries"], results)
+            provider = source["platform"]
+            note = f"{successes}/{len(results)} 个国家成功"
+            interval = settings.feed_runsignup_interval_seconds
+        else:
+            entries = source["fetch"]()
+            provider = source["platform"]
+            note = source.get("note") or ""
+            interval = source["interval"]
+
+        if entries == []:
+            _record_hot_failure(sid, "EMPTY_PAYLOAD", "来源返回空数据")
+            return {"key": key, "status": "failed", "code": "EMPTY_PAYLOAD", "message": "来源返回空数据"}
+
+        _record_common_success(sid, entries, provider, note, interval)
+        logger.info(
+            "feed common refresh key=%s status=updated entries=%s provider=%s duration_ms=%s",
+            key, len(entries), provider, int((time.monotonic() - started) * 1000),
+        )
+        return {"key": key, "status": "updated", "entries": len(entries)}
+    except PublicHttpError as error:
+        _record_hot_failure(sid, error.code, error.message, error.retry_after)
+        logger.warning(
+            "feed common refresh failed key=%s code=%s status=%s duration_ms=%s",
+            key, error.code, error.status, int((time.monotonic() - started) * 1000),
+        )
+        return {"key": key, "status": "failed", "code": error.code, "message": error.message}
+    except FeedParseError as error:
+        _record_hot_failure(sid, error.code, error.message)
+        logger.warning(
+            "feed common parse failed key=%s code=%s duration_ms=%s",
+            key, error.code, int((time.monotonic() - started) * 1000),
+        )
+        return {"key": key, "status": "failed", "code": error.code, "message": error.message}
+    except Exception:
+        _record_hot_failure(sid, "INTERNAL_ERROR", "刷新通用来源时出现内部错误")
+        logger.exception("feed common refresh internal error key=%s", key)
+        return {"key": key, "status": "failed", "code": "INTERNAL_ERROR"}
+
+
+def run_common_refresh(keys: list[str], force: bool) -> None:
+    def work(key: str):
+        try:
+            refresh_common_source(key, force=force)
+        except Exception:
+            logger.exception("feed common background task failed key=%s", key)
+
+    try:
+        with ThreadPoolExecutor(max_workers=min(3, max(1, len(keys)))) as pool:
+            list(pool.map(work, keys))
+    finally:
+        _release([f"common:{key}" for key in keys])
+
+
+def request_common_refresh(keys: list[str], force: bool) -> tuple[list[str], list[str]]:
+    valid = [key for key in keys if key in COMMON_SOURCES]
+    if not valid:
+        return [], []
+    started, joined = _reserve([f"common:{key}" for key in valid])
+    return [key.split(":", 1)[1] for key in started], [key.split(":", 1)[1] for key in joined]
+
+
+def common_due_keys(db: Session, limit: int = 10) -> list[str]:
+    now = utcnow()
+    due: list[str] = []
+    for key in COMMON_SOURCES:
+        row = db.get(FeedSnapshot, f"common:{key}")
+        if row is None or row.next_attempt_at is None or row.next_attempt_at <= now:
+            due.append(key)
+        if len(due) >= limit:
+            break
+    return due
+
+
+def common_cooldown_remaining(db: Session, key: str, seconds: int = 60) -> int:
+    row = db.get(FeedSnapshot, f"common:{key}")
+    if row is None or row.last_attempt_at is None:
+        return 0
+    now = utcnow()
+    remaining = (row.last_attempt_at + timedelta(seconds=seconds) - now).total_seconds()
+    return max(0, math.ceil(remaining))
+
+
+def common_payload(db: Session) -> dict:
+    rows = {row.source_id: row for row in db.scalars(select(FeedSnapshot)).all()}
+    sources = []
+    for source in COMMON_SOURCES.values():
+        sid = f"common:{source['key']}"
+        row = rows.get(sid)
+        if not settings.feed_common_enabled:
+            status = "disabled"
+            entries: list[dict] = []
+        else:
+            status = _source_status(row)
+            entries = []
+            if row and row.last_success_at:
+                entries = list(row.entries or [])
+        interval = settings.feed_runsignup_interval_seconds if source["key"] == "runsignup" else source["interval"]
+        sources.append({
+            "key": source["key"],
+            "title": source["title"],
+            "platform": source["platform"],
+            "url": source["url"],
+            "note": source.get("note") or "",
+            "data_kind": source.get("data_kind") or "",
+            "status": status,
+            "entries": entries,
+            "last_success_at": iso_z(row.last_success_at) if row else None,
+            "last_error": row.last_error if row else None,
+            "interval_seconds": interval,
+        })
+    links = [
+        {
+            "key": key,
+            "title": item["title"],
+            "platform": item["platform"],
+            "url": item["url"],
+            "note": item.get("note") or "",
+        }
+        for key in COMMON_LINK_KEYS
+        for item in [COMMON_BY_KEY.get(key)]
+        if item
+    ]
+    return {"sources": sources, "links": links}
 
 
 # ---------------------------------------------------------------- subscriptions
@@ -916,6 +1103,13 @@ def refresh_due_all() -> None:
         started, _ = request_subscription_refresh(subscription_ids, force=False)
         if started:
             run_subscription_refresh(started, force=False)
+    if settings.feed_common_enabled:
+        with SessionLocal() as db:
+            common_keys = common_due_keys(db, limit=10)
+        if common_keys:
+            started, _ = request_common_refresh(common_keys, force=False)
+            if started:
+                run_common_refresh(started, force=False)
 
 
 async def refresh_loop() -> None:

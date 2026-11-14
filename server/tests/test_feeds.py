@@ -356,3 +356,83 @@ def test_hot_and_common_endpoints_return_cached_contract(auth, db, monkeypatch):
     common = auth.get("/api/v1/feeds/common").json()
     assert len(common["groups"]) == 3
     assert common["groups"][0]["items"][0]["url"].startswith("https://")
+
+
+def test_common_empty_payload_keeps_previous_snapshot(db, monkeypatch):
+    from app.services import common_sources
+
+    db.add(FeedSnapshot(source_id="common:alibaba-rules", entries=[{
+        "title": "旧规则", "url": "https://rule.alibaba.com/rule/detail/1.htm", "published_at": None,
+        "badge": "", "summary": "",
+    }], provider="Alibaba", provider_note="", consecutive_failures=0))
+    db.commit()
+    monkeypatch.setitem(common_sources.COMMON_SOURCES, "alibaba-rules", {
+        **common_sources.COMMON_SOURCES["alibaba-rules"], "fetch": lambda: [],
+    })
+    result = service.refresh_common_source("alibaba-rules", force=True)
+    assert result["status"] == "failed"
+    db.expire_all()
+    row = db.get(FeedSnapshot, "common:alibaba-rules")
+    assert row.entries[0]["title"] == "旧规则"
+    assert row.last_error == "来源返回空数据"
+
+
+def test_common_cooldown_blocks_repeat_refresh(db):
+    db.add(FeedSnapshot(source_id="common:1688-rules", entries=[], consecutive_failures=0, last_attempt_at=utcnow()))
+    db.commit()
+    assert service.common_cooldown_remaining(db, "1688-rules") > 0
+    row = db.get(FeedSnapshot, "common:1688-rules")
+    row.last_attempt_at = utcnow().replace(year=2020)
+    db.commit()
+    assert service.common_cooldown_remaining(db, "1688-rules") == 0
+
+
+def test_common_due_keys_includes_missing_and_due(db):
+    db.add(FeedSnapshot(source_id="common:1688-rules", entries=[], consecutive_failures=0, next_attempt_at=utcnow().replace(year=2020)))
+    db.commit()
+    keys = service.common_due_keys(db)
+    assert "1688-rules" in keys
+    assert "alibaba-rules" in keys
+
+
+def test_common_disabled_returns_disabled_status(db, monkeypatch):
+    monkeypatch.setattr(service.settings, "feed_common_enabled", False)
+    assert service.refresh_common_source("alibaba-rules", force=True)["status"] == "disabled"
+    assert service.common_payload(db)["sources"][0]["entries"] == []
+
+
+def test_common_unknown_key_raises_404():
+    with pytest.raises(ApiError) as exc:
+        service.refresh_common_source("not-a-key", force=True)
+    assert exc.value.code == "UNKNOWN_COMMON_SOURCE"
+    assert exc.value.status_code == 404
+
+
+def test_common_runsignup_all_countries_failed(db, monkeypatch):
+    monkeypatch.setattr(service, "fetch_runsignup_all", lambda start, end, concurrency: ({}, 1))
+    result = service.refresh_common_source("runsignup", force=True)
+    assert result["status"] == "failed"
+    assert result["code"] == "ALL_COUNTRIES_FAILED"
+
+
+def test_common_success_updates_snapshot(db, monkeypatch):
+    from app.services import common_sources
+
+    monkeypatch.setitem(common_sources.COMMON_SOURCES, "alibaba-rules", {
+        **common_sources.COMMON_SOURCES["alibaba-rules"],
+        "fetch": lambda: [{
+            "title": "新规则",
+            "url": "https://rule.alibaba.com/rule/detail/2.htm",
+            "published_at": None,
+            "badge": "",
+            "summary": "",
+        }],
+    })
+    result = service.refresh_common_source("alibaba-rules", force=True)
+    assert result["status"] == "updated"
+    assert result["entries"] == 1
+    db.expire_all()
+    row = db.get(FeedSnapshot, "common:alibaba-rules")
+    assert row.entries[0]["title"] == "新规则"
+    assert row.last_error is None
+    assert row.next_attempt_at is not None
