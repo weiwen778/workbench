@@ -72,7 +72,7 @@ export default function DocsPage() {
     )
   }
   return (
-    <Page sx={{ p: 0, gap: 0, minHeight: 0 }}>
+    <Page variant="bleed" sx={{ minHeight: 0 }}>
       <PageToolbar sx={{ px: 2, py: 0.6, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
         <Tabs
           value={module}

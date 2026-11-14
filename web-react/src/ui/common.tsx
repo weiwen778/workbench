@@ -19,20 +19,53 @@ import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import { DataGrid, useGridApiRef, type GridColDef } from '@mui/x-data-grid'
 import { zhCN } from '@mui/x-data-grid/locales'
 
-export function Page({ children, scroll = false, sx }: { children: ReactNode; scroll?: boolean; sx?: any }) {
+export function Page({
+  children, scroll = false, variant = 'standard', sx,
+}: {
+  children: ReactNode
+  scroll?: boolean
+  variant?: 'standard' | 'dense' | 'bleed'
+  sx?: any
+}) {
+  const dense = variant === 'dense'
+  const bleed = variant === 'bleed'
   return (
-    <Box sx={{ height: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1.5, p: 2, ...(scroll ? { overflow: 'auto' } : {}), ...sx }}>
+    <Box
+      sx={{
+        height: '100%', minWidth: 0, display: 'flex', flexDirection: 'column',
+        gap: bleed ? 0 : dense ? 1.5 : 2,
+        p: bleed ? 0 : dense ? 2 : 2.5,
+        ...(scroll ? { overflow: 'auto' } : {}),
+        ...sx,
+      }}
+    >
       {children}
     </Box>
   )
 }
 
 export function PageToolbar({ children, sx }: { children: ReactNode; sx?: any }) {
-  return <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1.5, minHeight: 40, flexShrink: 0, ...sx }}>{children}</Box>
+  return <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, minHeight: 44, flexShrink: 0, ...sx }}>{children}</Box>
 }
 
 export function PageBody({ children, sx }: { children: ReactNode; sx?: any }) {
-  return <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 1.5, ...sx }}>{children}</Box>
+  return <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 2, ...sx }}>{children}</Box>
+}
+
+export function PageActions({ children, sx }: { children: ReactNode; sx?: any }) {
+  return (
+    <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap sx={{ minWidth: 0, ...sx }}>
+      {children}
+    </Stack>
+  )
+}
+
+export function RowActions({ children, sx }: { children: ReactNode; sx?: any }) {
+  return (
+    <Stack direction="row" spacing={0.25} alignItems="center" justifyContent="flex-end" sx={{ minWidth: 0, ...sx }}>
+      {children}
+    </Stack>
+  )
 }
 
 export function EmptyHint({ children, action }: { children?: ReactNode; action?: ReactNode }) {
@@ -299,7 +332,7 @@ export function Pager({
           size="small"
           value={pageSize}
           onChange={(event) => onPageSize(Number(event.target.value))}
-          sx={{ height: 30, fontSize: 12, minWidth: 92 }}
+          sx={{ height: 32, fontSize: 12, minWidth: 92 }}
         >
           {pageSizes.map((size) => <MenuItem key={size} value={size} sx={{ fontSize: 12 }}>{size} 条/页</MenuItem>)}
         </Select>

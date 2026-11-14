@@ -605,14 +605,8 @@ export default function ImagesPage() {
 
   if (!assets.length) {
     return (
-      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', p: 2, gap: 1.5 }}>
-        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => fileInput.current?.click()}>添加图片</Button>
-          <Button size="small" startIcon={<Palette fontSize="small" />} onClick={() => navigate('/color')}>取色 / 对比度</Button>
-          <Button size="small" startIcon={<Brush fontSize="small" />} disabled={(!active && checked.length === 0) || busy || sending} onClick={() => void sendToWhiteboard()}>发送到白板</Button>
-          <input ref={fileInput} type="file" accept={IMAGE_ACCEPT} multiple hidden onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ''; void addFiles(files) }} />
-          <Typography sx={{ fontSize: 12, color: 'text.secondary', alignSelf: 'center' }}>本地处理 · 图片不上传</Typography>
-        </Stack>
+      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', p: 2 }}>
+        <input ref={fileInput} type="file" accept={IMAGE_ACCEPT} multiple hidden onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ''; void addFiles(files) }} />
         <Box
           onDragOver={(event) => { event.preventDefault(); setDragOver(true) }}
           onDragLeave={() => setDragOver(false)}
@@ -623,8 +617,8 @@ export default function ImagesPage() {
           <Picture sx={{ fontSize: 52, color: 'text.secondary' }} />
           <Typography sx={{ fontSize: 23, fontWeight: 500 }}>拖入图片开始处理</Typography>
           <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>选择文件，或按 Ctrl / Command + V 粘贴</Typography>
-          <Button size="small" variant="contained">选择图片</Button>
-          <Typography sx={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.9 }}>JPG / PNG / WebP / GIF / BMP / SVG / AVIF / ICO · 单次最多 30 张、100 MB<br />素材暂存在当前标签页，切换页面保留，刷新后清空</Typography>
+          <Button size="small" variant="contained" onClick={(event) => { event.stopPropagation(); fileInput.current?.click() }}>选择图片</Button>
+          <Typography sx={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.9 }}>JPG / PNG / WebP / GIF / BMP / SVG / AVIF / ICO · 单次最多 30 张、100 MB<br />本地处理，图片不上传；素材切页保留，刷新后清空</Typography>
         </Box>
       </Box>
     )
@@ -636,7 +630,6 @@ export default function ImagesPage() {
         <input ref={fileInput} type="file" accept={IMAGE_ACCEPT} multiple hidden onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ''; void addFiles(files) }} />
         <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
           <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} disabled={busy} onClick={() => fileInput.current?.click()}>添加图片</Button>
-          <Button size="small" startIcon={<Palette fontSize="small" />} onClick={() => navigate('/color')}>取色 / 对比度</Button>
           <Button size="small" startIcon={<Brush fontSize="small" />} disabled={(!active && checked.length === 0) || busy || sending} onClick={() => void sendToWhiteboard()}>发送到白板</Button>
           <Typography sx={{ fontSize: 12, color: 'text.secondary' }}><Picture sx={{ fontSize: 14, verticalAlign: -2, mr: 0.5 }} />本地处理 · 图片不上传</Typography>
         </Stack>

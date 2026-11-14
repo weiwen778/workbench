@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider,
-  FormControlLabel, LinearProgress, MenuItem, Pagination, Paper, Select, Stack, Tab, Tabs, TextField, Typography,
+  FormControlLabel, IconButton, LinearProgress, Menu, MenuItem, Pagination, Paper, Select, Stack, Tab, Tabs, TextField, Tooltip, Typography,
 } from '@mui/material'
 import { apiError, copyText, http } from '@/api/client'
 import { confirmDialog, promptDialog, toast } from '@/ui/feedback'
 import { DataTable, FieldRow, SectionTitle } from '@/ui/common'
-import { CopyDocument } from '@/icons'
+import { CopyDocument, MoreFilled } from '@/icons'
 import { readTranslationPreferences, type TranslationPreferences } from '@/utils/translation-preferences'
 
 export function Card({ children }: { children: React.ReactNode }) {
@@ -784,6 +784,8 @@ export function SystemSection() {
   const [backups, setBackups] = useState<any>({ items: [], enabled: false })
   const [failure, setFailure] = useState('')
   const [creating, setCreating] = useState(false)
+  const [backupMenu, setBackupMenu] = useState<HTMLElement | null>(null)
+  const [rowMenu, setRowMenu] = useState<{ el: HTMLElement; row: any } | null>(null)
   const [metrics, setMetrics] = useState<any>({})
   const [health, setHealth] = useState<any>({})
 
@@ -833,10 +835,15 @@ export function SystemSection() {
         </Stack>
         {failure ? <Alert severity="error" sx={{ mt: 1.5 }}>{failure}</Alert> : null}
         <Typography sx={{ fontSize: 13, color: 'text.secondary', mt: 1.5 }}>{backups.enabled ? `每 ${backups.interval_hours} 小时备份，保留最近 ${backups.keep} 份。` : '自动备份已关闭。'} 进度见任务中心。</Typography>
-        <Stack direction="row" spacing={2} alignItems="center" sx={{ mt: 1.5, flexWrap: 'wrap' }}>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1.5, flexWrap: 'wrap' }}>
           <Button size="small" onClick={() => window.dispatchEvent(new Event('wb:open-tasks'))}>打开任务中心</Button>
-          <Button size="small" component="a" href="/api/v1/backups/recovery-key">下载恢复密钥</Button>
-          <Button size="small" onClick={() => void loadBackups()}>刷新备份列表</Button>
+          <Tooltip title="更多备份操作">
+            <IconButton size="small" aria-label="更多备份操作" onClick={(event) => setBackupMenu(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
+          </Tooltip>
+          <Menu anchorEl={backupMenu} open={Boolean(backupMenu)} onClose={() => setBackupMenu(null)}>
+            <MenuItem onClick={() => { setBackupMenu(null); void loadBackups() }}>刷新备份列表</MenuItem>
+            <MenuItem component="a" href="/api/v1/backups/recovery-key">下载恢复密钥</MenuItem>
+          </Menu>
         </Stack>
         <Alert severity="info" sx={{ mt: 1.5 }}>备份与恢复密钥请存放在其他安全位置。</Alert>
         <DataTable
@@ -846,16 +853,26 @@ export function SystemSection() {
             { key: 'size', label: '大小', width: 100, render: (row: any) => `${(row.size / 1024 / 1024).toFixed(1)} MB` },
             { key: 'file_count', label: '附件数', width: 90 },
             {
-              key: 'actions', label: '操作', width: 200,
+              key: 'actions', label: '操作', width: 112,
               render: (row: any) => (
-                <Stack direction="row" spacing={0.5}>
-                  <Button size="small" component="a" href={`/api/v1/backups/${row.id}/download`}>下载备份</Button>
-                  <Button size="small" onClick={async () => { try { await http.post(`/backups/${row.id}/verify`); toast.success('已提交校验任务，请在任务中心查看结果') } catch (error) { toast.error(apiError(error).message) } }}>校验完整性</Button>
+                <Stack direction="row" spacing={0.25} alignItems="center">
+                  <Button size="small" component="a" href={`/api/v1/backups/${row.id}/download`}>下载</Button>
+                  <IconButton size="small" aria-label={`备份 ${row.id} 的更多操作`} onClick={(event) => setRowMenu({ el: event.currentTarget, row })}>
+                    <MoreFilled fontSize="small" />
+                  </IconButton>
                 </Stack>
               ),
             },
           ]}
         />
+        <Menu anchorEl={rowMenu?.el || null} open={Boolean(rowMenu)} onClose={() => setRowMenu(null)}>
+          <MenuItem onClick={async () => {
+            const row = rowMenu?.row
+            setRowMenu(null)
+            if (!row) return
+            try { await http.post(`/backups/${row.id}/verify`); toast.success('已提交校验任务，请在任务中心查看结果') } catch (error) { toast.error(apiError(error).message) }
+          }}>校验完整性</MenuItem>
+        </Menu>
       </Card>
 
       <Card>

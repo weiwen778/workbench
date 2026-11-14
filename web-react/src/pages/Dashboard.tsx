@@ -126,6 +126,7 @@ export default function DashboardPage() {
   const [customTo, setCustomTo] = useState('')
   const [widgetMenu, setWidgetMenu] = useState<{ el: HTMLElement; widget: DashboardWidget; index: number } | null>(null)
   const [boardMenu, setBoardMenu] = useState<{ el: HTMLElement; board: DashboardBoard } | null>(null)
+  const [detailMenu, setDetailMenu] = useState<HTMLElement | null>(null)
   const [boardQuery, setBoardQuery] = useState('')
   const [boardSort, setBoardSort] = useState<'updated' | 'name' | 'widgets'>('updated')
   const [boardView, setBoardViewState] = useState<'cards' | 'list'>(() => localStorage.getItem('wb_board_view') === 'list' ? 'list' : 'cards')
@@ -540,7 +541,7 @@ export default function DashboardPage() {
   const noBoardResults = boards.length > 0 && visibleBoards.length === 0 && !loading
 
   return (
-    <Page sx={{ p: 1.5, gap: 1.5 }}>
+    <Page>
       <PageToolbar sx={{ rowGap: 1 }}>
         {current
           ? <Button size="small" onClick={() => navigate('/visualizations')}>全部看板</Button>
@@ -552,44 +553,35 @@ export default function DashboardPage() {
         <div className="spacer" />
         {current ? (
           <>
-            <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-              <Button size="small" startIcon={refreshing ? <CircularProgress size={14} color="inherit" /> : <Refresh fontSize="small" />} disabled={refreshing} onClick={() => void fetchData()}>刷新数据</Button>
-              <Button size="small" onClick={renameBoard}>重命名</Button>
-            </Stack>
-            <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
-            <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-              <Button size="small" onClick={createBoard}>新建看板</Button>
-            </Stack>
-            <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
-            <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-              <Button size="small" startIcon={<AutoAwesome fontSize="small" />} disabled={saving || current.widgets.length >= 24} onClick={() => setAiOpen(true)}>AI 生成</Button>
-              <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} disabled={saving || current.widgets.length >= 24} onClick={() => void openEditor()}>添加图表</Button>
-            </Stack>
+            <Tooltip title="刷新数据">
+              <span><IconButton size="small" aria-label="刷新看板数据" disabled={refreshing} onClick={() => void fetchData()}>{refreshing ? <CircularProgress size={14} /> : <Refresh fontSize="small" />}</IconButton></span>
+            </Tooltip>
+            <Button size="small" startIcon={<AutoAwesome fontSize="small" />} disabled={saving || current.widgets.length >= 24} onClick={() => setAiOpen(true)}>AI 生成</Button>
+            <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} disabled={saving || current.widgets.length >= 24} onClick={() => void openEditor()}>添加图表</Button>
+            <Tooltip title="看板操作">
+              <IconButton size="small" aria-label="看板操作" onClick={(event) => setDetailMenu(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
+            </Tooltip>
           </>
         ) : (
           <>
-            <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-              <TextField
-                size="small" placeholder="搜索看板名称" value={boardQuery}
-                onChange={(event) => setBoardQuery(event.target.value)}
-                InputProps={{ startAdornment: <Search sx={{ fontSize: 16, mr: 0.75, color: 'text.secondary' }} /> }}
-                sx={{ width: { xs: '100%', sm: 220 } }}
-              />
-              <Select size="small" value={boardSort} onChange={(event) => setBoardSort(event.target.value as any)} sx={{ width: 126 }} inputProps={{ 'aria-label': '看板排序' }}>
-                <MenuItem value="updated">最近更新</MenuItem>
-                <MenuItem value="name">按名称</MenuItem>
-                <MenuItem value="widgets">按图表数</MenuItem>
-              </Select>
-              <ToggleButtonGroup size="small" exclusive value={boardView} onChange={(_, value) => value && setBoardView(value)}>
-                <ToggleButton value="cards" aria-label="卡片视图"><GridView sx={{ fontSize: 17 }} /></ToggleButton>
-                <ToggleButton value="list" aria-label="列表视图"><ViewList sx={{ fontSize: 17 }} /></ToggleButton>
-              </ToggleButtonGroup>
-            </Stack>
-            <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
-            <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-              <Button size="small" startIcon={loading ? <CircularProgress size={14} color="inherit" /> : <Refresh fontSize="small" />} disabled={loading} onClick={() => void load()}>刷新</Button>
-            </Stack>
-            <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
+            <TextField
+              size="small" placeholder="搜索看板名称" value={boardQuery}
+              onChange={(event) => setBoardQuery(event.target.value)}
+              InputProps={{ startAdornment: <Search sx={{ fontSize: 16, mr: 0.75, color: 'text.secondary' }} /> }}
+              sx={{ width: { xs: '100%', sm: 220 } }}
+            />
+            <Select size="small" value={boardSort} onChange={(event) => setBoardSort(event.target.value as any)} sx={{ width: 126 }} inputProps={{ 'aria-label': '看板排序' }}>
+              <MenuItem value="updated">最近更新</MenuItem>
+              <MenuItem value="name">按名称</MenuItem>
+              <MenuItem value="widgets">按图表数</MenuItem>
+            </Select>
+            <ToggleButtonGroup size="small" exclusive value={boardView} onChange={(_, value) => value && setBoardView(value)}>
+              <ToggleButton value="cards" aria-label="卡片视图"><GridView sx={{ fontSize: 17 }} /></ToggleButton>
+              <ToggleButton value="list" aria-label="列表视图"><ViewList sx={{ fontSize: 17 }} /></ToggleButton>
+            </ToggleButtonGroup>
+            <Tooltip title="刷新">
+              <span><IconButton size="small" aria-label="刷新看板列表" disabled={loading} onClick={() => void load()}>{loading ? <CircularProgress size={14} /> : <Refresh fontSize="small" />}</IconButton></span>
+            </Tooltip>
             <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={createBoard}>新建看板</Button>
           </>
         )}
@@ -617,28 +609,34 @@ export default function DashboardPage() {
                       <Paper
                         key={board.id}
                         variant="outlined"
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`打开看板 ${board.name}`}
+                        onClick={() => openBoard(board)}
+                        onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openBoard(board) } }}
                         sx={{
-                          p: 1.75, display: 'flex', flexDirection: 'column', gap: 1, minHeight: 158,
-                          borderRadius: 1.5, transition: 'border-color .15s, box-shadow .15s',
+                          p: 2, display: 'flex', flexDirection: 'column', gap: 1, minHeight: 158,
+                          borderRadius: 1.5, cursor: 'pointer', transition: 'border-color .15s, box-shadow .15s',
                           '&:hover': { borderColor: 'primary.main', boxShadow: '0 4px 14px rgba(26,36,38,0.06)' },
+                          '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 1 },
                         }}
                       >
                         <Stack direction="row" spacing={1} alignItems="flex-start">
                           <Box sx={{ width: 32, height: 32, flexShrink: 0, borderRadius: 1, display: 'grid', placeItems: 'center', bgcolor: 'action.selected', color: 'primary.main' }}>
                             <DashboardIcon sx={{ fontSize: 17 }} />
                           </Box>
-                          <Box sx={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => openBoard(board)}>
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
                             <Typography sx={{ fontSize: 14, fontWeight: 600, lineHeight: 1.4 }} noWrap>{board.name}</Typography>
                             <Typography sx={{ fontSize: 11.5, color: 'text.secondary', mt: 0.25 }} noWrap>
                               {board.widgets.length ? boardKinds(board).map((item) => `${chartLabels[item.kind] || item.kind} ${item.count}`).join(' · ') : '还没有图表'}
                             </Typography>
                           </Box>
                           <Tooltip title={favorite ? '取消收藏' : '收藏'}>
-                            <IconButton size="small" aria-label={favorite ? '取消收藏' : '收藏'} onClick={() => toggleBoardFavorite(board.id)}>
+                            <IconButton size="small" aria-label={favorite ? '取消收藏' : '收藏'} onClick={(event) => { event.stopPropagation(); toggleBoardFavorite(board.id) }}>
                               {favorite ? <Star sx={{ fontSize: 16, color: '#C9A25B' }} /> : <StarBorder sx={{ fontSize: 16, color: 'text.disabled' }} />}
                             </IconButton>
                           </Tooltip>
-                          <IconButton size="small" aria-label="更多操作" onClick={(event) => setBoardMenu({ el: event.currentTarget, board })}>
+                          <IconButton size="small" aria-label="更多操作" onClick={(event) => { event.stopPropagation(); setBoardMenu({ el: event.currentTarget, board }) }}>
                             <MoreFilled sx={{ fontSize: 16 }} />
                           </IconButton>
                         </Stack>
@@ -653,10 +651,6 @@ export default function DashboardPage() {
                         <Typography sx={{ fontSize: 11.5, color: 'text.disabled', mt: 'auto' }}>
                           {board.widgets.length} 张图表 · 更新于 {relativeTime(board.updated_at)}
                         </Typography>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ borderTop: 1, borderColor: 'divider', pt: 0.75 }}>
-                          <Button size="small" onClick={() => openBoard(board)}>打开</Button>
-                          <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>看板</Typography>
-                        </Stack>
                       </Paper>
                     )
                   })}
@@ -699,7 +693,6 @@ export default function DashboardPage() {
                                 {favorite ? <Star sx={{ fontSize: 16, color: '#C9A25B' }} /> : <StarBorder sx={{ fontSize: 16, color: 'text.disabled' }} />}
                               </IconButton>
                             </Tooltip>
-                            <Button size="small" onClick={() => openBoard(board)}>打开</Button>
                             <IconButton size="small" aria-label="更多操作" onClick={(event) => setBoardMenu({ el: event.currentTarget, board })}>
                               <MoreFilled sx={{ fontSize: 16 }} />
                             </IconButton>
@@ -840,9 +833,13 @@ export default function DashboardPage() {
       </PageBody>
 
       <Menu anchorEl={boardMenu?.el} open={Boolean(boardMenu)} onClose={() => setBoardMenu(null)}>
-        <MenuItem onClick={() => { if (boardMenu) openBoard(boardMenu.board); setBoardMenu(null) }}>打开</MenuItem>
         <MenuItem onClick={() => { if (boardMenu) void renameBoardRow(boardMenu.board); setBoardMenu(null) }}>重命名</MenuItem>
         <MenuItem divider onClick={() => { if (boardMenu) void deleteBoardRow(boardMenu.board); setBoardMenu(null) }} sx={{ color: 'error.main' }}>删除看板</MenuItem>
+      </Menu>
+
+      <Menu anchorEl={detailMenu} open={Boolean(detailMenu)} onClose={() => setDetailMenu(null)}>
+        <MenuItem onClick={() => { setDetailMenu(null); renameBoard() }}>重命名当前看板</MenuItem>
+        <MenuItem onClick={() => { setDetailMenu(null); createBoard() }}>新建看板</MenuItem>
       </Menu>
 
       <DashboardAiDialog

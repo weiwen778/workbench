@@ -84,12 +84,12 @@ export function buildTheme(mode: 'light' | 'dark', themeColor: string): Theme {
         defaultProps: { disableElevation: true },
         styleOverrides: {
           root: { minWidth: 0, paddingInline: 12 },
-          sizeSmall: { height: 30, fontSize: 12.5, paddingInline: 10 },
+          sizeSmall: { height: 32, fontSize: 12.5, paddingInline: 10 },
           contained: { boxShadow: 'none', '&:hover': { boxShadow: 'none' } },
         },
       },
       MuiIconButton: {
-        styleOverrides: { sizeSmall: { width: 30, height: 30, borderRadius: 6 } },
+        styleOverrides: { sizeSmall: { width: 32, height: 32, borderRadius: 6 } },
       },
       MuiTextField: { defaultProps: { size: 'small', variant: 'outlined' } },
       MuiFormControl: { defaultProps: { size: 'small', variant: 'outlined' } },
@@ -107,6 +107,9 @@ export function buildTheme(mode: 'light' | 'dark', themeColor: string): Theme {
             borderRadius: 6,
             '& .MuiOutlinedInput-notchedOutline': { borderColor: dark ? '#324044' : '#DCE3E0' },
             '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: dark ? '#46585C' : '#B9C6C3' },
+            // Keep single-line toolbar controls aligned with 32px buttons.
+            '&.MuiInputBase-sizeSmall': { height: 32 },
+            '&.MuiInputBase-sizeSmall.MuiInputBase-multiline': { height: 'auto' },
           },
         },
       },
@@ -131,8 +134,8 @@ export function buildTheme(mode: 'light' | 'dark', themeColor: string): Theme {
         },
       },
       MuiMenu: { styleOverrides: { paper: { borderRadius: 8, boxShadow: popoverShadow, border: `1px solid ${dark ? '#2A373B' : '#E7EBE9'}` } } },
-      MuiMenuItem: { styleOverrides: { root: { fontSize: 12.5, minHeight: 32 } } },
-      MuiChip: { styleOverrides: { root: { borderRadius: 4, fontWeight: 500 }, sizeSmall: { height: 21, fontSize: 11 } } },
+      MuiMenuItem: { styleOverrides: { root: { fontSize: 12.5, minHeight: 34 } } },
+      MuiChip: { styleOverrides: { root: { borderRadius: 4, fontWeight: 500 }, sizeSmall: { height: 22, fontSize: 11 } } },
       MuiTableCell: {
         styleOverrides: {
           root: { borderColor: dark ? '#2A373B' : '#EDF1EF' },
@@ -149,17 +152,17 @@ export function buildTheme(mode: 'light' | 'dark', themeColor: string): Theme {
         },
       },
       MuiTableRow: { styleOverrides: { root: { '&:last-child td': { borderBottom: 0 } } } },
-      MuiTabs: { styleOverrides: { root: { minHeight: 36 } } },
-      MuiTab: { styleOverrides: { root: { minHeight: 36, py: 0, fontSize: 12.5, fontWeight: 500 } } },
+      MuiTabs: { styleOverrides: { root: { minHeight: 40 } } },
+      MuiTab: { styleOverrides: { root: { minHeight: 40, py: 0, fontSize: 12.5, fontWeight: 500 } } },
       MuiToggleButtonGroup: { styleOverrides: { root: { borderRadius: 6 } } },
       MuiToggleButton: {
         styleOverrides: {
           root: { textTransform: 'none', fontSize: 12, padding: '3px 10px', borderRadius: 6 },
-          sizeSmall: { height: 28, paddingInline: 9 },
+          sizeSmall: { height: 32, paddingInline: 9 },
         },
       },
       MuiTooltip: { defaultProps: { arrow: true } },
-      MuiListItemButton: { styleOverrides: { root: { borderRadius: 6, minHeight: 34 } } },
+      MuiListItemButton: { styleOverrides: { root: { borderRadius: 6, minHeight: 36 } } },
       MuiListItemIcon: { styleOverrides: { root: { minWidth: 30, color: 'inherit' } } },
       MuiListItemText: { styleOverrides: { primary: { fontSize: 12.5 } } },
       MuiAlert: { styleOverrides: { root: { borderRadius: 6 } } },

@@ -526,7 +526,7 @@ export default function ConvertPage() {
   const isXlsx = configItem?.kind === 'xlsx'
 
   return (
-    <Page sx={{ p: 1.5, gap: 1 }}>
+    <Page variant="dense">
       <PageToolbar sx={{ rowGap: 1 }}>
         <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
           <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => openPicker({})}>添加文件</Button>

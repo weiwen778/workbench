@@ -1,14 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import {
-  Box, Button, Card, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, List, ListItem, ListItemButton, ListItemText, MenuItem, Select,
-  Stack, TextField, ToggleButton, ToggleButtonGroup, Typography, useTheme,
+  Box, Button, Card, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, List, ListItem, ListItemButton, ListItemText, Menu, MenuItem, Select,
+  Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography, useTheme,
 } from '@mui/material'
 import { Divider } from '@mui/material'
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { CopyDocument, Delete, DragIndicator, Edit, Plus, Refresh, Search, Brush } from '@/icons'
+import { CopyDocument, Delete, DragIndicator, Edit, MoreFilled, Plus, Refresh, Search, Brush, Tune } from '@/icons'
 import GridView from '@mui/icons-material/GridView'
 import ViewList from '@mui/icons-material/ViewList'
 import { apiError, copyText, http } from '@/api/client'
@@ -119,6 +119,9 @@ export default function MemosPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<any | null>(null)
   const [saving, setSaving] = useState(false)
+  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
+  const [viewAnchor, setViewAnchor] = useState<HTMLElement | null>(null)
+  const [cardMenu, setCardMenu] = useState<{ el: HTMLElement; memo: any } | null>(null)
   const [form, setForm] = useState({ title: '', content: '', category: '', color: 'default' })
   const searchTimer = useRef<number | null>(null)
   const memoRequest = useRef(0)
@@ -248,41 +251,41 @@ export default function MemosPage() {
   }
 
   return (
-    <Page sx={{ p: 1.5, gap: 1 }}>
-      <PageToolbar sx={{ rowGap: 1 }}>
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          <TextField
-            size="small" placeholder="搜索标题或正文" value={keyword} onChange={(event) => onSearch(event.target.value)}
-            InputProps={{ startAdornment: <Search sx={{ fontSize: 17, mr: 0.5, color: 'text.secondary' }} /> }}
-            sx={{ width: 220 }}
-          />
-          <Typography variant="caption" color="text.secondary">{memoTotal} 张便利贴</Typography>
-        </Stack>
+    <Page variant="dense">
+      <PageToolbar>
+        <TextField
+          size="small" placeholder="搜索标题或正文" value={keyword} onChange={(event) => onSearch(event.target.value)}
+          InputProps={{ startAdornment: <Search sx={{ fontSize: 17, mr: 0.5, color: 'text.secondary' }} /> }}
+          sx={{ width: 220 }}
+        />
+        <Typography variant="caption" color="text.secondary">{memoTotal} 张便利贴</Typography>
         <div className="spacer" />
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          <ToggleButtonGroup size="small" exclusive value={view} onChange={(_, value) => value && setView(value)}>
-            <ToggleButton value="cards" aria-label="卡片视图"><GridView sx={{ fontSize: 17 }} /></ToggleButton>
-            <ToggleButton value="list" aria-label="列表视图"><ViewList sx={{ fontSize: 17 }} /></ToggleButton>
-          </ToggleButtonGroup>
-        </Stack>
-        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
-        {view === 'cards' ? (
-          <>
-            <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-              <Typography sx={{ fontSize: 12, color: 'text.secondary', whiteSpace: 'nowrap' }}>每行</Typography>
-              <Select size="small" value={columns} onChange={(event) => rememberColumns(Number(event.target.value))} sx={{ width: 92, fontSize: 12 }} inputProps={{ 'aria-label': '便利贴每行列数' }}>
-                <MenuItem value={0}>自动</MenuItem>
-                {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => <MenuItem key={n} value={n}>{n} 列</MenuItem>)}
-              </Select>
-            </Stack>
-            <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
-          </>
-        ) : null}
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          <CategoryManager resource="memos" onChanged={load} />
-          <Button size="small" startIcon={<Refresh fontSize="small" />} onClick={() => void load()}>刷新</Button>
-        </Stack>
-        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
+        <ToggleButtonGroup size="small" exclusive value={view} onChange={(_, value) => value && setView(value)}>
+          <ToggleButton value="cards" aria-label="卡片视图"><GridView sx={{ fontSize: 17 }} /></ToggleButton>
+          <ToggleButton value="list" aria-label="列表视图"><ViewList sx={{ fontSize: 17 }} /></ToggleButton>
+        </ToggleButtonGroup>
+        <Tooltip title="视图选项">
+          <IconButton size="small" aria-label="视图选项" onClick={(event) => setViewAnchor(event.currentTarget)}><Tune fontSize="small" /></IconButton>
+        </Tooltip>
+        <Tooltip title="更多">
+          <IconButton size="small" aria-label="更多便利贴操作" onClick={(event) => setMoreAnchor(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
+        </Tooltip>
+        <Menu anchorEl={viewAnchor} open={Boolean(viewAnchor)} onClose={() => setViewAnchor(null)}>
+          <Box sx={{ px: 1.5, py: 1, width: 190 }}>
+            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.75 }}>卡片每行</Typography>
+            <Select fullWidth size="small" value={columns} onChange={(event) => rememberColumns(Number(event.target.value))} sx={{ fontSize: 12 }} inputProps={{ 'aria-label': '便利贴每行列数' }}>
+              <MenuItem value={0}>自动</MenuItem>
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => <MenuItem key={n} value={n}>{n} 列</MenuItem>)}
+            </Select>
+          </Box>
+        </Menu>
+        <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
+          <CategoryManager
+            resource="memos" onChanged={load}
+            trigger={(open) => <MenuItem onClick={() => { setMoreAnchor(null); open() }}>管理分类</MenuItem>}
+          />
+          <MenuItem onClick={() => { setMoreAnchor(null); void load() }}>刷新</MenuItem>
+        </Menu>
         <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={openCreate}>新建便利贴</Button>
       </PageToolbar>
 
@@ -347,10 +350,8 @@ export default function MemosPage() {
                             <Typography variant="caption" color="text.secondary" noWrap>{memo.display_category}</Typography>
                           </Box>
                           <Stack direction="row" spacing={0.25}>
-                            <IconButton size="small" title="添加到白板" aria-label="添加到白板" onClick={() => sendToBoard(memo)}><Brush fontSize="small" /></IconButton>
-                            <IconButton size="small" title="复制正文" aria-label="复制正文" onClick={() => void copyContent(memo)}><CopyDocument fontSize="small" /></IconButton>
-                            <IconButton size="small" title="编辑" aria-label="编辑便利贴" onClick={() => openEdit(memo)}><Edit fontSize="small" /></IconButton>
-                            <IconButton size="small" title="删除" aria-label="删除便利贴" onClick={() => void remove(memo)}><Delete fontSize="small" /></IconButton>
+                            <Tooltip title="编辑"><IconButton size="small" aria-label="编辑便利贴" onClick={() => openEdit(memo)}><Edit fontSize="small" /></IconButton></Tooltip>
+                            <Tooltip title="更多"><IconButton size="small" aria-label="更多便利贴操作" onClick={(event) => setCardMenu({ el: event.currentTarget, memo })}><MoreFilled fontSize="small" /></IconButton></Tooltip>
                           </Stack>
                         </Stack>
                       </Card>
@@ -377,10 +378,8 @@ export default function MemosPage() {
                       <Typography component="span" sx={{ fontSize: 11.5, color: 'text.disabled' }}>{formatDate(memo.updated_at)}</Typography>
                     </Stack>
                     <Stack direction="row" spacing={0.25} sx={{ flexShrink: 0 }} onClick={(event) => event.stopPropagation()}>
-                      <IconButton size="small" title="添加到白板" aria-label="添加到白板" onClick={() => sendToBoard(memo)}><Brush fontSize="small" /></IconButton>
-                      <IconButton size="small" title="复制正文" aria-label="复制正文" onClick={() => void copyContent(memo)}><CopyDocument fontSize="small" /></IconButton>
-                      <IconButton size="small" title="编辑" aria-label="编辑便利贴" onClick={() => openEdit(memo)}><Edit fontSize="small" /></IconButton>
-                      <IconButton size="small" title="删除" aria-label="删除便利贴" onClick={() => void remove(memo)}><Delete fontSize="small" /></IconButton>
+                      <Tooltip title="编辑"><IconButton size="small" aria-label="编辑便利贴" onClick={() => openEdit(memo)}><Edit fontSize="small" /></IconButton></Tooltip>
+                      <Tooltip title="更多"><IconButton size="small" aria-label="更多便利贴操作" onClick={(event) => setCardMenu({ el: event.currentTarget, memo })}><MoreFilled fontSize="small" /></IconButton></Tooltip>
                     </Stack>
                   </ListItemButton>
                 </ListItem>
@@ -389,6 +388,12 @@ export default function MemosPage() {
           )}
         </Box>
       </PageBody>
+
+      <Menu anchorEl={cardMenu?.el || null} open={Boolean(cardMenu)} onClose={() => setCardMenu(null)}>
+        <MenuItem onClick={() => { const memo = cardMenu?.memo; setCardMenu(null); if (memo) sendToBoard(memo) }}>添加到白板</MenuItem>
+        <MenuItem onClick={() => { const memo = cardMenu?.memo; setCardMenu(null); if (memo) void copyContent(memo) }}>复制正文</MenuItem>
+        <MenuItem divider sx={{ color: 'error.main' }} onClick={() => { const memo = cardMenu?.memo; setCardMenu(null); if (memo) void remove(memo) }}>删除便利贴</MenuItem>
+      </Menu>
 
       <Dialog open={Boolean(viewing)} onClose={() => setViewing(null)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>{viewing?.display_title}</DialogTitle>

@@ -229,7 +229,7 @@ export default function CodesPage() {
   })()
 
   return (
-    <Page sx={{ p: 1.5, gap: 1 }}>
+    <Page variant="dense">
       <PageToolbar sx={{ gap: 1 }}>
         <Tabs value={tab} onChange={(_, value) => setTab(value)} sx={{ minHeight: 34, '& .MuiTab-root': { minHeight: 34, py: 0, fontSize: 13 } }}>
           <Tab value="generate" label="生成" />

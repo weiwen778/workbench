@@ -4,8 +4,7 @@ import {
   Box, Button, Card, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem,
   Stack, TextField, Tooltip, Typography,
 } from '@mui/material'
-import { Divider } from '@mui/material'
-import { Plus } from '@/icons'
+import { MoreFilled, Plus } from '@/icons'
 import { apiError, http } from '@/api/client'
 import { EmptyHint, FieldRow, Page, PageBody, PageToolbar } from '@/ui/common'
 import { confirmDialog, toast } from '@/ui/feedback'
@@ -33,6 +32,7 @@ export default function BookmarksPage() {
   const [iconErrors, setIconErrors] = useState<Record<number, boolean>>({})
   const [results, setResults] = useState<Record<number, string>>({})
   const [menu, setMenu] = useState<{ el: HTMLElement; item: Item } | null>(null)
+  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   const parseSequence = useRef(0)
 
   const domain = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, '') } catch { return url } }
@@ -176,23 +176,24 @@ export default function BookmarksPage() {
   }
 
   return (
-    <Page sx={{ p: 0, gap: 0 }}>
+    <Page variant="bleed">
       <PageToolbar sx={{ px: 2.5, py: 1.25, borderBottom: 1, borderColor: 'divider', rowGap: 1, flexShrink: 0 }}>
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          <TextField size="small" value={query} placeholder="搜索网址" onChange={(event) => setQuery(event.target.value)} sx={{ width: 250 }} />
-          <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>{filtered.length} 个网址</Typography>
-        </Stack>
+        <TextField size="small" value={query} placeholder="搜索网址" onChange={(event) => setQuery(event.target.value)} sx={{ width: 250 }} />
+        <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>{filtered.length} 个网址</Typography>
         <Box sx={{ flex: 1 }} />
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          <CategoryManager resource="bookmarks" onChanged={load} />
-        </Stack>
-        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Tooltip title="检测当前电脑到网站的响应耗时；部分网站无法读取状态"><span><Button size="small" disabled={!filtered.length || testing} onClick={() => void testAll()}>{testing ? '检测中…' : '一键测速'}</Button></span></Tooltip>
-          <Button size="small" disabled={!filtered.length} onClick={openAll}>全部打开</Button>
-        </Stack>
-        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
-        <Button size="small" variant="contained" onClick={() => openForm()}>＋ 添加网址</Button>
+        <Tooltip title="更多">
+          <IconButton size="small" aria-label="更多网址操作" onClick={(event) => setMoreAnchor(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
+        </Tooltip>
+        <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
+          <CategoryManager
+            resource="bookmarks" onChanged={load}
+            trigger={(open) => <MenuItem onClick={() => { setMoreAnchor(null); open() }}>管理分类</MenuItem>}
+          />
+          <MenuItem disabled={!filtered.length || testing} onClick={() => { setMoreAnchor(null); void testAll() }}>{testing ? '检测中…' : '一键测速'}</MenuItem>
+          <MenuItem disabled={!filtered.length} onClick={() => { setMoreAnchor(null); openAll() }}>全部打开</MenuItem>
+          <MenuItem onClick={() => { setMoreAnchor(null); void load() }}>刷新</MenuItem>
+        </Menu>
+        <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => openForm()}>添加网址</Button>
       </PageToolbar>
 
       <PageBody sx={{ overflow: 'auto' }}>
@@ -225,7 +226,6 @@ export default function BookmarksPage() {
       </PageBody>
 
       <Menu anchorEl={menu?.el} open={Boolean(menu)} onClose={() => setMenu(null)}>
-        <MenuItem onClick={() => menu && void action('open', menu.item)}>打开网站 ↗</MenuItem>
         <MenuItem disabled={testing} onClick={() => menu && void action('test', menu.item)}>测速</MenuItem>
         <MenuItem divider onClick={() => menu && void action('edit', menu.item)}>编辑</MenuItem>
         <MenuItem onClick={() => menu && void action('delete', menu.item)}>删除</MenuItem>

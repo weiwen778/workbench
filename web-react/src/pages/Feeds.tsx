@@ -16,7 +16,7 @@ export default function FeedsPage() {
   const tab = TABS.some((item) => item.key === params.get('tab')) ? params.get('tab')! : 'hot'
 
   return (
-    <Page sx={{ p: 0, gap: 0, minHeight: 0 }}>
+    <Page variant="bleed" sx={{ minHeight: 0 }}>
       <PageToolbar sx={{ px: 2, py: 0.75, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
         <Tabs
           value={tab}

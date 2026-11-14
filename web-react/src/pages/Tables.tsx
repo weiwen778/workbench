@@ -4,18 +4,16 @@ import {
   Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, List, ListItem, ListItemButton, ListItemText, Menu, MenuItem,
   Paper, Select, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography, Avatar,
 } from '@mui/material'
-import { Divider } from '@mui/material'
 import Star from '@mui/icons-material/Star'
 import StarBorder from '@mui/icons-material/StarBorder'
 import GridView from '@mui/icons-material/GridView'
 import ViewList from '@mui/icons-material/ViewList'
-import { AutoAwesome, Collection, Delete, MoreFilled, Plus, Refresh, Search, Upload } from '@/icons'
+import { Collection, Delete, MoreFilled, Plus, Refresh, Search, Upload } from '@/icons'
 import { apiError, http } from '@/api/client'
 import { EmptyHint, FieldRow, Page, PageBody, PageToolbar } from '@/ui/common'
 import { confirmDialog, promptDialog, toast } from '@/ui/feedback'
 import ImportWizard from '@/components/ImportWizard'
 import DeleteTableDialog from '@/components/DeleteTableDialog'
-import AiTableFill from '@/components/AiTableFill'
 
 const fieldTypes = [
   { label: '短文本', value: 'short_text' }, { label: '长文本', value: 'long_text' },
@@ -56,8 +54,8 @@ export default function TablesPage() {
   const [favorites, setFavorites] = useState<number[]>(() => readIds('wb_table_favorites'))
   const [recent, setRecent] = useState<number[]>(() => readIds('wb_table_recent'))
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
+  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   const [menuTable, setMenuTable] = useState<any | null>(null)
-  const [aiTable, setAiTable] = useState<any | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
@@ -158,37 +156,39 @@ export default function TablesPage() {
   )
 
   return (
-    <Page sx={{ p: 1.5, gap: 1.25 }}>
-      <PageToolbar sx={{ rowGap: 1 }}>
+    <Page variant="dense">
+      <PageToolbar>
         <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
           {tables.length} 张表格 · {totalRecords} 条数据{latest ? ` · 最近更新 ${relativeTime(latest)}` : ''}
         </Typography>
         <div className="spacer" />
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          <TextField
-            size="small" placeholder="搜索表格名称、说明或字段" value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            InputProps={{ startAdornment: <Search sx={{ fontSize: 16, mr: 0.75, color: 'text.secondary' }} /> }}
-            sx={{ width: { xs: '100%', sm: 230 } }}
-          />
-          <Select size="small" value={sort} onChange={(event) => setSort(event.target.value as SortKey)} sx={{ width: 126 }} inputProps={{ 'aria-label': '表格排序' }}>
-            <MenuItem value="updated">最近更新</MenuItem>
-            <MenuItem value="name">按名称</MenuItem>
-            <MenuItem value="records">按数据量</MenuItem>
-          </Select>
-          <ToggleButtonGroup size="small" exclusive value={view} onChange={(_, value) => value && setViewMode(value)}>
-            <ToggleButton value="cards" aria-label="卡片视图"><GridView sx={{ fontSize: 17 }} /></ToggleButton>
-            <ToggleButton value="list" aria-label="列表视图"><ViewList sx={{ fontSize: 17 }} /></ToggleButton>
-          </ToggleButtonGroup>
-        </Stack>
-        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Button size="small" startIcon={<Refresh fontSize="small" />} onClick={() => void load()}>刷新</Button>
-          <Button size="small" startIcon={<Upload fontSize="small" />} onClick={() => setImportOpen(true)}>从 Excel 导入</Button>
-          <Button size="small" onClick={() => navigate('/docs?module=sheet')}>打开工作簿</Button>
-        </Stack>
-        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
-        <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => setCreateOpen(true)}>新建表格</Button>
+        {!empty ? (
+          <>
+            <TextField
+              size="small" placeholder="搜索表格名称、说明或字段" value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              InputProps={{ startAdornment: <Search sx={{ fontSize: 16, mr: 0.75, color: 'text.secondary' }} /> }}
+              sx={{ width: { xs: '100%', sm: 230 } }}
+            />
+            <Select size="small" value={sort} onChange={(event) => setSort(event.target.value as SortKey)} sx={{ width: 126 }} inputProps={{ 'aria-label': '表格排序' }}>
+              <MenuItem value="updated">最近更新</MenuItem>
+              <MenuItem value="name">按名称</MenuItem>
+              <MenuItem value="records">按数据量</MenuItem>
+            </Select>
+            <ToggleButtonGroup size="small" exclusive value={view} onChange={(_, value) => value && setViewMode(value)}>
+              <ToggleButton value="cards" aria-label="卡片视图"><GridView sx={{ fontSize: 17 }} /></ToggleButton>
+              <ToggleButton value="list" aria-label="列表视图"><ViewList sx={{ fontSize: 17 }} /></ToggleButton>
+            </ToggleButtonGroup>
+            <Tooltip title="刷新">
+              <span><IconButton size="small" aria-label="刷新表格列表" disabled={loading} onClick={() => void load()}><Refresh fontSize="small" /></IconButton></span>
+            </Tooltip>
+            <Button size="small" startIcon={<Upload fontSize="small" />} onClick={() => setImportOpen(true)}>导入</Button>
+            <Tooltip title="更多">
+              <IconButton size="small" aria-label="更多表格操作" onClick={(event) => setMoreAnchor(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
+            </Tooltip>
+            <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => setCreateOpen(true)}>新建表格</Button>
+          </>
+        ) : null}
       </PageToolbar>
 
       <PageBody sx={{ overflow: 'auto', pt: 0.75 }}>
@@ -241,28 +241,34 @@ export default function TablesPage() {
                 <Paper
                   key={row.id}
                   variant="outlined"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`打开表格 ${row.name}`}
+                  onClick={() => openTable(row)}
+                  onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openTable(row) } }}
                   sx={{
-                    p: 1.75, display: 'flex', flexDirection: 'column', gap: 1, minHeight: 172,
-                    borderRadius: 1.5, transition: 'border-color .15s, box-shadow .15s',
+                    p: 2, display: 'flex', flexDirection: 'column', gap: 1, minHeight: 172,
+                    borderRadius: 1.5, cursor: 'pointer', transition: 'border-color .15s, box-shadow .15s',
                     '&:hover': { borderColor: 'primary.main', boxShadow: '0 4px 14px rgba(26,36,38,0.06)' },
+                    '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 1 },
                   }}
                 >
                   <Stack direction="row" spacing={1} alignItems="flex-start">
                     <Box sx={{ width: 32, height: 32, flexShrink: 0, borderRadius: 1, display: 'grid', placeItems: 'center', bgcolor: 'action.selected', color: 'primary.main' }}>
                       <Collection sx={{ fontSize: 17 }} />
                     </Box>
-                    <Box sx={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => openTable(row)}>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
                       <Typography sx={{ fontSize: 14, fontWeight: 600, lineHeight: 1.4 }} noWrap>{row.name}</Typography>
                       <Typography sx={{ fontSize: 11.5, color: 'text.secondary', mt: 0.25, display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden', lineHeight: 1.55 }}>
                         {row.note || '暂无说明'}
                       </Typography>
                     </Box>
                     <Tooltip title={favorite ? '取消收藏' : '收藏'}>
-                      <IconButton size="small" aria-label={favorite ? '取消收藏' : '收藏'} onClick={() => toggleFavorite(row.id)}>
+                      <IconButton size="small" aria-label={favorite ? '取消收藏' : '收藏'} onClick={(event) => { event.stopPropagation(); toggleFavorite(row.id) }}>
                         {favorite ? <Star sx={{ fontSize: 16, color: '#C9A25B' }} /> : <StarBorder sx={{ fontSize: 16, color: 'text.disabled' }} />}
                       </IconButton>
                     </Tooltip>
-                    <IconButton size="small" aria-label="更多操作" onClick={(event) => { setMenuAnchor(event.currentTarget); setMenuTable(row) }}>
+                    <IconButton size="small" aria-label="更多操作" onClick={(event) => { event.stopPropagation(); setMenuAnchor(event.currentTarget); setMenuTable(row) }}>
                       <MoreFilled sx={{ fontSize: 16 }} />
                     </IconButton>
                   </Stack>
@@ -272,10 +278,6 @@ export default function TablesPage() {
                   <Typography sx={{ fontSize: 11.5, color: 'text.disabled', mt: 'auto' }}>
                     {row.field_count || 0} 列 · {row.record_count || 0} 条 · {relativeTime(row.updated_at)}
                   </Typography>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ borderTop: 1, borderColor: 'divider', pt: 0.75 }}>
-                    <Button size="small" onClick={() => openTable(row)}>打开</Button>
-                    <Button size="small" startIcon={<AutoAwesome fontSize="small" />} onClick={() => setAiTable(row)}>AI 填入</Button>
-                  </Stack>
                 </Paper>
               )
             })}
@@ -313,8 +315,6 @@ export default function TablesPage() {
                           {favorite ? <Star sx={{ fontSize: 16, color: '#C9A25B' }} /> : <StarBorder sx={{ fontSize: 16, color: 'text.disabled' }} />}
                         </IconButton>
                       </Tooltip>
-                      <Button size="small" onClick={() => openTable(row)}>打开</Button>
-                      <Button size="small" onClick={() => setAiTable(row)}>AI 填入</Button>
                       <IconButton size="small" aria-label="更多操作" onClick={(event) => { setMenuAnchor(event.currentTarget); setMenuTable(row) }}>
                         <MoreFilled sx={{ fontSize: 16 }} />
                       </IconButton>
@@ -334,10 +334,12 @@ export default function TablesPage() {
       </PageBody>
 
       <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
-        <MenuItem onClick={() => { if (menuTable) openTable(menuTable); setMenuAnchor(null) }}>打开</MenuItem>
         <MenuItem onClick={() => { if (menuTable) void rename(menuTable); setMenuAnchor(null) }}>重命名</MenuItem>
-        <MenuItem onClick={() => { if (menuTable) setAiTable(menuTable); setMenuAnchor(null) }}>AI 填入</MenuItem>
         <MenuItem divider onClick={() => { if (menuTable) { setDeletingTable(menuTable); setDeleteOpen(true) } setMenuAnchor(null) }} sx={{ color: 'error.main' }}>删除表格</MenuItem>
+      </Menu>
+
+      <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
+        <MenuItem onClick={() => { setMoreAnchor(null); navigate('/docs?module=sheet') }}>在文档工作簿中打开</MenuItem>
       </Menu>
 
       <Dialog open={createOpen} onClose={() => setCreateOpen(false)} maxWidth="sm" fullWidth>
@@ -379,7 +381,6 @@ export default function TablesPage() {
           void load()
         }}
       />
-      {aiTable ? <AiTableFill open tableId={aiTable.id} onClose={() => setAiTable(null)} onSaved={() => void load()} /> : null}
     </Page>
   )
 }

@@ -313,7 +313,7 @@ export default function TranslatePage() {
   })
 
   return (
-    <Page sx={{ gap: 1 }}>
+    <Page variant="dense">
       <PageToolbar sx={{ rowGap: 1 }}>
         <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
           <FormControl size="small" sx={{ width: 138 }}>

@@ -1,24 +1,24 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
-  AppBar, Badge, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer,
-  IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Paper, Stack, TextField, Toolbar, Tooltip,
+  AppBar, Badge, Box, Button, CircularProgress, IconButton, Paper, Stack, Toolbar, Tooltip,
   Typography,
 } from '@mui/material'
 import {
-  Add, ChecklistRtl, DarkModeOutlined, EventAvailable, LightModeOutlined, List as ListIcon, MoreHoriz,
+  ChecklistRtl, DarkModeOutlined, EventAvailable, LightModeOutlined, List as ListIcon, MoreHoriz,
   Search, Settings, TableChart, TaskAlt,
 } from '@mui/icons-material'
 import AppRail from './AppRail'
-import ModulePanel from './ModulePanel'
 import ModuleTabs from './ModuleTabs'
+import { ManageNavDialog, NavAllDrawer } from './NavPanels'
+import { APP_NAV_KEYS, DEFAULT_PINNED_KEYS, MAX_PINNED } from './app-nav'
+import { readPinnedKeys, readSidebarMode, writePinnedKeys, writeSidebarMode, type SidebarMode } from './sidebar-order'
 import GlobalSearchDialog from '@/components/GlobalSearchDialog'
 import WorkspaceToolsDialog from '@/components/WorkspaceToolsDialog'
 import { buildGroups, toolItems, type SidebarData } from './nav'
 import { http, apiError } from '@/api/client'
 import { toggleTheme, useSession } from '@/session'
-import { promptDialog, toast } from '@/ui/feedback'
-import { FieldRow } from '@/ui/common'
+import { toast } from '@/ui/feedback'
 
 const EMPTY_DATA: SidebarData = {
   checkinTargets: [], tables: [], dashboards: [], todoLists: [], noteFolders: [],
@@ -52,15 +52,15 @@ export default function AppLayout() {
 
   const [narrow, setNarrow] = useState(() => window.innerWidth < 900)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [allNavOpen, setAllNavOpen] = useState(false)
+  const [manageNavOpen, setManageNavOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [toolsOpen, setToolsOpen] = useState(false)
   const [toolsView, setToolsView] = useState<'tasks' | 'activity'>('tasks')
   const [taskCount, setTaskCount] = useState(0)
   const [data, setData] = useState<SidebarData>(EMPTY_DATA)
-  const [newTableOpen, setNewTableOpen] = useState(false)
-  const [newTable, setNewTable] = useState({ name: '', note: '' })
-  const [creatingTable, setCreatingTable] = useState(false)
-  const [createAnchor, setCreateAnchor] = useState<HTMLElement | null>(null)
+  const [navMode, setNavMode] = useState<SidebarMode>(() => readSidebarMode(session.user?.id))
+  const [pinned, setPinned] = useState<string[]>(() => readPinnedKeys(session.user?.id, DEFAULT_PINNED_KEYS, APP_NAV_KEYS))
 
   const loadTargets = useCallback(async () => {
     try {
@@ -131,6 +131,32 @@ export default function AppLayout() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+
+  useEffect(() => {
+    setNavMode(readSidebarMode(session.user?.id))
+    setPinned(readPinnedKeys(session.user?.id, DEFAULT_PINNED_KEYS, APP_NAV_KEYS))
+  }, [session.user?.id])
+
+  useEffect(() => {
+    if (!narrow) setDrawerOpen(false)
+  }, [narrow])
+
+  const toggleNavMode = () => {
+    const next: SidebarMode = navMode === 'wide' ? 'narrow' : 'wide'
+    setNavMode(next)
+    writeSidebarMode(session.user?.id, next)
+  }
+
+  const updatePinned = (keys: string[]) => {
+    const next = keys.slice(0, MAX_PINNED)
+    setPinned(next)
+    writePinnedKeys(session.user?.id, next)
+  }
+
+  const togglePin = (key: string) => {
+    if (pinned.includes(key)) updatePinned(pinned.filter((value) => value !== key))
+    else if (pinned.length < MAX_PINNED) updatePinned([...pinned, key])
+  }
 
   useEffect(() => {
     const openTasks = () => { setToolsView('tasks'); setToolsOpen(true) }
@@ -237,91 +263,6 @@ export default function AppLayout() {
     return ['/visualizations/', '/settings/', '/memos'].some((prefix) => path.startsWith(prefix))
   }, [location.pathname])
 
-  const createForGroup = async (key: string) => {
-    setCreateAnchor(null)
-    try {
-      if (key === 'checkin') {
-        const value = await promptDialog({ title: '新建打卡项目', label: '打卡项目名称', placeholder: '例如：天猫旗舰店', maxLength: 100, confirmText: '创建' })
-        if (!value) return
-        const { data: target } = await http.post('/work-targets', { kind: 'shop', name: value })
-        await loadTargets()
-        window.dispatchEvent(new Event('wb:checkins-changed'))
-        navigate(`/checkins/targets/${target.id}`)
-      } else if (key === 'visualizations') {
-        const value = await promptDialog({ title: '新建看板', label: '看板名称', placeholder: '例如：天猫旗舰店、抖音店铺', maxLength: 80, confirmText: '创建' })
-        if (!value) return
-        const { data: board } = await http.post('/dashboards', { name: value })
-        await loadDashboards()
-        navigate(`/visualizations/${board.id}`)
-      } else if (key === 'data') {
-        setNewTable({ name: '', note: '' })
-        setNewTableOpen(true)
-      } else if (key === 'todos') {
-        const value = await promptDialog({ title: '新建清单', label: '清单名称', placeholder: '例如：本周工作、店铺活动', maxLength: 100, confirmText: '创建' })
-        if (!value) return
-        const { data: list } = await http.post('/todo-lists', { name: value })
-        await loadTodoLists()
-        navigate(`/todos/${list.id}`)
-      } else if (key === 'notes') {
-        const value = await promptDialog({ title: '新建文件夹', label: '文件夹名称', placeholder: '例如：经营复盘、流程与SOP', maxLength: 100, confirmText: '创建' })
-        if (!value) return
-        const { data: folder } = await http.post('/note-folders', { name: value })
-        await loadNoteFolders()
-        navigate(`/notes/${folder.id}`)
-      } else if (key === 'memos') {
-        const value = await promptDialog({
-          title: '新建便利贴分类', label: '分类名称', placeholder: '例如：工作灵感', maxLength: 80, confirmText: '创建',
-          validate: (name) => (!name || name === '未分类' ? '请输入 1–80 个字的名称，不能使用未分类' : true),
-        })
-        if (!value) return
-        const { data: created } = await http.post('/memos/categories', { name: value })
-        await loadMemoCategories()
-        window.dispatchEvent(new Event('wb:memos-changed'))
-        navigate(`/memos?category=${encodeURIComponent(created.name)}`)
-      } else if (key === 'bookmarks') {
-        const value = await promptDialog({ title: '新建网址分类', label: '分类名称', placeholder: '例如：运营工具', maxLength: 80, confirmText: '创建' })
-        if (!value) return
-        const { data: created } = await http.post('/bookmarks/categories', { name: value })
-        await loadBookmarkCategories()
-        window.dispatchEvent(new Event('wb-bookmarks-changed'))
-        navigate(`/bookmarks?category=${encodeURIComponent(created.name)}`)
-      }
-    } catch (error) {
-      toast.error(apiError(error).message)
-    }
-  }
-
-  const renameCheckin = async (targetId: number) => {
-    const target = data.checkinTargets.find((item) => item.id === targetId)
-    if (!target) return
-    const value = await promptDialog({ title: '重命名打卡项目', label: '打卡项目名称', defaultValue: target.name, maxLength: 100, confirmText: '保存' })
-    if (!value) return
-    try {
-      await http.patch(`/work-targets/${targetId}`, { name: value })
-      await loadTargets()
-      window.dispatchEvent(new Event('wb:checkins-changed'))
-    } catch (error) {
-      toast.error(apiError(error).message)
-    }
-  }
-
-  const createTable = async () => {
-    if (!newTable.name.trim()) { toast.warning('请填写表格名称'); return }
-    setCreatingTable(true)
-    try {
-      const { data: created } = await http.post('/tables', { name: newTable.name.trim(), note: newTable.note, fields: [] })
-      toast.success('已创建，接下来添加一列')
-      setNewTableOpen(false)
-      await loadTables()
-      window.dispatchEvent(new Event('wb:tables-changed'))
-      navigate(`/data/${created.id}`)
-    } catch (error) {
-      toast.error(apiError(error).message)
-    } finally {
-      setCreatingTable(false)
-    }
-  }
-
   const bottomNav = [
     { key: 'checkin', label: '打卡', path: '/checkins', icon: EventAvailable },
     { key: 'todos', label: '待办', path: '/todos', icon: ChecklistRtl },
@@ -331,7 +272,15 @@ export default function AppLayout() {
 
   return (
     <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
-      {!narrow ? <AppRail /> : null}
+      {!narrow ? (
+        <AppRail
+          mode={navMode}
+          pinned={pinned}
+          onToggleMode={toggleNavMode}
+          onOpenAll={() => setAllNavOpen(true)}
+          onManage={() => setManageNavOpen(true)}
+        />
+      ) : null}
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', flex: 1, minWidth: 0 }}>
         <AppBar position="static" color="transparent" elevation={0} sx={{ bgcolor: 'background.paper', borderBottom: 1, borderColor: 'divider' }}>
           <Toolbar variant="dense" sx={{ gap: 0.75, minHeight: 44, px: 2 }}>
@@ -361,9 +310,6 @@ export default function AppLayout() {
               <IconButton size="small" aria-label="搜索" sx={{ display: { xs: 'inline-flex', sm: 'none' } }} onClick={() => setSearchOpen(true)}>
                 <Search fontSize="small" />
               </IconButton>
-            </Tooltip>
-            <Tooltip title="新建">
-              <IconButton size="small" aria-label="新建" onClick={(event) => setCreateAnchor(event.currentTarget)}><Add sx={{ fontSize: 26 }} /></IconButton>
             </Tooltip>
             <Tooltip title="任务中心">
               <IconButton
@@ -408,35 +354,21 @@ export default function AppLayout() {
         </Box>
       </Box>
 
-      <Menu anchorEl={createAnchor} open={Boolean(createAnchor)} onClose={() => setCreateAnchor(null)}>
-        {[
-          { key: 'data', label: '新建表格' },
-          { key: 'todos', label: '新建待办清单' },
-          { key: 'notes', label: '新建笔记文件夹' },
-          { key: 'memos', label: '新建便利贴分类' },
-          { key: 'visualizations', label: '新建看板' },
-          { key: 'checkin', label: '新建打卡项目' },
-        ].map((item) => (
-          <MenuItem key={item.key} onClick={() => void createForGroup(item.key)}>
-            <ListItemIcon><Add fontSize="small" /></ListItemIcon>
-            <ListItemText>{item.label}</ListItemText>
-          </MenuItem>
-        ))}
-      </Menu>
+      <NavAllDrawer
+        open={drawerOpen || allNavOpen}
+        onClose={() => { setDrawerOpen(false); setAllNavOpen(false) }}
+        pinned={pinned}
+        onTogglePin={togglePin}
+        onManage={() => { setDrawerOpen(false); setAllNavOpen(false); setManageNavOpen(true) }}
+        showFooter={narrow}
+      />
 
-      <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} slotProps={{ paper: { sx: { width: 'min(320px, 100vw)', display: 'flex', flexDirection: 'row' } } }}>
-        <AppRail />
-        <Box sx={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
-          <ModulePanel
-            moduleKey={moduleKey || 'data'}
-            data={data}
-            onCollapse={() => setDrawerOpen(false)}
-            onCreate={createForGroup}
-            onRenameCheckin={renameCheckin}
-            onNavigate={() => setDrawerOpen(false)}
-          />
-        </Box>
-      </Drawer>
+      <ManageNavDialog
+        open={manageNavOpen}
+        onClose={() => setManageNavOpen(false)}
+        pinned={pinned}
+        onChange={updatePinned}
+      />
 
       {narrow ? (
         <Paper
@@ -469,22 +401,6 @@ export default function AppLayout() {
 
       <GlobalSearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} />
       <WorkspaceToolsDialog open={toolsOpen} initialView={toolsView} onClose={() => setToolsOpen(false)} />
-
-      <Dialog open={newTableOpen} onClose={() => setNewTableOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>新建表格</DialogTitle>
-        <DialogContent>
-          <FieldRow label="表格名称" required>
-            <TextField fullWidth autoFocus value={newTable.name} placeholder="例如：商品台账" inputProps={{ maxLength: 100 }} onChange={(event) => setNewTable({ ...newTable, name: event.target.value })} />
-          </FieldRow>
-          <FieldRow label="说明">
-            <TextField fullWidth multiline minRows={2} value={newTable.note} inputProps={{ maxLength: 2000 }} onChange={(event) => setNewTable({ ...newTable, note: event.target.value })} />
-          </FieldRow>
-        </DialogContent>
-        <DialogActions>
-          <Button size="small" onClick={() => setNewTableOpen(false)}>取消</Button>
-          <Button size="small" variant="contained" disabled={creatingTable} onClick={createTable}>创建</Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   )
 }

@@ -1,14 +1,15 @@
 import { useLocation, useNavigate } from 'react-router-dom'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Button, Drawer, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material'
 import { http, apiError } from '@/api/client'
 import { confirmDialog, promptDialog, toast } from '@/ui/feedback'
 import { SectionTitle } from '@/ui/common'
 
-export default function CategoryManager({ resource, onChanged, buttonSx }: {
+export default function CategoryManager({ resource, onChanged, buttonSx, trigger }: {
   resource: 'memos' | 'bookmarks'
   onChanged?: () => void
   buttonSx?: any
+  trigger?: (open: () => void) => ReactNode
 }) {
   const label = resource === 'memos' ? '便利贴' : '网址'
   const navigate = useNavigate()
@@ -86,7 +87,7 @@ export default function CategoryManager({ resource, onChanged, buttonSx }: {
 
   return (
     <>
-      <Button size="small" onClick={openDrawer} sx={buttonSx}>管理分类</Button>
+      {trigger ? trigger(openDrawer) : <Button size="small" onClick={openDrawer} sx={buttonSx}>管理分类</Button>}
       <Drawer anchor="right" open={open} onClose={() => setOpen(false)} slotProps={{ paper: { sx: { width: 'min(520px, 100vw)', p: 2.5 } } }}>
         <SectionTitle>{label}分类管理</SectionTitle>
         <Stack direction="row" spacing={1} sx={{ mb: 1.5 }}>

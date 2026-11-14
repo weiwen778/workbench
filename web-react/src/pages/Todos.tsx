@@ -312,8 +312,9 @@ export default function TodosPage() {
               <>
                 <IconButton size="small" aria-label="清单操作" onClick={(event) => setListMenu(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
                 <Menu anchorEl={listMenu} open={Boolean(listMenu)} onClose={() => setListMenu(null)}>
+                  <MenuItem onClick={() => { setListMenu(null); void createList() }}>新建清单</MenuItem>
                   <MenuItem onClick={() => currentList && void listCommand('rename', currentList)}>重命名清单</MenuItem>
-                  <MenuItem onClick={() => currentList && void listCommand('delete', currentList)}>删除清单</MenuItem>
+                  <MenuItem divider sx={{ color: 'error.main' }} onClick={() => currentList && void listCommand('delete', currentList)}>删除清单</MenuItem>
                 </Menu>
               </>
             ) : null}
@@ -327,9 +328,9 @@ export default function TodosPage() {
             <Typography variant="caption" color="text.secondary">未完成 {counts.nodes_pending} / 全部 {counts.nodes_total}</Typography>
           </Stack>
           <div className="spacer" />
-          <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-            <Button size="small" startIcon={<Refresh fontSize="small" />} onClick={() => void load()}>刷新</Button>
-          </Stack>
+          <Tooltip title="刷新">
+            <span><IconButton size="small" aria-label="刷新待办" onClick={() => void load()}><Refresh fontSize="small" /></IconButton></span>
+          </Tooltip>
         </PageToolbar>
 
         <Paper variant="outlined" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1.25, mb: 1 }}>

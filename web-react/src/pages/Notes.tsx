@@ -247,6 +247,16 @@ export default function NotesPage() {
 
   const folderCommand = async (command: string) => {
     setFolderMenu(null)
+    if (command === 'create') {
+      const value = await promptDialog({ title: '新建文件夹', label: '文件夹名称', placeholder: '例如：经营复盘', maxLength: 100, confirmText: '创建' })
+      if (!value) return
+      try {
+        const { data } = await http.post('/note-folders', { name: value })
+        await loadFolders()
+        navigate(`/notes/${data.id}`)
+      } catch (error) { toast.error(apiError(error).message) }
+      return
+    }
     if (!selectedFolder) return
     if (command === 'delete') { await removeFolder(selectedFolder); return }
     const value = await promptDialog({ title: '重命名文件夹', label: '文件夹名称', defaultValue: selectedFolder.name, maxLength: 100, confirmText: '保存' })
@@ -381,10 +391,11 @@ export default function NotesPage() {
             <Typography sx={{ fontSize: 13, fontWeight: 600 }} noWrap>
               {selectedFolder?.name || (uncategorizedFilter ? '未分类' : missingFolder ? '文件夹不存在' : '全部笔记')}
             </Typography>
-            {selectedFolder ? <IconButton size="small" aria-label="文件夹操作" onClick={(event) => setFolderMenu(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton> : null}
+            <IconButton size="small" aria-label="文件夹操作" onClick={(event) => setFolderMenu(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
             <Menu anchorEl={folderMenu} open={Boolean(folderMenu)} onClose={() => setFolderMenu(null)}>
-              <MenuItem onClick={() => void folderCommand('rename')}>重命名文件夹</MenuItem>
-              <MenuItem onClick={() => void folderCommand('delete')}>删除文件夹</MenuItem>
+              <MenuItem onClick={() => void folderCommand('create')}>新建文件夹</MenuItem>
+              {selectedFolder ? <MenuItem onClick={() => void folderCommand('rename')}>重命名文件夹</MenuItem> : null}
+              {selectedFolder ? <MenuItem divider sx={{ color: 'error.main' }} onClick={() => void folderCommand('delete')}>删除文件夹</MenuItem> : null}
             </Menu>
           </Stack>
           {missingFolder ? <Alert severity="error" sx={{ mb: 1, fontSize: 12 }}>文件夹不存在或已删除</Alert> : null}

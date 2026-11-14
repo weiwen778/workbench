@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer,
-  FormControl, InputLabel, MenuItem, Paper, Popover, Select, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
+  FormControl, IconButton, InputLabel, Menu, MenuItem, Paper, Popover, Select, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
 import { Divider } from '@mui/material'
-import { Clock, Download, InfoFilled, Plus, Refresh, Setting, Upload } from '@/icons'
+import { Clock, Download, InfoFilled, MoreFilled, Plus, Refresh, Setting, Upload } from '@/icons'
 import { apiError, http } from '@/api/client'
 import { DataTable, EmptyHint, FieldRow, Page, PageBody, PageToolbar, UploadDropzone } from '@/ui/common'
 import { confirmDialog, promptDialog, toast } from '@/ui/feedback'
@@ -38,6 +38,8 @@ export default function CheckinPage() {
   const [groupDelete, setGroupDelete] = useState<any | null>(null)
   const [moveGroupTo, setMoveGroupTo] = useState<number | ''>('')
   const [groupDeleting, setGroupDeleting] = useState(false)
+  const [targetMenu, setTargetMenu] = useState<{ el: HTMLElement; row: any } | null>(null)
+  const [groupMenu, setGroupMenu] = useState<{ el: HTMLElement; row: any } | null>(null)
 
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyItems, setHistoryItems] = useState<any[]>([])
@@ -285,7 +287,7 @@ export default function CheckinPage() {
         : '当前没有要做的打卡'
 
   return (
-    <Page sx={{ p: 1.5, gap: 1 }}>
+    <Page variant="dense">
       <PageToolbar sx={{ rowGap: 1 }}>
         <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
           <ToggleButtonGroup size="small" exclusive value={period} onChange={(_, value) => value && setPeriod(value)}>
@@ -327,9 +329,10 @@ export default function CheckinPage() {
         </Stack>
         <Box className="spacer" />
         <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Button size="small" startIcon={loading ? <CircularProgress size={14} color="inherit" /> : <Refresh fontSize="small" />} disabled={loading} onClick={() => void refresh(true)}>刷新</Button>
+          <Tooltip title="刷新">
+            <span><IconButton size="small" aria-label="刷新打卡" disabled={loading} onClick={() => void refresh(true)}>{loading ? <CircularProgress size={14} /> : <Refresh fontSize="small" />}</IconButton></span>
+          </Tooltip>
           <Button size="small" startIcon={<Clock fontSize="small" />} onClick={() => setHistoryOpen(true)}>历史</Button>
-          <Button size="small" startIcon={<Upload fontSize="small" />} onClick={() => { setImportError(''); setImportResult(null); setImportOpen(true) }}>导入</Button>
           {targetId ? <Button size="small" onClick={() => navigate(`/checkins/targets/${targetId}`)}>资料与任务</Button> : null}
         </Stack>
         <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
@@ -426,7 +429,10 @@ export default function CheckinPage() {
       </Popover>
 
       <Drawer anchor="right" open={manageOpen} onClose={() => setManageOpen(false)} slotProps={{ paper: { sx: { width: 'min(760px, 100vw)', p: 2.5 } } }}>
-        <Typography sx={{ fontSize: 16, fontWeight: 600, mb: 2 }}>打卡项目与分类</Typography>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+          <Typography sx={{ fontSize: 16, fontWeight: 600 }}>打卡项目与分类</Typography>
+          <Button size="small" startIcon={<Upload fontSize="small" />} onClick={() => { setImportError(''); setImportResult(null); setImportOpen(true) }}>导入打卡数据</Button>
+        </Stack>
         <Stack direction="row" spacing={1} sx={{ mb: 1.5 }} flexWrap="wrap" useFlexGap>
           <TextField size="small" label="名称" value={newTarget.name} onChange={(event) => setNewTarget({ ...newTarget, name: event.target.value })} inputProps={{ maxLength: 100 }} sx={{ width: 180 }} />
           <TextField size="small" label="平台（可选）" value={newTarget.platform} onChange={(event) => setNewTarget({ ...newTarget, platform: event.target.value })} inputProps={{ maxLength: 100 }} sx={{ width: 170 }} />
@@ -441,16 +447,14 @@ export default function CheckinPage() {
             { key: 'rules', label: '任务数', width: 80, align: 'center', render: (row) => row.rule_count },
             { key: 'status', label: '状态', width: 90, render: (row) => row.status === 'archived' ? '已暂停' : '使用中' },
             {
-              key: 'actions', label: '操作', width: 250,
+              key: 'actions', label: '操作', width: 56, align: 'right',
               render: (row) => (
-                <Stack direction="row" spacing={0.2} flexWrap="wrap">
-                  <Button size="small" onClick={() => setTargetEdit({ id: row.id, name: row.name, platform: row.platform || '' })}>修改</Button>
-                  <Button size="small" onClick={() => { setManageOpen(false); navigate(`/checkins/targets/${row.id}`) }}>资料与任务</Button>
-                  <Button size="small" color="error" onClick={() => void deleteTarget(row)}>删除</Button>
-                  {row.status === 'active'
-                    ? <Button size="small" onClick={() => void archive(row)}>暂停</Button>
-                    : <Button size="small" onClick={() => void restore(row)}>恢复</Button>}
-                </Stack>
+                <IconButton
+                  size="small" aria-label={`${row.name}的操作`}
+                  onClick={(event) => setTargetMenu({ el: event.currentTarget, row })}
+                >
+                  <MoreFilled fontSize="small" />
+                </IconButton>
               ),
             },
           ]}
@@ -469,17 +473,28 @@ export default function CheckinPage() {
             { key: 'name', label: '分类', width: 180, ellipsis: true },
             { key: 'rules', label: '任务数', width: 90, align: 'center', render: (row) => row.rule_count },
             {
-              key: 'actions', label: '操作', width: 150,
+              key: 'actions', label: '操作', width: 56, align: 'right',
               render: (row) => (
-                <Stack direction="row" spacing={0.2}>
-                  <Button size="small" onClick={() => void renameGroup(row)}>重命名</Button>
-                  <Button size="small" color="error" onClick={() => { setGroupDelete(row); setMoveGroupTo('') }}>删除</Button>
-                </Stack>
+                <IconButton size="small" aria-label={`${row.name}分类的操作`} onClick={(event) => setGroupMenu({ el: event.currentTarget, row })}>
+                  <MoreFilled fontSize="small" />
+                </IconButton>
               ),
             },
           ]}
         />
       </Drawer>
+
+      <Menu anchorEl={targetMenu?.el || null} open={Boolean(targetMenu)} onClose={() => setTargetMenu(null)}>
+        <MenuItem onClick={() => { const row = targetMenu?.row; setTargetMenu(null); if (row) setTargetEdit({ id: row.id, name: row.name, platform: row.platform || '' }) }}>修改</MenuItem>
+        <MenuItem onClick={() => { const row = targetMenu?.row; setTargetMenu(null); if (row) { setManageOpen(false); navigate(`/checkins/targets/${row.id}`) } }}>资料与任务</MenuItem>
+        <MenuItem onClick={() => { const row = targetMenu?.row; setTargetMenu(null); if (row) { if (row.status === 'active') void archive(row); else void restore(row) } }}>{targetMenu?.row?.status === 'active' ? '暂停' : '恢复'}</MenuItem>
+        <MenuItem divider sx={{ color: 'error.main' }} onClick={() => { const row = targetMenu?.row; setTargetMenu(null); if (row) void deleteTarget(row) }}>删除</MenuItem>
+      </Menu>
+
+      <Menu anchorEl={groupMenu?.el || null} open={Boolean(groupMenu)} onClose={() => setGroupMenu(null)}>
+        <MenuItem onClick={() => { const row = groupMenu?.row; setGroupMenu(null); if (row) void renameGroup(row) }}>重命名</MenuItem>
+        <MenuItem divider sx={{ color: 'error.main' }} onClick={() => { const row = groupMenu?.row; setGroupMenu(null); if (row) { setGroupDelete(row); setMoveGroupTo('') } }}>删除</MenuItem>
+      </Menu>
 
       <Dialog open={Boolean(targetEdit)} onClose={() => setTargetEdit(null)} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>修改打卡项目</DialogTitle>

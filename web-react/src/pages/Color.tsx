@@ -199,7 +199,7 @@ export default function ColorPage() {
   }
 
   return (
-    <Page sx={{ p: 1.5, gap: 1 }}>
+    <Page variant="dense">
       <PageToolbar>
         <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
           <Button size="small" variant="contained" startIcon={<Picture fontSize="small" />} onClick={() => fileInput.current?.click()} disabled={loading}>选择图片</Button>

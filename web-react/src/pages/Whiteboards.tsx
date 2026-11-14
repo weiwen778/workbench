@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Box, Button, Card, Chip, IconButton, InputAdornment, Stack, TextField, Tooltip, Typography,
+  Box, Button, Card, Chip, IconButton, InputAdornment, Menu, MenuItem, Stack, TextField, Tooltip, Typography,
 } from '@mui/material'
-import { Brush, CopyDocument, Delete, Edit, Plus, Refresh, Search } from '@/icons'
+import { Brush, Edit, MoreFilled, Plus, Refresh, Search } from '@/icons'
 import { apiError } from '@/api/client'
 import { useSession } from '@/session'
 import { EmptyHint, LoadingBlock, Page, PageBody, PageToolbar } from '@/ui/common'
@@ -33,6 +33,7 @@ export default function WhiteboardsPage() {
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
   const [busyId, setBusyId] = useState<number | null>(null)
+  const [boardMenu, setBoardMenu] = useState<{ el: HTMLElement; board: WhiteboardSummary } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -149,7 +150,7 @@ export default function WhiteboardsPage() {
           InputProps={{ startAdornment: <InputAdornment position="start"><Search sx={{ fontSize: 17 }} /></InputAdornment> }}
         />
         <Tooltip title="刷新"><span><IconButton size="small" aria-label="刷新白板列表" onClick={() => void load()} disabled={loading}><Refresh fontSize="small" /></IconButton></span></Tooltip>
-        <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => void create()}>新建白板</Button>
+        {boards.length ? <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => void create()}>新建白板</Button> : null}
       </PageToolbar>
       <PageBody>
         {loading ? <LoadingBlock text="正在加载白板…" /> : error ? (
@@ -197,15 +198,18 @@ export default function WhiteboardsPage() {
                   </Box>
                 </Box>
                 <Stack direction="row" alignItems="center" justifyContent="flex-end" spacing={0.25} sx={{ px: 0.75, py: 0.5, mt: 0.5 }}>
-                  <Tooltip title="重命名"><span><IconButton size="small" aria-label={`重命名 ${board.title}`} disabled={busyId === board.id} onClick={() => void rename(board)}><Edit sx={{ fontSize: 16 }} /></IconButton></span></Tooltip>
-                  <Tooltip title="复制"><span><IconButton size="small" aria-label={`复制 ${board.title}`} disabled={busyId === board.id} onClick={() => void duplicate(board)}><CopyDocument sx={{ fontSize: 16 }} /></IconButton></span></Tooltip>
-                  <Tooltip title="删除"><span><IconButton size="small" aria-label={`删除 ${board.title}`} disabled={busyId === board.id} onClick={() => void remove(board)}><Delete sx={{ fontSize: 16 }} /></IconButton></span></Tooltip>
+                  <IconButton size="small" aria-label={`重命名 ${board.title}`} disabled={busyId === board.id} onClick={() => void rename(board)}><Edit sx={{ fontSize: 16 }} /></IconButton>
+                  <Tooltip title="更多"><IconButton size="small" aria-label={`更多白板操作 ${board.title}`} disabled={busyId === board.id} onClick={(event) => setBoardMenu({ el: event.currentTarget, board })}><MoreFilled fontSize="small" /></IconButton></Tooltip>
                 </Stack>
               </Card>
             ))}
           </Box>
         )}
       </PageBody>
+      <Menu anchorEl={boardMenu?.el || null} open={Boolean(boardMenu)} onClose={() => setBoardMenu(null)}>
+        <MenuItem onClick={() => { const board = boardMenu?.board; setBoardMenu(null); if (board) void duplicate(board) }}>复制白板</MenuItem>
+        <MenuItem divider sx={{ color: 'error.main' }} onClick={() => { const board = boardMenu?.board; setBoardMenu(null); if (board) void remove(board) }}>删除白板</MenuItem>
+      </Menu>
     </Page>
   )
 }

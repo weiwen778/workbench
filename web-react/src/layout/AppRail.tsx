@@ -1,98 +1,64 @@
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
-  Avatar, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton,
-  List, ListItem, ListItemText, Menu, MenuItem, Typography, useTheme,
+  Avatar, Box, Divider, IconButton, Menu, MenuItem, ListItemIcon, ListItemText, Tooltip, Typography, useTheme,
 } from '@mui/material'
-import {
-  ChecklistRtl, EventAvailable, Image, Insights, Logout, MenuBook, Person, Settings,
-  StickyNote2, SwapHoriz, TableChart, Translate,
-} from '@mui/icons-material'
-import LinkIcon from '@mui/icons-material/Link'
-import PaletteIcon from '@mui/icons-material/Palette'
-import QrCode2Icon from '@mui/icons-material/QrCode2'
-import BrushIcon from '@mui/icons-material/Brush'
-import NewspaperIcon from '@mui/icons-material/Newspaper'
-import DescriptionIcon from '@mui/icons-material/Description'
-import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
-import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
-import RestartAltIcon from '@mui/icons-material/RestartAlt'
-import TuneIcon from '@mui/icons-material/Tune'
+import ChevronLeft from '@mui/icons-material/ChevronLeft'
+import ChevronRight from '@mui/icons-material/ChevronRight'
+import { Logout, Person, Settings, Tune } from '@mui/icons-material'
+import GridView from '@mui/icons-material/GridView'
 import { logout, useSession } from '@/session'
 import { preloadPath } from '@/router/preload'
-import {
-  SIDEBAR_ORDER_EVENT, readSidebarOrder, sidebarOrderKey, writeSidebarOrder,
-} from './sidebar-order'
+import { appNavItem } from './app-nav'
+import type { SidebarMode } from './sidebar-order'
 
-const mainItems = [
-  { key: 'checkin', label: '打卡', path: '/checkins', icon: EventAvailable },
-  { key: 'data', label: '表格', path: '/data', icon: TableChart },
-  { key: 'todos', label: '待办', path: '/todos', icon: ChecklistRtl },
-  { key: 'notes', label: '笔记', path: '/notes', icon: MenuBook },
-  { key: 'memos', label: '便利贴', path: '/memos', icon: StickyNote2 },
-  { key: 'visualizations', label: '看板', path: '/visualizations', icon: Insights },
-  { key: 'feeds', label: '信息聚合', path: '/feeds', icon: NewspaperIcon },
-  { key: 'docs', label: '文档工作台', path: '/docs', icon: DescriptionIcon },
-  { key: 'bookmarks', label: '网址', path: '/bookmarks', icon: LinkIcon },
-  { key: 'translate', label: '翻译', path: '/translate', icon: Translate },
-  { key: 'images', label: '图片处理', path: '/images', icon: Image },
-  { key: 'convert', label: '格式转换', path: '/convert', icon: SwapHoriz },
-  { key: 'color', label: '取色对比', path: '/color', icon: PaletteIcon },
-  { key: 'codes', label: '二维码条码', path: '/codes', icon: QrCode2Icon },
-  { key: 'whiteboards', label: '白板', path: '/whiteboards', icon: BrushIcon },
-]
+interface AppRailProps {
+  mode: SidebarMode
+  pinned: string[]
+  onToggleMode: () => void
+  onOpenAll: () => void
+  onManage: () => void
+}
 
-export default function AppRail() {
+export default function AppRail({ mode, pinned, onToggleMode, onOpenAll, onManage }: AppRailProps) {
   const navigate = useNavigate()
   const location = useLocation()
   const session = useSession()
   const theme = useTheme()
   const accent = theme.palette.primary.main
   const [userAnchor, setUserAnchor] = useState<HTMLElement | null>(null)
-  const [orderOpen, setOrderOpen] = useState(false)
-  const defaultKeys = useMemo(() => mainItems.map((item) => item.key), [])
-  const orderKey = sidebarOrderKey(session.user?.id)
-  const [order, setOrder] = useState<string[]>(() => readSidebarOrder(orderKey, defaultKeys))
-  const [, startTransition] = useTransition()
+  const wide = mode === 'wide'
 
-  useEffect(() => {
-    const sync = () => setOrder(readSidebarOrder(orderKey, defaultKeys))
-    window.addEventListener(SIDEBAR_ORDER_EVENT, sync)
-    return () => window.removeEventListener(SIDEBAR_ORDER_EVENT, sync)
-  }, [orderKey, defaultKeys])
-
-  useEffect(() => {
-    setOrder(readSidebarOrder(orderKey, defaultKeys))
-  }, [orderKey, defaultKeys])
-
-  const orderedItems = order
-    .map((key) => mainItems.find((item) => item.key === key))
-    .filter((item): item is typeof mainItems[number] => Boolean(item))
-
-  const persistOrder = (next: string[]) => {
-    setOrder(next)
-    writeSidebarOrder(orderKey, next)
-  }
-
-  const moveItem = (index: number, delta: number) => {
-    const target = index + delta
-    if (target < 0 || target >= order.length) return
-    const next = [...order]
-    ;[next[index], next[target]] = [next[target], next[index]]
-    persistOrder(next)
-  }
-
-  const resetOrder = () => persistOrder(defaultKeys)
+  const items = useMemo(() => pinned.map((key) => appNavItem(key)).filter(Boolean), [pinned])
+  const activeKey = items.find((item) => item && (location.pathname === item.path || location.pathname.startsWith(item.path + '/')))?.key || ''
 
   const go = (path: string) => {
     preloadPath(path)
-    startTransition(() => navigate(path))
+    navigate(path)
   }
 
-  const activeKey = mainItems.find((item) => location.pathname === item.path || location.pathname.startsWith(item.path + '/'))?.key || ''
+  const itemSx = (active: boolean) => ({
+    width: wide ? '100%' : 72,
+    minHeight: wide ? 36 : 44,
+    px: wide ? 1.25 : 0,
+    py: wide ? 0.25 : 0.35,
+    display: 'flex',
+    flexDirection: wide ? 'row' : 'column',
+    alignItems: 'center',
+    justifyContent: wide ? 'flex-start' : 'center',
+    gap: wide ? 1 : 0.25,
+    borderRadius: 1,
+    cursor: 'pointer',
+    userSelect: 'none',
+    color: active ? 'primary.contrastText' : 'text.secondary',
+    bgcolor: active ? accent : 'transparent',
+    '&:hover': { bgcolor: active ? accent : 'action.hover', color: active ? 'primary.contrastText' : 'text.primary' },
+    '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 1 },
+  })
 
-  const railItem = (item: typeof mainItems[number], active: boolean) => {
+  const renderItem = (item: NonNullable<ReturnType<typeof appNavItem>>) => {
     const Icon = item.icon
+    const active = activeKey === item.key
     return (
       <Box
         key={item.key}
@@ -103,145 +69,140 @@ export default function AppRail() {
         onClick={() => go(item.path)}
         onMouseEnter={() => preloadPath(item.path)}
         onFocus={() => preloadPath(item.path)}
-        onKeyDown={(event) => { if (event.key === 'Enter') go(item.path) }}
-        sx={{
-          width: 72, minHeight: 'var(--rail-item-h, 46px)', py: 0.35, display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', gap: 0.25,
-          borderRadius: 1.5, cursor: 'pointer', userSelect: 'none',
-          color: active ? 'primary.contrastText' : 'text.secondary',
-          bgcolor: active ? accent : 'transparent',
-          '&:hover': { bgcolor: active ? accent : 'action.hover', color: active ? 'primary.contrastText' : 'text.primary' },
-        }}
+        onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); go(item.path) } }}
+        sx={itemSx(active)}
       >
-        <Icon sx={{ fontSize: 19 }} />
-        <Box component="span" className="rail-label" sx={{ fontSize: 10, lineHeight: 1.15, whiteSpace: 'nowrap' }}>{item.label}</Box>
+        <Icon sx={{ fontSize: wide ? 20 : 19, flexShrink: 0 }} />
+        <Typography
+          component="span"
+          sx={{
+            fontSize: wide ? 13 : 10,
+            lineHeight: 1.15,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            maxWidth: '100%',
+          }}
+        >
+          {item.label}
+        </Typography>
       </Box>
     )
   }
+
+  const bottomItem = (label: string, icon: ReactNode, active: boolean, onClick: () => void) => (
+    <Box
+      role="button"
+      tabIndex={0}
+      aria-label={label}
+      onClick={onClick}
+      onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onClick() } }}
+      sx={itemSx(active)}
+    >
+      {icon}
+      <Typography component="span" sx={{ fontSize: wide ? 13 : 10, lineHeight: 1.15, whiteSpace: 'nowrap' }}>{label}</Typography>
+    </Box>
+  )
+
+  useEffect(() => {
+    setUserAnchor(null)
+  }, [location.pathname])
 
   return (
     <Box
       component="nav"
       aria-label="主导航"
       sx={{
-        width: 84, flexShrink: 0,
+        width: wide ? 208 : 84,
+        flexShrink: 0,
         bgcolor: theme.palette.mode === 'dark' ? '#11181B' : '#FBFCFB',
-        borderRight: 1, borderColor: 'divider',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', py: 1, gap: 0.4,
-        '--rail-item-h': '46px',
-        '@media (max-height: 900px)': { '--rail-item-h': '42px' },
-        '@media (max-height: 780px)': {
-          '--rail-item-h': '36px',
-          '& .rail-label': { display: 'none' },
-        },
+        borderRight: 1,
+        borderColor: 'divider',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        py: 1,
+        gap: 0.5,
+        transition: 'width 160ms ease',
+        '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
       }}
     >
-      <Box
-        role="button"
-        tabIndex={0}
-        aria-label="回到首页"
-        onClick={() => go('/checkins')}
-        onKeyDown={(event) => { if (event.key === 'Enter') go('/checkins') }}
-        sx={{
-          width: 34, height: 34, mb: 0.5, display: 'grid', placeItems: 'center', cursor: 'pointer',
-          borderRadius: 1.5, overflow: 'hidden',
-          '& img': { width: '100%', height: '100%', objectFit: 'contain' },
-        }}
-      >
-        <Box component="img" src="/favicon.svg?v=20261031-notion" alt="Nexus 图标" />
+      <Box sx={{ width: '100%', px: wide ? 1.25 : 0.5, display: 'flex', alignItems: 'center', gap: 0.5, minHeight: 34 }}>
+        <Tooltip title="回到首页">
+          <Box
+            role="button"
+            tabIndex={0}
+            aria-label="回到首页"
+            onClick={() => go('/checkins')}
+            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); go('/checkins') } }}
+            sx={{
+              width: 30, height: 30, display: 'grid', placeItems: 'center', cursor: 'pointer', borderRadius: 1.5,
+              '& img': { width: '100%', height: '100%', objectFit: 'contain' },
+            }}
+          >
+            <Box component="img" src="/favicon.svg?v=20261031-notion" alt="Nexus 图标" />
+          </Box>
+        </Tooltip>
+        {wide ? <Typography sx={{ flex: 1, fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em' }}>Nexus</Typography> : <Box sx={{ flex: 1 }} />}
+        <Tooltip title={wide ? '收起侧栏' : '展开侧栏'}>
+          <IconButton
+            size="small"
+            aria-label={wide ? '收起侧栏' : '展开侧栏'}
+            aria-expanded={wide}
+            onClick={onToggleMode}
+          >
+            {wide ? <ChevronLeft sx={{ fontSize: 19 }} /> : <ChevronRight sx={{ fontSize: 19 }} />}
+          </IconButton>
+        </Tooltip>
       </Box>
-      <Divider sx={{ width: 32, mb: 0.5 }} />
+      <Divider sx={{ width: wide ? 'calc(100% - 20px)' : 32, mb: 0.5 }} />
 
-      <Box sx={{ flex: 1, minHeight: 0, width: '100%', overflow: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
-        {orderedItems.map((item) => railItem(item, activeKey === item.key))}
+      <Box sx={{ width: '100%', px: wide ? 0.75 : 0.5, display: 'flex', flexDirection: 'column', alignItems: wide ? 'stretch' : 'center', gap: 0.5 }}>
+        {items.map((item) => item ? renderItem(item) : null)}
       </Box>
 
-      <Divider sx={{ width: 32, my: 0.5 }} />
+      <Box sx={{ flex: 1, minHeight: 0 }} />
 
-      <Box
-        role="button"
-        tabIndex={0}
-        aria-label="设置"
-        onClick={() => go('/settings')}
-        onKeyDown={(event) => { if (event.key === 'Enter') go('/settings') }}
-        sx={{
-          width: 72, minHeight: 'var(--rail-item-h, 46px)', py: 0.35, display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', gap: 0.25, borderRadius: 1.5, cursor: 'pointer',
-          color: location.pathname.startsWith('/settings') ? 'primary.contrastText' : 'text.secondary',
-          bgcolor: location.pathname.startsWith('/settings') ? accent : 'transparent',
-          '&:hover': { bgcolor: location.pathname.startsWith('/settings') ? accent : 'action.hover' },
-        }}
-      >
-        <Settings sx={{ fontSize: 19 }} />
-        <Box component="span" className="rail-label" sx={{ fontSize: 10, lineHeight: 1.15 }}>设置</Box>
+      <Box sx={{ width: '100%', px: wide ? 0.75 : 0.5, display: 'flex', flexDirection: 'column', alignItems: wide ? 'stretch' : 'center', gap: 0.25 }}>
+        {bottomItem('全部功能', <GridView sx={{ fontSize: wide ? 20 : 19 }} />, false, onOpenAll)}
       </Box>
-      <Box
-        role="button"
-        tabIndex={0}
-        aria-label="账号"
-        onClick={(event) => setUserAnchor(event.currentTarget)}
-        onKeyDown={(event) => { if (event.key === 'Enter') setUserAnchor(event.currentTarget) }}
-        sx={{ width: 72, minHeight: 'var(--rail-item-h, 46px)', py: 0.35, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0.3, borderRadius: 1.5, cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}
-      >
-        <Avatar sx={{ width: 23, height: 23, fontSize: 12, bgcolor: `${accent}20`, color: accent }}>
-          {session.user?.username?.slice(0, 1).toUpperCase()}
-        </Avatar>
-        <Box component="span" className="rail-label" sx={{ fontSize: 10, lineHeight: 1.15, color: 'text.secondary' }}>账号</Box>
+      <Divider sx={{ width: wide ? 'calc(100% - 20px)' : 32, my: 0.5 }} />
+      <Box sx={{ width: '100%', px: wide ? 0.75 : 0.5, display: 'flex', flexDirection: 'column', alignItems: wide ? 'stretch' : 'center', gap: 0.25 }}>
+        {bottomItem('设置', <Settings sx={{ fontSize: wide ? 20 : 19 }} />, location.pathname.startsWith('/settings'), () => go('/settings'))}
+        <Box
+          role="button"
+          tabIndex={0}
+          aria-label="账号"
+          onClick={(event) => setUserAnchor(event.currentTarget)}
+          onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setUserAnchor(event.currentTarget) } }}
+          sx={itemSx(false)}
+        >
+          <Avatar sx={{ width: 23, height: 23, fontSize: 12, bgcolor: `${accent}20`, color: accent }}>
+            {session.user?.username?.slice(0, 1).toUpperCase()}
+          </Avatar>
+          <Typography component="span" sx={{ fontSize: wide ? 13 : 10, lineHeight: 1.15, color: 'text.secondary', whiteSpace: 'nowrap' }}>账号</Typography>
+        </Box>
       </Box>
 
       <Menu anchorEl={userAnchor} open={Boolean(userAnchor)} onClose={() => setUserAnchor(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}>
         <MenuItem disabled>
-          <Person fontSize="small" sx={{ mr: 1 }} />
-          {session.user?.username}
+          <ListItemIcon><Person fontSize="small" /></ListItemIcon>
+          <ListItemText>{session.user?.username}</ListItemText>
         </MenuItem>
         <Divider />
-        <MenuItem onClick={() => { setUserAnchor(null); setOrderOpen(true) }}>
-          <TuneIcon fontSize="small" sx={{ mr: 1 }} />
-          调整侧栏顺序
+        <MenuItem onClick={() => { setUserAnchor(null); onManage() }}>
+          <ListItemIcon><Tune fontSize="small" /></ListItemIcon>
+          <ListItemText>管理导航</ListItemText>
         </MenuItem>
         <MenuItem onClick={() => { setUserAnchor(null); go('/settings') }}>
-          <Settings fontSize="small" sx={{ mr: 1 }} />
-          设置
+          <ListItemIcon><Settings fontSize="small" /></ListItemIcon>
+          <ListItemText>设置</ListItemText>
         </MenuItem>
         <MenuItem onClick={async () => { setUserAnchor(null); await logout(); navigate('/login', { replace: true }) }}>
-          <Logout fontSize="small" sx={{ mr: 1 }} />
-          退出登录
+          <ListItemIcon><Logout fontSize="small" /></ListItemIcon>
+          <ListItemText>退出登录</ListItemText>
         </MenuItem>
       </Menu>
-
-      <Dialog open={orderOpen} onClose={() => setOrderOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>调整侧栏顺序</DialogTitle>
-        <DialogContent>
-          <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 1 }}>
-            顺序保存在当前浏览器，每个账号独立记忆；滚轮区域会自动压缩，窗口较矮时隐藏文字标签。
-          </Typography>
-          <List dense disablePadding sx={{ border: 1, borderColor: 'divider', borderRadius: 1, maxHeight: 420, overflow: 'auto' }}>
-            {orderedItems.map((item, index) => {
-              const Icon = item.icon
-              return (
-                <ListItem
-                  key={item.key}
-                  secondaryAction={(
-                    <Box>
-                      <IconButton size="small" aria-label={`上移${item.label}`} disabled={index === 0} onClick={() => moveItem(index, -1)}><ArrowUpwardIcon fontSize="small" /></IconButton>
-                      <IconButton size="small" aria-label={`下移${item.label}`} disabled={index === orderedItems.length - 1} onClick={() => moveItem(index, 1)}><ArrowDownwardIcon fontSize="small" /></IconButton>
-                    </Box>
-                  )}
-                  sx={{ py: 0.25 }}
-                >
-                  <Box sx={{ width: 26, display: 'flex', color: 'text.secondary' }}><Icon sx={{ fontSize: 17 }} /></Box>
-                  <ListItemText primary={item.label} primaryTypographyProps={{ fontSize: 13 }} />
-                </ListItem>
-              )
-            })}
-          </List>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button size="small" startIcon={<RestartAltIcon />} onClick={resetOrder}>恢复默认</Button>
-          <Box sx={{ flex: 1 }} />
-          <Button size="small" variant="contained" onClick={() => setOrderOpen(false)}>完成</Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   )
 }

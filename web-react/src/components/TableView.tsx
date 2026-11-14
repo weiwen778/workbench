@@ -4,8 +4,7 @@ import {
   Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Link,
   Menu, MenuItem, Paper, Select, Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material'
-import { Divider } from '@mui/material'
-import { AutoAwesome, ArrowLeft, Check, ChevronDown, Close, Delete, Edit, InfoFilled, Plus, Refresh, Sort } from '@/icons'
+import { AutoAwesome, Check, ChevronDown, Close, Delete, Edit, InfoFilled, Plus, Refresh, Sort, Tune } from '@/icons'
 import { apiError, http } from '@/api/client'
 import { confirmDialog, toast } from '@/ui/feedback'
 import { DataTable, EmptyHint, FieldRow, PageBody, PageToolbar, Pager } from '@/ui/common'
@@ -88,7 +87,7 @@ export default function TableView({ tableId }: { tableId: number }) {
   const [sortDraft, setSortDraft] = useState<any[]>([])
   const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null)
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
-  const [displayAnchor, setDisplayAnchor] = useState<HTMLElement | null>(null)
+  const [viewAnchor, setViewAnchor] = useState<HTMLElement | null>(null)
   const [selection, setSelection] = useState<number[]>([])
   const [recordOpen, setRecordOpen] = useState(false)
   const [editingRecord, setEditingRecord] = useState<any | null>(null)
@@ -358,88 +357,72 @@ export default function TableView({ tableId }: { tableId: number }) {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, p: 2 }}>
-      <PageToolbar sx={{ minHeight: 40, py: 0.5 }}>
+      <PageToolbar sx={{ py: 0.5 }}>
         {table?.note ? <Box title={table.note} sx={{ color: 'text.secondary', display: 'flex' }}><InfoFilled sx={{ fontSize: 16 }} /></Box> : null}
         <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>共 {total} 行</Typography>
         <div className="spacer" />
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Button size="small" startIcon={<AutoAwesome fontSize="small" />} onClick={() => { setAiInitialText(''); setAiOpen(true) }}>AI 填入</Button>
-          <ToggleButtonGroup size="small" exclusive value={density} onChange={(_, value) => value && changeDensity(value)} aria-label="表格行高">
-            <ToggleButton value="compact" aria-label="窄行高" sx={{ px: 1.25, fontSize: 11.5 }}>窄行高</ToggleButton>
-            <ToggleButton value="comfortable" aria-label="宽行高" sx={{ px: 1.25, fontSize: 11.5 }}>宽行高</ToggleButton>
-          </ToggleButtonGroup>
-        </Stack>
-        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Button size="small" onClick={() => setFiltersOpen(!filtersOpen)} color={filtersOpen ? 'primary' : undefined}>筛选{filters.length ? `(${filters.length})` : ''}</Button>
-          <Button size="small" startIcon={<Sort fontSize="small" />} onClick={(event: any) => { setSortDraft(sorts.length ? [...sorts] : []); setSortAnchor(event.currentTarget) }}>排序{sorts.length ? `(${sorts.length})` : ''}</Button>
-          <Button size="small" endIcon={<ChevronDown fontSize="small" />} onClick={(event) => setMoreAnchor(event.currentTarget)}>更多操作</Button>
-          <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => { setMoreAnchor(null); setDisplayAnchor(null) }}>
-            <MenuItem onMouseEnter={() => setDisplayAnchor(null)} onClick={() => { setMoreAnchor(null); void reload() }}>刷新</MenuItem>
-            <MenuItem onMouseEnter={() => setDisplayAnchor(null)} onClick={() => { setMoreAnchor(null); setFieldsOpen(true) }}>列设置</MenuItem>
-            <MenuItem
-              onMouseEnter={(event) => setDisplayAnchor(event.currentTarget)}
-              onClick={(event) => setDisplayAnchor(event.currentTarget)}
-              sx={{ display: 'flex', justifyContent: 'space-between', gap: 3 }}
-            >
-              显示设置
-              <ArrowLeft sx={{ fontSize: 16, color: 'text.disabled' }} />
-            </MenuItem>
-            <MenuItem onMouseEnter={() => setDisplayAnchor(null)} onClick={() => { setMoreAnchor(null); setImportOpen(true) }}>批量导入</MenuItem>
-            <MenuItem onMouseEnter={() => setDisplayAnchor(null)} onClick={() => { setMoreAnchor(null); setExportOpen(true) }}>导出</MenuItem>
-            <MenuItem onMouseEnter={() => setDisplayAnchor(null)} onClick={() => { setMoreAnchor(null); setAnalysisOpen(true) }}>汇总与透视</MenuItem>
-            <MenuItem onMouseEnter={() => setDisplayAnchor(null)} onClick={() => { setMoreAnchor(null); navigate(`/visualizations?table=${tableId}`) }}>用于数据可视化</MenuItem>
-            <MenuItem onMouseEnter={() => setDisplayAnchor(null)} onClick={() => { setMoreAnchor(null); setDeleteOpen(true) }}>导出备份后删除表格</MenuItem>
-          </Menu>
-          <Menu
-            anchorEl={displayAnchor} open={Boolean(displayAnchor)} onClose={() => setDisplayAnchor(null)}
-            anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
-            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-          >
-            <MenuItem disabled sx={{ opacity: 1, fontSize: 11, color: 'text.secondary', minHeight: 26 }}>显示设置</MenuItem>
-            <MenuItem onClick={() => toggleStriped(!striped)}>
-              <Switch size="small" checked={striped} onClick={(event) => event.stopPropagation()} onChange={(event) => toggleStriped(event.target.checked)} sx={{ mr: 1 }} />
-              <Typography sx={{ fontSize: 12.5 }}>斑马纹</Typography>
-            </MenuItem>
-            <MenuItem onClick={() => toggleCenterX(!centerX)}>
-              <Switch size="small" checked={centerX} onClick={(event) => event.stopPropagation()} onChange={(event) => toggleCenterX(event.target.checked)} sx={{ mr: 1 }} />
-              <Typography sx={{ fontSize: 12.5 }}>水平居中</Typography>
-            </MenuItem>
-            <MenuItem onClick={() => toggleCenterY(!centerY)}>
-              <Switch size="small" checked={centerY} onClick={(event) => event.stopPropagation()} onChange={(event) => toggleCenterY(event.target.checked)} sx={{ mr: 1 }} />
-              <Typography sx={{ fontSize: 12.5 }}>垂直居中</Typography>
-            </MenuItem>
-          </Menu>
-          <Menu anchorEl={sortAnchor} open={Boolean(sortAnchor)} onClose={() => setSortAnchor(null)}>
-            <Box sx={{ p: 1.5, width: 340 }}>
-              <Typography sx={{ fontSize: 13, mb: 0.75 }}>排序（最多 3 列，临时）</Typography>
-              {sortDraft.map((sort, index) => (
-                <Stack key={index} direction="row" spacing={1} sx={{ mb: 0.75 }}>
-                  <Select size="small" value={sort.field} onChange={(event) => setSortDraft(sortDraft.map((item, i) => i === index ? { ...item, field: event.target.value } : item))} sx={{ width: 150 }}>
-                    {sortableFields.map((field) => <MenuItem key={field.key} value={field.key}>{field.name}</MenuItem>)}
-                  </Select>
-                  <Select size="small" value={sort.order} onChange={(event) => setSortDraft(sortDraft.map((item, i) => i === index ? { ...item, order: event.target.value } : item))} sx={{ width: 90 }}>
-                    <MenuItem value="asc">升序</MenuItem>
-                    <MenuItem value="desc">降序</MenuItem>
-                  </Select>
-                  <IconButton size="small" onClick={() => setSortDraft(sortDraft.filter((_, i) => i !== index))}><Close fontSize="small" /></IconButton>
-                </Stack>
-              ))}
-              <Stack direction="row" spacing={1}>
-                <Button size="small" startIcon={<Plus fontSize="small" />} disabled={sortDraft.length >= 3} onClick={() => {
-                  const first = sortableFields[0]
-                  if (first) setSortDraft([...sortDraft, { field: first.key, order: 'asc' }])
-                }}>添加排序</Button>
-                <Button size="small" onClick={() => { setSortDraft([]); setSorts([]); setPage(1) }}>清除</Button>
-                <Button size="small" variant="contained" onClick={() => {
-                  setSorts(sortDraft.filter((item) => item.field))
-                  setSortAnchor(null); setPage(1)
-                }}>应用</Button>
+        <Button size="small" onClick={() => setFiltersOpen(!filtersOpen)} color={filtersOpen ? 'primary' : undefined}>筛选{filters.length ? `(${filters.length})` : ''}</Button>
+        <Button size="small" startIcon={<Sort fontSize="small" />} onClick={(event: any) => { setSortDraft(sorts.length ? [...sorts] : []); setSortAnchor(event.currentTarget) }}>排序{sortDraft.length ? `(${sortDraft.length})` : sorts.length ? `(${sorts.length})` : ''}</Button>
+        <Button size="small" startIcon={<Tune fontSize="small" />} onClick={(event) => setViewAnchor(event.currentTarget)}>视图</Button>
+        <Button size="small" endIcon={<ChevronDown fontSize="small" />} onClick={(event) => setMoreAnchor(event.currentTarget)}>更多</Button>
+        <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
+          <MenuItem onClick={() => { setMoreAnchor(null); void reload() }}>刷新</MenuItem>
+          <MenuItem onClick={() => { setMoreAnchor(null); setFieldsOpen(true) }}>列设置</MenuItem>
+          <MenuItem onClick={() => { setMoreAnchor(null); setImportOpen(true) }}>批量导入</MenuItem>
+          <MenuItem onClick={() => { setMoreAnchor(null); setExportOpen(true) }}>导出</MenuItem>
+          <MenuItem onClick={() => { setMoreAnchor(null); setAnalysisOpen(true) }}>汇总与透视</MenuItem>
+          <MenuItem onClick={() => { setMoreAnchor(null); navigate(`/visualizations?table=${tableId}`) }}>用于数据可视化</MenuItem>
+          <MenuItem divider onClick={() => { setMoreAnchor(null); setDeleteOpen(true) }} sx={{ color: 'error.main' }}>导出备份后删除表格</MenuItem>
+        </Menu>
+        <Menu anchorEl={viewAnchor} open={Boolean(viewAnchor)} onClose={() => setViewAnchor(null)}>
+          <Box sx={{ px: 1.5, py: 1, width: 236 }}>
+            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.75 }}>行高</Typography>
+            <ToggleButtonGroup size="small" exclusive fullWidth value={density} onChange={(_, value) => value && changeDensity(value)} aria-label="表格行高" sx={{ mb: 1.25 }}>
+              <ToggleButton value="compact" aria-label="窄行高" sx={{ flex: 1, fontSize: 11.5 }}>窄行高</ToggleButton>
+              <ToggleButton value="comfortable" aria-label="宽行高" sx={{ flex: 1, fontSize: 11.5 }}>宽行高</ToggleButton>
+            </ToggleButtonGroup>
+            {[
+              { label: '斑马纹', checked: striped, change: toggleStriped },
+              { label: '水平居中', checked: centerX, change: toggleCenterX },
+              { label: '垂直居中', checked: centerY, change: toggleCenterY },
+            ].map((option) => (
+              <Stack key={option.label} direction="row" alignItems="center" justifyContent="space-between" sx={{ minHeight: 32 }}>
+                <Typography sx={{ fontSize: 12.5 }}>{option.label}</Typography>
+                <Switch size="small" checked={option.checked} onChange={(event) => option.change(event.target.checked)} />
               </Stack>
-            </Box>
-          </Menu>
-        </Stack>
-        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
+            ))}
+            <Button size="small" fullWidth startIcon={<Tune fontSize="small" />} onClick={() => { setViewAnchor(null); setFieldsOpen(true) }} sx={{ mt: 0.75, justifyContent: 'flex-start' }}>列设置</Button>
+          </Box>
+        </Menu>
+        <Menu anchorEl={sortAnchor} open={Boolean(sortAnchor)} onClose={() => setSortAnchor(null)}>
+          <Box sx={{ p: 1.5, width: 340 }}>
+            <Typography sx={{ fontSize: 13, mb: 0.75 }}>排序（最多 3 列，临时）</Typography>
+            {sortDraft.map((sort, index) => (
+              <Stack key={index} direction="row" spacing={1} sx={{ mb: 0.75 }}>
+                <Select size="small" value={sort.field} onChange={(event) => setSortDraft(sortDraft.map((item, i) => i === index ? { ...item, field: event.target.value } : item))} sx={{ width: 150 }}>
+                  {sortableFields.map((field) => <MenuItem key={field.key} value={field.key}>{field.name}</MenuItem>)}
+                </Select>
+                <Select size="small" value={sort.order} onChange={(event) => setSortDraft(sortDraft.map((item, i) => i === index ? { ...item, order: event.target.value } : item))} sx={{ width: 90 }}>
+                  <MenuItem value="asc">升序</MenuItem>
+                  <MenuItem value="desc">降序</MenuItem>
+                </Select>
+                <IconButton size="small" onClick={() => setSortDraft(sortDraft.filter((_, i) => i !== index))}><Close fontSize="small" /></IconButton>
+              </Stack>
+            ))}
+            <Stack direction="row" spacing={1}>
+              <Button size="small" startIcon={<Plus fontSize="small" />} disabled={sortDraft.length >= 3} onClick={() => {
+                const first = sortableFields[0]
+                if (first) setSortDraft([...sortDraft, { field: first.key, order: 'asc' }])
+              }}>添加排序</Button>
+              <Button size="small" onClick={() => { setSortDraft([]); setSorts([]); setPage(1) }}>清除</Button>
+              <Button size="small" variant="contained" onClick={() => {
+                setSorts(sortDraft.filter((item) => item.field))
+                setSortAnchor(null); setPage(1)
+              }}>应用</Button>
+            </Stack>
+          </Box>
+        </Menu>
+        <Button size="small" startIcon={<AutoAwesome fontSize="small" />} onClick={() => { setAiInitialText(''); setAiOpen(true) }}>AI 填入</Button>
         <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={openCreate}>添加一行</Button>
       </PageToolbar>
 
@@ -454,7 +437,9 @@ export default function TableView({ tableId }: { tableId: number }) {
             sx={{ minWidth: 0, '& .MuiInputBase-input': { textAlign: centerX ? 'center' : 'left' } }}
           />
           <Typography sx={{ fontSize: 11, color: 'text.disabled', whiteSpace: 'nowrap' }}>仅填「{quickField.name}」</Typography>
-          <Button size="small" sx={{ fontSize: 11.5, whiteSpace: 'nowrap' }} onClick={() => { setAiInitialText(quickValue); setQuickValue(''); setAiOpen(true) }}>乱文本识别</Button>
+          {quickValue.trim() ? (
+            <Button size="small" sx={{ fontSize: 11.5, whiteSpace: 'nowrap' }} onClick={() => { setAiInitialText(quickValue); setQuickValue(''); setAiOpen(true) }}>识别文本</Button>
+          ) : null}
           <IconButton size="small" aria-label="添加" disabled={!quickValue.trim()} onClick={submitQuick}>
             <Plus fontSize="small" />
           </IconButton>
