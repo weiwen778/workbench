@@ -42,7 +42,10 @@ export default function TableView({ tableId }: { tableId: number }) {
   const [rows, setRows] = useState<any[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(50)
+  const [pageSize, setPageSize] = useState(() => {
+    const saved = Number(localStorage.getItem('wb_table_page_size'))
+    return [20, 50, 100].includes(saved) ? saved : 50
+  })
   const [density, setDensity] = useState<'compact' | 'comfortable'>(() => localStorage.getItem('wb_table_density') === 'comfortable' ? 'comfortable' : 'compact')
   const [striped, setStriped] = useState(() => localStorage.getItem('wb_table_striped') === '1')
   const toggleStriped = (value: boolean) => { setStriped(value); localStorage.setItem('wb_table_striped', value ? '1' : '0') }

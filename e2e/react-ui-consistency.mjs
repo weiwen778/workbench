@@ -155,6 +155,22 @@ await page.getByRole('button', { name: '看板操作' }).click()
 await page.getByRole('menuitem', { name: '重命名当前看板' }).waitFor()
 await page.keyboard.press('Escape')
 
+// 设置：新目录与侧栏宽度联动
+await page.goto(`${base}/settings/navigation`, { waitUntil: 'networkidle' })
+await page.waitForTimeout(400)
+const settingsRail = page.locator('nav[aria-label="主导航"]')
+await page.getByRole('button', { name: '窄版' }).click()
+await page.waitForTimeout(300)
+expect((await settingsRail.evaluate((element) => element.clientWidth)) < 100, '设置里的窄版没有同步到侧栏')
+await page.getByRole('button', { name: '宽版' }).click()
+await page.waitForTimeout(300)
+expect((await settingsRail.evaluate((element) => element.clientWidth)) >= 200, '设置里的宽版没有同步到侧栏')
+const settingsText = await page.getByLabel('设置分类').innerText()
+expect(!settingsText.includes('导航与命名') && !settingsText.includes('系统与备份'), '设置目录仍包含旧分组')
+await page.goto(`${base}/settings/content`, { waitUntil: 'networkidle' })
+await page.getByRole('heading', { name: '内容显示' }).waitFor()
+await page.screenshot({ path: '../.run/ui-consistency-settings-content.png' })
+
 // 移动端：不再出现双列导航
 await page.setViewportSize({ width: 390, height: 844 })
 await page.goto(`${base}/checkins`, { waitUntil: 'networkidle' })

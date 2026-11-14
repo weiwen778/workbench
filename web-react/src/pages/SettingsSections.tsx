@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import {
-  Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider,
+  Alert, Box, Button, Checkbox, Chip, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, Divider,
   FormControlLabel, IconButton, LinearProgress, Menu, MenuItem, Pagination, Paper, Select, Stack, Tab, Tabs, TextField, Tooltip, Typography,
 } from '@mui/material'
 import { apiError, copyText, http } from '@/api/client'
@@ -12,6 +11,15 @@ import { readTranslationPreferences, type TranslationPreferences } from '@/utils
 
 export function Card({ children }: { children: React.ReactNode }) {
   return <Paper variant="outlined" sx={{ p: 2.5 }}>{children}</Paper>
+}
+
+function LabeledField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <Box sx={{ mb: 1.5 }}>
+      <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 0.5 }}>{label}</Typography>
+      {children}
+    </Box>
+  )
 }
 
 /* ------------------------------- Agents ------------------------------- */
@@ -531,8 +539,10 @@ export function AgentsSection() {
 
 export function AiSection({ notify }: { notify: (message: string, error?: boolean) => void }) {
   const [apiKey, setApiKey] = useState('')
+  const [showKey, setShowKey] = useState(false)
   const [model, setModel] = useState('glm-4v-flash')
   const [compare, setCompare] = useState(false)
+  const [advanced, setAdvanced] = useState(false)
   const [configured, setConfigured] = useState(false)
   const [pending, setPending] = useState(false)
   const load = async () => {
@@ -558,16 +568,31 @@ export function AiSection({ notify }: { notify: (message: string, error?: boolea
   }
   return (
     <Card>
-      <Alert severity="info" sx={{ mb: 2 }}>识别与看板 AI 共用此 Key，密钥加密存储；结果需确认后写入。</Alert>
-      <FieldRow label="智谱 API Key"><TextField fullWidth type="password" autoComplete="new-password" value={apiKey} placeholder={configured ? '已保存，留空保留原密钥' : '输入 API Key'} disabled={pending} onChange={(event) => setApiKey(event.target.value)} /></FieldRow>
-      <FieldRow label="默认识别模型">
-        <Select fullWidth value={model} disabled={pending} onChange={(event) => setModel(event.target.value)}>
+      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={2} sx={{ mb: 1.5 }}>
+        <div>
+          <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.5 }}>智谱 AI</Typography>
+          <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>识别与看板 AI 共用此 Key，密钥加密存储；结果需确认后写入。</Typography>
+        </div>
+        <Chip size="small" color={configured ? 'success' : 'default'} label={configured ? '已配置' : '未配置'} />
+      </Stack>
+      <LabeledField label="智谱 API Key">
+        <Stack direction="row" spacing={1}>
+          <TextField fullWidth size="small" type={showKey ? 'text' : 'password'} autoComplete="new-password" value={apiKey} placeholder={configured ? '已保存，留空保留原密钥' : '输入 API Key'} disabled={pending} onChange={(event) => setApiKey(event.target.value)} />
+          <Button size="small" onClick={() => setShowKey((value) => !value)} sx={{ flexShrink: 0, minWidth: 48, whiteSpace: 'nowrap' }}>{showKey ? '隐藏' : '显示'}</Button>
+        </Stack>
+      </LabeledField>
+      <LabeledField label="默认识别模型">
+        <Select fullWidth size="small" value={model} disabled={pending} onChange={(event) => setModel(event.target.value)}>
           <MenuItem value="glm-ocr">GLM-OCR（专业文字与表格识别）</MenuItem>
           <MenuItem value="glm-4v-flash">GLM-4V-Flash（视觉理解）</MenuItem>
         </Select>
-      </FieldRow>
-      <FormControlLabel control={<Checkbox checked={compare} disabled={pending} onChange={(event) => setCompare(event.target.checked)} />} label="识别时同时对比两个模型" />
+      </LabeledField>
       <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 1 }}>PNG / JPG ≤ 8 MB，或粘贴文本；单次最多 50 条。</Typography>
+      <Button size="small" sx={{ mt: 1.5, px: 0 }} onClick={() => setAdvanced((value) => !value)}>{advanced ? '收起高级选项' : '高级选项'}</Button>
+      <Collapse in={advanced}>
+        <FormControlLabel control={<Checkbox checked={compare} disabled={pending} onChange={(event) => setCompare(event.target.checked)} />} label="识别时同时对比两个模型" />
+        <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>同时调用两个模型会更慢，也会消耗更多额度。</Typography>
+      </Collapse>
       <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
         <Button size="small" variant="contained" disabled={pending} onClick={save}>保存配置</Button>
         <Button size="small" disabled={pending || !configured} onClick={clear}>清除密钥</Button>
@@ -588,7 +613,7 @@ export function TranslationSection() {
   const [messages, setMessages] = useState<Record<string, string>>({})
   const [failed, setFailed] = useState<Record<string, boolean>>({})
   const [bases, setBases] = useState<Record<string, string>>({})
-  const fontFields = [{ key: 'shortSize', label: '100 字以内字号' }, { key: 'mediumSize', label: '101–500 字字号' }, { key: 'longSize', label: '超过 500 字字号' }] as const
+  const [showAll, setShowAll] = useState(false)
   const providerMeta: Record<string, {
     fields: { key: string; label: string }[]
     required?: string[]
@@ -630,6 +655,8 @@ export function TranslationSection() {
     finally { setBusy((prev) => ({ ...prev, [connection.provider]: '' })) }
   }
   const update = (connection: any, data: any) => setConnections((prev) => prev.map((item) => item.provider === connection.provider ? data : item))
+  const visibleConnections = showAll ? connections : connections.filter((connection) => connection.configured || connection.enabled)
+  const unconfiguredCount = connections.filter((connection) => !connection.configured && !connection.enabled).length
   const save = (connection: any) => perform(connection, 'save', async () => {
     const meta = providerMeta[connection.provider] || { fields: [] }
     const config = Object.fromEntries(Object.entries(draft[connection.provider] || {}).map(([key, value]) => [key, value.trim()]).filter(([, value]) => value))
@@ -653,30 +680,44 @@ export function TranslationSection() {
     <Stack spacing={2}>
       <Card>
         <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 1.25 }}>翻译页面偏好</Typography>
-        <FieldRow label="默认翻译服务">
-          <Select fullWidth value={preferences.provider} onChange={(event) => savePreferences({ ...preferences, provider: event.target.value })}>
+        <LabeledField label="默认翻译服务">
+          <Select fullWidth size="small" value={preferences.provider} onChange={(event) => savePreferences({ ...preferences, provider: event.target.value })}>
             {connections.map((connection) => <MenuItem key={connection.provider} value={connection.provider}>{connection.name}</MenuItem>)}
           </Select>
-        </FieldRow>
+        </LabeledField>
         <FormControlLabel control={<Checkbox checked={preferences.autoSize} onChange={(event) => savePreferences({ ...preferences, autoSize: event.target.checked })} />} label="按字数自动调整字号" />
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mt: 1 }}>
-          {fontFields.map((field) => (
-            <Box key={field.key} sx={{ flex: 1 }}>
-              <FieldRow label={field.label}>
-                <TextField fullWidth size="small" type="number" value={preferences[field.key]} inputProps={{ min: 12, max: 40 }} onChange={(event) => savePreferences({ ...preferences, [field.key]: Math.max(12, Math.min(40, Number(event.target.value) || 12)) })} />
-              </FieldRow>
-            </Box>
-          ))}
-        </Stack>
-        <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>设置仅保存在当前浏览器。</Typography>
+        <Box sx={{ maxWidth: 240, mt: 1 }}>
+          <LabeledField label="基准字号">
+            <TextField
+              fullWidth size="small" type="number" value={preferences.mediumSize} inputProps={{ min: 12, max: 40 }}
+              onChange={(event) => {
+                const base = Math.max(12, Math.min(40, Number(event.target.value) || 21))
+                savePreferences({
+                  ...preferences,
+                  shortSize: Math.min(40, base + 7),
+                  mediumSize: base,
+                  longSize: Math.max(12, base - 5),
+                })
+              }}
+            />
+          </LabeledField>
+        </Box>
+        <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>自动模式会以基准字号为中心，按原文长度微调；设置仅保存在当前浏览器。</Typography>
       </Card>
 
-      <Stack direction="row" justifyContent="space-between" alignItems="center">
-        <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>{connections.filter((connection) => connection.enabled).length} 个服务已启用</Typography>
-        <Button size="small" disabled={loading} onClick={() => void load()}>刷新状态</Button>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1} flexWrap="wrap">
+        <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>{connections.filter((connection) => connection.enabled).length} 个服务已启用 · 默认只显示已配置服务</Typography>
+        <Stack direction="row" spacing={1}>
+          {unconfiguredCount ? (
+            <Button size="small" onClick={() => setShowAll((value) => !value)}>{showAll ? '只看已配置' : `添加更多服务（${unconfiguredCount}）`}</Button>
+          ) : null}
+          <Button size="small" disabled={loading} onClick={() => void load()}>刷新状态</Button>
+        </Stack>
       </Stack>
 
-      {connections.map((connection) => {
+      {!visibleConnections.length ? <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>还没有配置翻译服务。点击「添加更多服务」开始。</Typography> : null}
+
+      {visibleConnections.map((connection) => {
         const meta = providerMeta[connection.provider] || { fields: [] }
         return (
         <Card key={connection.provider}>
@@ -779,8 +820,9 @@ export function TranslationSection() {
 
 /* ------------------------------- System -------------------------------- */
 
-export function SystemSection() {
-  const navigate = useNavigate()
+export function SystemSection({ part }: { part?: 'backup' | 'runtime' }) {
+  const showBackup = !part || part === 'backup'
+  const showRuntime = !part || part === 'runtime'
   const [backups, setBackups] = useState<any>({ items: [], enabled: false })
   const [failure, setFailure] = useState('')
   const [creating, setCreating] = useState(false)
@@ -801,10 +843,12 @@ export function SystemSection() {
     } catch { /* ignore */ }
   }
   useEffect(() => {
-    void loadBackups(); void loadMetrics()
+    if (showBackup) void loadBackups()
+    if (!showRuntime) return
+    void loadMetrics()
     const timer = window.setInterval(() => { if (!document.hidden) void loadMetrics() }, 5000)
     return () => window.clearInterval(timer)
-  }, [])
+  }, [part])
 
   const bytes = (value: any) => {
     if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—'
@@ -825,7 +869,7 @@ export function SystemSection() {
 
   return (
     <>
-      <Card>
+      {showBackup ? <Card>
         <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1} useFlexGap>
           <Box>
             <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.75 }}>备份与恢复</Typography>
@@ -873,9 +917,9 @@ export function SystemSection() {
             try { await http.post(`/backups/${row.id}/verify`); toast.success('已提交校验任务，请在任务中心查看结果') } catch (error) { toast.error(apiError(error).message) }
           }}>校验完整性</MenuItem>
         </Menu>
-      </Card>
+      </Card> : null}
 
-      <Card>
+      {showRuntime ? <Card>
         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
           <Box>
             <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.5 }}>运行状态</Typography>
@@ -920,16 +964,7 @@ export function SystemSection() {
             </Box>
           </>
         ) : <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 1.5 }}>正在准备首次服务器采样…</Typography>}
-      </Card>
-
-      <Card>
-        <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.75 }}>数据与隐私</Typography>
-        <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 1.5 }}>数据保存在当前工作台；图片不上传；翻译内容会发送至启用的服务。</Typography>
-        <Stack direction="row" spacing={1}>
-          <Button size="small" onClick={() => navigate('/settings/trash')}>打开回收站</Button>
-          <Button size="small" onClick={() => navigate('/settings/translation')}>管理翻译服务</Button>
-        </Stack>
-      </Card>
+      </Card> : null}
     </>
   )
 }

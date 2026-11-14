@@ -35,14 +35,17 @@ export function readPinnedKeys(userId: number | undefined, defaults: string[], a
   try {
     const raw = localStorage.getItem(sidebarOrderKey(userId))
     if (raw) {
-      const parsed = validKeys(JSON.parse(raw), allKeys).slice(0, MAX_PINNED)
-      if (parsed.length) {
-        // Older orders can contain dynamic entries (for example a table id).
-        // Keep the surviving module order, then fill the rail with defaults
-        // instead of leaving it nearly empty.
+      const values = JSON.parse(raw)
+      const valid = validKeys(values, allKeys)
+      const parsed = valid.slice(0, MAX_PINNED)
+      // Older orders can contain dynamic entries (for example a table id).
+      // Fill defaults only when entries were dropped during migration; an
+      // intentionally unpinned list must stay short, including an empty one.
+      if (Array.isArray(values) && valid.length < values.length) {
         const seen = new Set(parsed)
         return [...parsed, ...defaults.filter((key) => !seen.has(key))].slice(0, MAX_PINNED)
       }
+      if (Array.isArray(values)) return parsed
     }
   } catch {
     /* localStorage may be unavailable */

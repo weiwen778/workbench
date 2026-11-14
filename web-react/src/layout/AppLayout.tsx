@@ -12,7 +12,7 @@ import AppRail from './AppRail'
 import ModuleTabs from './ModuleTabs'
 import { ManageNavDialog, NavAllDrawer } from './NavPanels'
 import { APP_NAV_KEYS, DEFAULT_PINNED_KEYS, MAX_PINNED } from './app-nav'
-import { readPinnedKeys, readSidebarMode, writePinnedKeys, writeSidebarMode, type SidebarMode } from './sidebar-order'
+import { readPinnedKeys, readSidebarMode, writePinnedKeys, writeSidebarMode, SIDEBAR_MODE_EVENT, SIDEBAR_ORDER_EVENT, type SidebarMode } from './sidebar-order'
 import GlobalSearchDialog from '@/components/GlobalSearchDialog'
 import WorkspaceToolsDialog from '@/components/WorkspaceToolsDialog'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
@@ -134,8 +134,17 @@ export default function AppLayout() {
   }, [])
 
   useEffect(() => {
-    setNavMode(readSidebarMode(session.user?.id))
-    setPinned(readPinnedKeys(session.user?.id, DEFAULT_PINNED_KEYS, APP_NAV_KEYS))
+    const sync = () => {
+      setNavMode(readSidebarMode(session.user?.id))
+      setPinned(readPinnedKeys(session.user?.id, DEFAULT_PINNED_KEYS, APP_NAV_KEYS))
+    }
+    sync()
+    window.addEventListener(SIDEBAR_MODE_EVENT, sync)
+    window.addEventListener(SIDEBAR_ORDER_EVENT, sync)
+    return () => {
+      window.removeEventListener(SIDEBAR_MODE_EVENT, sync)
+      window.removeEventListener(SIDEBAR_ORDER_EVENT, sync)
+    }
   }, [session.user?.id])
 
   useEffect(() => {

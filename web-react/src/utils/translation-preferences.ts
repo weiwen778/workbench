@@ -19,6 +19,6 @@ export function readTranslationPreferences(): TranslationPreferences {
 export function translationFont(text: string, preferences: TranslationPreferences) {
   const size = preferences.autoSize
     ? text.length <= 100 ? preferences.shortSize : text.length <= 500 ? preferences.mediumSize : preferences.longSize
-    : preferences.longSize
+    : preferences.mediumSize
   return `${size}px`
 }
