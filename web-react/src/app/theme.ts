@@ -65,7 +65,10 @@ export function buildTheme(mode: 'light' | 'dark', themeColor: string): Theme {
     components: {
       MuiCssBaseline: {
         styleOverrides: {
-          body: { fontFamily: fontSans, backgroundColor: dark ? '#0F1517' : '#F2F4F3' },
+          body: {
+            fontFamily: fontSans, backgroundColor: dark ? '#0F1517' : '#F2F4F3',
+            transition: 'background-color 220ms ease, color 220ms ease',
+          },
           '#root': { height: '100%' },
           code: { fontFamily: fontMono },
           '*': { scrollbarWidth: 'thin', scrollbarColor: `${dark ? 'rgba(228,235,233,0.28)' : 'rgba(26,36,38,0.26)'} transparent` },
@@ -83,13 +86,23 @@ export function buildTheme(mode: 'light' | 'dark', themeColor: string): Theme {
       MuiButton: {
         defaultProps: { disableElevation: true },
         styleOverrides: {
-          root: { minWidth: 0, paddingInline: 12 },
+          root: {
+            minWidth: 0, paddingInline: 12,
+            transition: 'background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 120ms ease',
+            '&:active:not(.Mui-disabled)': { transform: 'scale(0.98)' },
+          },
           sizeSmall: { height: 32, fontSize: 12.5, paddingInline: 10 },
           contained: { boxShadow: 'none', '&:hover': { boxShadow: 'none' } },
         },
       },
       MuiIconButton: {
-        styleOverrides: { sizeSmall: { width: 32, height: 32, borderRadius: 6 } },
+        styleOverrides: {
+          root: {
+            transition: 'background-color 160ms ease, color 160ms ease, transform 120ms ease',
+            '&:active:not(.Mui-disabled)': { transform: 'scale(0.92)' },
+          },
+          sizeSmall: { width: 32, height: 32, borderRadius: 6 },
+        },
       },
       MuiTextField: { defaultProps: { size: 'small', variant: 'outlined' } },
       MuiFormControl: { defaultProps: { size: 'small', variant: 'outlined' } },
@@ -117,12 +130,19 @@ export function buildTheme(mode: 'light' | 'dark', themeColor: string): Theme {
       MuiPaper: {
         defaultProps: { elevation: 0 },
         styleOverrides: {
-          root: { backgroundImage: 'none' },
+          root: { backgroundImage: 'none', transition: 'background-color 220ms ease, border-color 220ms ease' },
           rounded: { borderRadius: 6 },
           outlined: { borderColor: dark ? '#2A373B' : '#E7EBE9' },
         },
       },
-      MuiCard: { styleOverrides: { root: { borderRadius: 6 } } },
+      MuiCard: {
+        styleOverrides: {
+          root: {
+            borderRadius: 6,
+            transition: 'box-shadow 180ms ease, border-color 180ms ease, transform 180ms ease',
+          },
+        },
+      },
       MuiDialog: { styleOverrides: { paper: { borderRadius: 10 } } },
       MuiDialogContent: {
         styleOverrides: {
@@ -135,7 +155,12 @@ export function buildTheme(mode: 'light' | 'dark', themeColor: string): Theme {
       },
       MuiMenu: { styleOverrides: { paper: { borderRadius: 8, boxShadow: popoverShadow, border: `1px solid ${dark ? '#2A373B' : '#E7EBE9'}` } } },
       MuiMenuItem: { styleOverrides: { root: { fontSize: 12.5, minHeight: 34 } } },
-      MuiChip: { styleOverrides: { root: { borderRadius: 4, fontWeight: 500 }, sizeSmall: { height: 22, fontSize: 11 } } },
+      MuiChip: {
+        styleOverrides: {
+          root: { borderRadius: 4, fontWeight: 500, transition: 'background-color 160ms ease, border-color 160ms ease, color 160ms ease' },
+          sizeSmall: { height: 22, fontSize: 11 },
+        },
+      },
       MuiTableCell: {
         styleOverrides: {
           root: { borderColor: dark ? '#2A373B' : '#EDF1EF' },
@@ -162,7 +187,11 @@ export function buildTheme(mode: 'light' | 'dark', themeColor: string): Theme {
         },
       },
       MuiTooltip: { defaultProps: { arrow: true } },
-      MuiListItemButton: { styleOverrides: { root: { borderRadius: 6, minHeight: 36 } } },
+      MuiListItemButton: {
+        styleOverrides: {
+          root: { borderRadius: 6, minHeight: 36, transition: 'background-color 160ms ease, color 160ms ease' },
+        },
+      },
       MuiListItemIcon: { styleOverrides: { root: { minWidth: 30, color: 'inherit' } } },
       MuiListItemText: { styleOverrides: { primary: { fontSize: 12.5 } } },
       MuiAlert: { styleOverrides: { root: { borderRadius: 6 } } },

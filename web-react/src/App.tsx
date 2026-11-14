@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { CssBaseline, ThemeProvider } from '@mui/material'
+import { MotionConfig } from 'framer-motion'
 import { buildTheme } from '@/app/theme'
 import { queryClient } from '@/query/client'
 import { loadSession, useSession } from '@/session'
@@ -51,9 +52,10 @@ function Root() {
   }, [session.loaded, session.user?.id])
 
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <BrowserRouter>
+    <MotionConfig reducedMotion="user" transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <BrowserRouter>
         <Suspense fallback={<LoadingScreen />}>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
@@ -98,8 +100,9 @@ function Root() {
         </Suspense>
         <Toaster />
         <DialogHost />
-      </BrowserRouter>
-    </ThemeProvider>
+        </BrowserRouter>
+      </ThemeProvider>
+    </MotionConfig>
   )
 }
 

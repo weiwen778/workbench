@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Box, Collapse, Divider, Tooltip, Typography, useTheme } from '@mui/material'
+import { Box, Divider, Tooltip, Typography, useTheme } from '@mui/material'
+import { AnimatePresence, motion } from 'framer-motion'
 import ChevronLeft from '@mui/icons-material/ChevronLeft'
 import ChevronRight from '@mui/icons-material/ChevronRight'
 import { Settings } from '@mui/icons-material'
@@ -199,42 +200,57 @@ export default function AppRail({ mode, pinned, groups, onToggleMode, onOpenAll 
           return (
             <Box key={`rail-${item.key}`} sx={{ width: '100%' }}>
               {renderItem(item, subItems)}
-              {expanded ? (
-                <Collapse in timeout={180}>
-                  <Box
-                    aria-label={`${item.label}二级导航`}
-                    sx={{
-                      width: '100%', maxHeight: 'min(300px, max(96px, calc(100vh - 520px)))', overflowY: 'auto',
-                      mt: 0.25, mb: 0.5, pl: 2.75, pr: 0.5,
-                      borderLeft: '1px solid', borderColor: 'divider',
-                    }}
+              <AnimatePresence initial={false}>
+                {expanded ? (
+                  <motion.div
+                    key={`${item.key}-subnav`}
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                    style={{ overflow: 'hidden' }}
                   >
-                    {subItems.map((sub) => {
-                      const active = isSubActive(sub.path)
-                      return (
-                        <Box
-                          key={sub.path}
-                          component="button"
-                          type="button"
-                          onClick={(event) => { event.stopPropagation(); go(sub.path) }}
-                          sx={{
-                            width: '100%', minHeight: 26, display: 'flex', alignItems: 'center', gap: 0.75,
-                            border: 0, borderRadius: 0.75, bgcolor: active ? 'action.selected' : 'transparent',
-                            color: active ? 'primary.main' : 'text.secondary', px: 0.75, py: 0.25,
-                            textAlign: 'left', cursor: 'pointer',
-                            '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
-                          }}
-                        >
-                          <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: active ? 600 : 400 }}>{sub.label}</Typography>
-                          {typeof sub.count === 'number' && sub.count > 0 ? (
-                            <Typography component="span" sx={{ fontSize: 10.5, color: 'text.disabled' }}>{sub.count}</Typography>
-                          ) : null}
-                        </Box>
-                      )
-                    })}
-                  </Box>
-                </Collapse>
-              ) : null}
+                    <Box
+                      aria-label={`${item.label}二级导航`}
+                      sx={{
+                        width: '100%', maxHeight: 'min(300px, max(96px, calc(100vh - 520px)))', overflowY: 'auto',
+                        mt: 0.25, mb: 0.5, pl: 2.75, pr: 0.5,
+                        borderLeft: '1px solid', borderColor: 'divider',
+                      }}
+                    >
+                      {subItems.map((sub, index) => {
+                        const active = isSubActive(sub.path)
+                        return (
+                          <motion.div
+                            key={sub.path}
+                            initial={{ opacity: 0, x: -4 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ duration: 0.16, delay: Math.min(index, 10) * 0.012 }}
+                          >
+                            <Box
+                              component="button"
+                              type="button"
+                              onClick={(event) => { event.stopPropagation(); go(sub.path) }}
+                              sx={{
+                                width: '100%', minHeight: 26, display: 'flex', alignItems: 'center', gap: 0.75,
+                                border: 0, borderRadius: 0.75, bgcolor: active ? 'action.selected' : 'transparent',
+                                color: active ? 'primary.main' : 'text.secondary', px: 0.75, py: 0.25,
+                                textAlign: 'left', cursor: 'pointer',
+                                '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
+                              }}
+                            >
+                              <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: active ? 600 : 400 }}>{sub.label}</Typography>
+                              {typeof sub.count === 'number' && sub.count > 0 ? (
+                                <Typography component="span" sx={{ fontSize: 10.5, color: 'text.disabled' }}>{sub.count}</Typography>
+                              ) : null}
+                            </Box>
+                          </motion.div>
+                        )
+                      })}
+                    </Box>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
             </Box>
           )
         })}
