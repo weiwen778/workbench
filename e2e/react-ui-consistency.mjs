@@ -43,6 +43,9 @@ expect((await rail.evaluate((element) => element.clientWidth)) >= 200, '宽版�
 await page.reload({ waitUntil: 'networkidle' })
 await page.waitForTimeout(500)
 expect((await rail.evaluate((element) => element.clientWidth)) >= 200, '宽版模式没有持久化')
+await page.getByLabel('打卡项目二级导航').waitFor()
+expect(await page.getByRole('button', { name: /^置顶/ }).count() >= 10, '打卡二级导航没有显示全部项目')
+expect(await page.getByRole('button', { name: /^收藏/ }).count() >= 10, '打卡二级导航缺少收藏入口')
 
 // 管理导航：拖动排序、取消固定、重新固定、恢复默认
 await page.getByRole('button', { name: '账号' }).click()

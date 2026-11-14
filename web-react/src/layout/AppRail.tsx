@@ -10,6 +10,7 @@ import GridView from '@mui/icons-material/GridView'
 import { logout, useSession } from '@/session'
 import { preloadPath } from '@/router/preload'
 import { appNavItem } from './app-nav'
+import CheckinSubnav from './CheckinSubnav'
 import type { SidebarMode } from './sidebar-order'
 
 interface AppRailProps {
@@ -27,6 +28,7 @@ export default function AppRail({ mode, pinned, onToggleMode, onOpenAll, onManag
   const theme = useTheme()
   const accent = theme.palette.primary.main
   const [userAnchor, setUserAnchor] = useState<HTMLElement | null>(null)
+  const [checkinOpen, setCheckinOpen] = useState(() => window.location.pathname.startsWith('/checkins'))
   const wide = mode === 'wide'
 
   const items = useMemo(() => pinned.map((key) => appNavItem(key)).filter(Boolean), [pinned])
@@ -58,7 +60,7 @@ export default function AppRail({ mode, pinned, onToggleMode, onOpenAll, onManag
     '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 1 },
   })
 
-  const renderItem = (item: NonNullable<ReturnType<typeof appNavItem>>) => {
+  const renderItem = (item: NonNullable<ReturnType<typeof appNavItem>>, expandable = false) => {
     const Icon = item.icon
     const active = activeKey === item.key
     return (
@@ -72,7 +74,7 @@ export default function AppRail({ mode, pinned, onToggleMode, onOpenAll, onManag
         onMouseEnter={() => preloadPath(item.path)}
         onFocus={() => preloadPath(item.path)}
         onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); go(item.path) } }}
-        sx={itemSx(active)}
+        sx={{ ...itemSx(active), ...(expandable && wide ? { pr: 3.25 } : {}) }}
       >
         <Icon sx={{ fontSize: wide ? 20 : 19, flexShrink: 0 }} />
         <Typography
@@ -185,7 +187,29 @@ export default function AppRail({ mode, pinned, onToggleMode, onOpenAll, onManag
       <Divider sx={{ width: wide ? 'calc(100% - 20px)' : 32, mb: 0.5 }} />
 
       <Box sx={{ width: '100%', px: wide ? 0.75 : 0.5, display: 'flex', flexDirection: 'column', alignItems: wide ? 'stretch' : 'center', gap: 0.5 }}>
-        {items.map((item) => item ? renderItem(item) : null)}
+        {items.map((item) => item ? (
+          <Box key={`rail-${item.key}`} sx={{ position: 'relative', width: '100%' }}>
+            {renderItem(item, item.key === 'checkin')}
+            {wide && item.key === 'checkin' ? (
+              <>
+                <IconButton
+                  size="small"
+                  aria-label={checkinOpen ? '收起打卡项目' : '展开打卡项目'}
+                  aria-expanded={checkinOpen}
+                  onClick={() => setCheckinOpen((value) => !value)}
+                  sx={{
+                    position: 'absolute', right: 2, top: 18, transform: 'translateY(-50%)',
+                    width: 22, height: 22, p: 0, color: 'text.disabled',
+                    '&:hover': { color: 'text.primary', bgcolor: 'action.hover' },
+                  }}
+                >
+                  <ChevronRight sx={{ fontSize: 16, transition: 'transform 160ms ease', transform: checkinOpen ? 'rotate(90deg)' : 'none' }} />
+                </IconButton>
+                <CheckinSubnav open={checkinOpen} />
+              </>
+            ) : null}
+          </Box>
+        ) : null)}
       </Box>
 
       <Box sx={{ flex: 1, minHeight: 0 }} />

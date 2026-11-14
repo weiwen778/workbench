@@ -74,6 +74,7 @@ export default function CheckinPage() {
       if (!viewActive.current || request !== requestVersion.current) return
       setGroups(data.groups)
       setTargets(data.targets)
+      window.dispatchEvent(new Event('wb:checkin-targets-changed'))
       setStats(data.statistics)
       setRange(`${data.period_start} ~ ${data.period_end}`)
       setNoteDraft((prev) => {
