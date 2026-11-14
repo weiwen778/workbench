@@ -15,6 +15,7 @@ e2e/debug-login.png
 .coverage
 htmlcov/
 *.log
+.playwright-mcp/
 
 # 备份与私人数据
 backups/
