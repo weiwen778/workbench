@@ -176,8 +176,9 @@ export function DataTable<T>({
       width: baseWidth,
       minWidth: savedWidth ?? (!fixed && typeof column.width === 'number' ? column.width : undefined),
       flex: fixed || savedWidth || hasSavedWidths ? 0 : typeof column.width === 'number' ? column.width : 1,
-      align: centerX ? 'center' : column.align,
-      headerAlign: centerX ? 'center' : column.align,
+      // 显式对齐（如数字右对齐）优先；否则按“水平居中”开关
+      align: column.align ?? (centerX ? 'center' : undefined),
+      headerAlign: column.align ?? (centerX ? 'center' : undefined),
       sortable: Boolean(column.sortable && onSort),
       hideable: !(pinnedActions || tailActions || field === '__select'),
       disableColumnMenu: field === '__select',
@@ -268,7 +269,6 @@ export function DataTable<T>({
           '& .MuiDataGrid-cell': {
             fontSize: 12.5, borderBottom: '1px solid', borderColor: 'divider',
             ...(columnDividers ? { borderRight: '1px solid', borderRightColor: 'divider' } : {}),
-            ...(centerX ? { textAlign: 'center' } : {}),
             ...(centerY ? {} : { lineHeight: '1.5 !important', paddingTop: '4px !important' }),
             ...(autoRowHeight ? { py: 1, whiteSpace: 'normal', lineHeight: 1.45, alignItems: 'center' } : {}),
           },
