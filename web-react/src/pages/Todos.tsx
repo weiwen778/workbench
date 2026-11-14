@@ -1,14 +1,69 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, IconButton,
   Menu, MenuItem, Paper, Popover, Select, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
 import { Divider } from '@mui/material'
-import { ArrowDown, ArrowRight, ArrowUp, Clock, Delete, Edit, MoreFilled, Plus, Refresh } from '@/icons'
+import {
+  DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
+} from '@dnd-kit/core'
+import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { ArrowDown, ArrowRight, Clock, Delete, DragIndicator, Edit, MoreFilled, Plus, Refresh } from '@/icons'
 import { apiError, http } from '@/api/client'
 import { confirmDialog, promptDialog, toast } from '@/ui/feedback'
 import { EmptyHint, FieldRow, LoadingBlock, Page, PageToolbar } from '@/ui/common'
+
+type TodoDrag = {
+  attributes: Record<string, any>
+  listeners: Record<string, any> | undefined
+  setActivatorNodeRef: (node: HTMLElement | null) => void
+}
+const TodoDragContext = createContext<TodoDrag | null>(null)
+
+function SortableTodo({ id, disabled, children }: { id: number; disabled?: boolean; children: ReactNode }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: Boolean(disabled) })
+  return (
+    <TodoDragContext.Provider value={{ attributes, listeners, setActivatorNodeRef }}>
+      <Box
+        ref={setNodeRef}
+        style={{
+          transform: CSS.Transform.toString(transform), transition,
+          zIndex: isDragging ? 2 : undefined, opacity: isDragging ? 0.6 : 1, position: 'relative',
+        }}
+      >
+        {children}
+      </Box>
+    </TodoDragContext.Provider>
+  )
+}
+
+function TodoDragHandle({ label }: { label: string }) {
+  const drag = useContext(TodoDragContext)
+  if (!drag) return null
+  return (
+    <Box
+      ref={drag.setActivatorNodeRef}
+      {...drag.attributes}
+      {...drag.listeners}
+      component="button"
+      type="button"
+      aria-label={`拖动排序：${label}`}
+      title="拖动排序"
+      sx={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        width: 28, height: 28, p: 0, border: 0, borderRadius: 0.75, bgcolor: 'transparent',
+        color: 'text.disabled', cursor: 'grab', touchAction: 'none',
+        '&:hover': { bgcolor: 'action.hover', color: 'text.secondary' },
+        '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 1 },
+        '&:active': { cursor: 'grabbing' },
+      }}
+    >
+      <DragIndicator sx={{ fontSize: 17 }} />
+    </Box>
+  )
+}
 
 export default function TodosPage() {
   const params = useParams()
@@ -41,6 +96,10 @@ export default function TodosPage() {
   const [editing, setEditing] = useState<any | null>(null)
   const [editForm, setEditForm] = useState({ title: '', note: '', due_date: '', due_time: '' })
   const [editSaving, setEditSaving] = useState(false)
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
 
   const listId = Number(params.listId) || null
   const currentList = lists.find((list) => list.id === listId) || null
@@ -192,15 +251,21 @@ export default function TodosPage() {
     catch (error) { toast.error(apiError(error).message) }
   }
 
-  const move = async (index: number, offset: number) => {
-    const order = pending.map((item) => item.id)
-    const target = index + offset
-    if (target < 0 || target >= order.length) return
-    ;[order[index], order[target]] = [order[target], order[index]]
+  const reorderTasks = async (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = pending.findIndex((item) => item.id === active.id)
+    const newIndex = pending.findIndex((item) => item.id === over.id)
+    if (oldIndex < 0 || newIndex < 0) return
+    const order = arrayMove(pending.map((item) => item.id), oldIndex, newIndex)
+    setPending((prev) => arrayMove(prev, oldIndex, newIndex))
     try {
       await http.post('/todos/reorder', { start_index: (pendingPage - 1) * 50, list_id: listId, order })
       await load(true)
-    } catch (error) { toast.error(apiError(error).message) }
+    } catch (error) {
+      toast.error(apiError(error).message)
+      await load(true)
+    }
   }
 
   const openEdit = (item: any) => {
@@ -231,12 +296,12 @@ export default function TodosPage() {
     catch (error) { toast.error(apiError(error).message) }
   }
 
-  const renderTask = (item: any, index: number, kind: 'pending' | 'completed') => (
+  const renderTask = (item: any, kind: 'pending' | 'completed') => (
     <Box
       key={item.id}
       aria-busy={toggling.has(item.id)}
       data-todo-id={item.id}
-      sx={{ borderTop: 1, borderColor: 'divider', opacity: completing.has(item.id) ? 0.55 : 1, '&:first-of-type': { borderTop: 0 }, '&:hover': { bgcolor: 'action.hover' } }}
+      sx={{ borderTop: 1, borderColor: 'divider', opacity: completing.has(item.id) ? 0.55 : 1, '&:hover': { bgcolor: 'action.hover' } }}
     >
       <Box className={`task-row${item.overdue ? ' overdue' : ''}${kind === 'completed' ? ' completed' : ''}`} sx={{ px: 1.5, py: 0.5, minHeight: 40 }}>
         <Tooltip title={item.can_toggle ? '' : '有子任务时，完成情况看子任务，请一个个勾选'}>
@@ -290,9 +355,8 @@ export default function TodosPage() {
         </div>
         {kind === 'pending' ? (
           <div className="task-actions">
+            {sortMode === 'manual' ? <TodoDragHandle label={item.title} /> : null}
             {!item.children.length ? <IconButton size="small" title="添加子任务" onClick={() => setSubOpen((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}><Plus sx={{ fontSize: 16 }} /></IconButton> : null}
-            {sortMode === 'manual' ? <IconButton size="small" title="上移" disabled={index === 0} onClick={() => void move(index, -1)}><ArrowUp sx={{ fontSize: 16 }} /></IconButton> : null}
-            {sortMode === 'manual' ? <IconButton size="small" title="下移" disabled={index === pending.length - 1} onClick={() => void move(index, 1)}><ArrowDown sx={{ fontSize: 16 }} /></IconButton> : null}
             <IconButton size="small" title="编辑待办" onClick={() => openEdit(item)}><Edit sx={{ fontSize: 16 }} /></IconButton>
             <IconButton size="small" title="删除" onClick={() => void removeTodo(item)}><Delete sx={{ fontSize: 16 }} /></IconButton>
           </div>
@@ -367,7 +431,17 @@ export default function TodosPage() {
               ) : null}
               {pending.length || completed.length ? (
                 <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
-                  {loaded ? pending.map((item, index) => renderTask(item, index, 'pending')) : null}
+                  {loaded ? (
+                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(event) => void reorderTasks(event)}>
+                      <SortableContext items={pending.map((item) => item.id)} strategy={verticalListSortingStrategy}>
+                        {pending.map((item) => (
+                          <SortableTodo key={item.id} id={item.id} disabled={sortMode !== 'manual'}>
+                            {renderTask(item, 'pending')}
+                          </SortableTodo>
+                        ))}
+                      </SortableContext>
+                    </DndContext>
+                  ) : null}
                   {completed.length ? (
                     <>
                       <Button
@@ -386,7 +460,7 @@ export default function TodosPage() {
                               <Button size="small" disabled={donePage >= Math.ceil(counts.top_done / 50)} onClick={() => setDonePage(donePage + 1)}>下一页</Button>
                             </Stack>
                           ) : null}
-                          {completed.map((item, index) => renderTask(item, index, 'completed'))}
+                          {completed.map((item) => renderTask(item, 'completed'))}
                         </>
                       ) : null}
                     </>

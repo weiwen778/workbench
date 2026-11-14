@@ -3,10 +3,15 @@ import {
   Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Drawer,
   FormControlLabel, IconButton, MenuItem, Select, Stack, TextField, Typography,
 } from '@mui/material'
-import { Delete, Plus } from '@/icons'
+import {
+  DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
+} from '@dnd-kit/core'
+import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { Delete, DragIndicator, Plus } from '@/icons'
 import { apiError, http } from '@/api/client'
 import { confirmDialog, toast } from '@/ui/feedback'
-import { DataTable, FieldRow, SectionTitle } from '@/ui/common'
+import { FieldRow, SectionTitle } from '@/ui/common'
 
 const fieldTypes = [
   { label: '短文本', value: 'short_text' }, { label: '长文本', value: 'long_text' },
@@ -15,6 +20,53 @@ const fieldTypes = [
   { label: '勾选', value: 'checkbox' }, { label: '链接', value: 'url' }, { label: '附件', value: 'attachment' },
   { label: '公式', value: 'formula' },
 ]
+
+const fieldColumns = '26px minmax(0, 1fr) 82px 46px 120px'
+
+function SortableField({ field, onEdit, onRemove }: { field: any; onEdit: () => void; onRemove: () => void }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: field.id })
+  return (
+    <Box
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform), transition,
+        zIndex: isDragging ? 2 : undefined, opacity: isDragging ? 0.7 : 1, position: 'relative',
+      }}
+      sx={{
+        display: 'grid', gridTemplateColumns: fieldColumns, alignItems: 'center', gap: 1,
+        minHeight: 40, px: 1.25, bgcolor: 'background.paper',
+        '& + &': { borderTop: 1, borderColor: 'divider' },
+      }}
+    >
+      <Box
+        ref={setActivatorNodeRef}
+        {...attributes}
+        {...listeners}
+        component="button"
+        type="button"
+        aria-label={`拖动${field.name}排序`}
+        title="拖动排序"
+        sx={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22,
+          p: 0, border: 0, borderRadius: 0.75, bgcolor: 'transparent', color: 'text.disabled',
+          cursor: 'grab', touchAction: 'none',
+          '&:hover': { bgcolor: 'action.hover', color: 'text.secondary' },
+          '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 1 },
+          '&:active': { cursor: 'grabbing' },
+        }}
+      >
+        <DragIndicator sx={{ fontSize: 17 }} />
+      </Box>
+      <Typography noWrap title={field.name} sx={{ fontSize: 12.5 }}>{field.name}</Typography>
+      <Typography noWrap sx={{ fontSize: 12, color: 'text.secondary' }}>{fieldTypes.find((type) => type.value === field.type)?.label || field.type}</Typography>
+      <Typography sx={{ fontSize: 12, textAlign: 'center', color: 'text.secondary' }}>{field.required ? '✓' : '—'}</Typography>
+      <Stack direction="row" spacing={0.25} justifyContent="flex-end">
+        <Button size="small" sx={{ px: 0.75 }} onClick={onEdit}>编辑</Button>
+        <Button size="small" color="error" sx={{ px: 0.75 }} onClick={onRemove}>删除</Button>
+      </Stack>
+    </Box>
+  )
+}
 
 export default function FieldManager({ open, tableId, fields, onClose, onUpdated }: {
   open: boolean
@@ -26,6 +78,12 @@ export default function FieldManager({ open, tableId, fields, onClose, onUpdated
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<any | null>(null)
   const [saving, setSaving] = useState(false)
+  const [orderedFields, setOrderedFields] = useState(fields)
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+  useEffect(() => setOrderedFields(fields), [fields])
   const [form, setForm] = useState<{ name: string; type: string; required: boolean; default_value: any; options: { id: string; name: string }[]; expression: string }>({
     name: '', type: 'short_text', required: false, default_value: '', options: [], expression: '',
   })
@@ -139,15 +197,23 @@ export default function FieldManager({ open, tableId, fields, onClose, onUpdated
     }
   }
 
-  const move = async (index: number, offset: number) => {
-    const target = index + offset
-    if (target < 0 || target >= fields.length) return
-    const current = fields[index], other = fields[target]
+  const reorderFields = async (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = orderedFields.findIndex((field) => field.id === active.id)
+    const newIndex = orderedFields.findIndex((field) => field.id === over.id)
+    if (oldIndex < 0 || newIndex < 0) return
+    const next = arrayMove(orderedFields, oldIndex, newIndex)
+    setOrderedFields(next)
     try {
-      await http.patch(`/fields/${current.id}`, { sort_order: other.sort_order })
-      await http.patch(`/fields/${other.id}`, { sort_order: current.sort_order })
+      for (const [index, field] of next.entries()) {
+        if (field.sort_order !== index) await http.patch(`/fields/${field.id}`, { sort_order: index })
+      }
       onUpdated()
-    } catch (error) { toast.error(apiError(error).message) }
+    } catch (error) {
+      setOrderedFields(fields)
+      toast.error(apiError(error).message)
+    }
   }
 
   return (
@@ -158,26 +224,31 @@ export default function FieldManager({ open, tableId, fields, onClose, onUpdated
           <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} disabled={fields.length >= 200} onClick={openAdd}>添加一列</Button>
           <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>共 {fields.length} / 200 列</Typography>
         </Stack>
-        <DataTable
-          rows={fields}
-          maxHeight="calc(100vh - 180px)"
-          columns={[
-            { key: 'name', label: '列', width: 150, ellipsis: true },
-            { key: 'type', label: '类型', width: 90, render: (row) => fieldTypes.find((type) => type.value === row.type)?.label || row.type },
-            { key: 'required', label: '必填', width: 60, align: 'center', render: (row) => row.required ? '✓' : '—' },
-            {
-              key: 'actions', label: '操作', width: 210,
-              render: (row, index) => (
-                <Stack direction="row" spacing={0.2} flexWrap="nowrap">
-                  <Button size="small" sx={{ px: 0.75 }} onClick={() => openEdit(row)}>编辑</Button>
-                  <Button size="small" sx={{ px: 0.75 }} disabled={index === 0} onClick={() => void move(index, -1)}>上移</Button>
-                  <Button size="small" sx={{ px: 0.75 }} disabled={index === fields.length - 1} onClick={() => void move(index, 1)}>下移</Button>
-                  <Button size="small" sx={{ px: 0.75 }} color="error" onClick={() => void removeField(row)}>删除</Button>
-                </Stack>
-              ),
-            },
-          ]}
-        />
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(event) => void reorderFields(event)}>
+          <SortableContext items={orderedFields.map((field) => field.id)} strategy={verticalListSortingStrategy}>
+            <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, overflow: 'auto', maxHeight: 'calc(100vh - 180px)' }}>
+              <Box sx={{
+                display: 'grid', gridTemplateColumns: fieldColumns, alignItems: 'center', gap: 1,
+                minHeight: 36, px: 1.25, bgcolor: 'action.hover', borderBottom: 1, borderColor: 'divider',
+              }}>
+                <Box />
+                <Typography sx={{ fontSize: 12.5, fontWeight: 600 }}>列</Typography>
+                <Typography sx={{ fontSize: 12.5, fontWeight: 600 }}>类型</Typography>
+                <Typography sx={{ fontSize: 12.5, fontWeight: 600, textAlign: 'center' }}>必填</Typography>
+                <Typography sx={{ fontSize: 12.5, fontWeight: 600, textAlign: 'right' }}>操作</Typography>
+              </Box>
+              {orderedFields.map((field) => (
+                <SortableField
+                  key={field.id}
+                  field={field}
+                  onEdit={() => openEdit(field)}
+                  onRemove={() => void removeField(field)}
+                />
+              ))}
+              {!orderedFields.length ? <Typography sx={{ p: 3, fontSize: 12, color: 'text.secondary', textAlign: 'center' }}>还没有列</Typography> : null}
+            </Box>
+          </SortableContext>
+        </DndContext>
       </Drawer>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth={form.type === 'formula' ? 'sm' : 'xs'} fullWidth>

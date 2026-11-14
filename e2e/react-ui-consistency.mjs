@@ -44,11 +44,23 @@ await page.reload({ waitUntil: 'networkidle' })
 await page.waitForTimeout(500)
 expect((await rail.evaluate((element) => element.clientWidth)) >= 200, '宽版模式没有持久化')
 
-// 管理导航：取消固定、重新固定、恢复默认
+// 管理导航：拖动排序、取消固定、重新固定、恢复默认
 await page.getByRole('button', { name: '账号' }).click()
 await page.getByRole('menuitem', { name: '管理导航' }).click()
 await page.getByRole('dialog').waitFor()
 await page.waitForTimeout(300)
+const dragFrom = await page.getByRole('button', { name: '拖动打卡排序', exact: true }).boundingBox()
+const dragTo = await page.getByRole('button', { name: '拖动表格排序', exact: true }).boundingBox()
+expect(dragFrom && dragTo, '管理导航缺少拖动把手')
+if (dragFrom && dragTo) {
+  await page.mouse.move(dragFrom.x + dragFrom.width / 2, dragFrom.y + dragFrom.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(dragTo.x + dragTo.width / 2, dragTo.y + dragTo.height + 8, { steps: 12 })
+  await page.mouse.up()
+  await page.waitForTimeout(350)
+}
+const orderAfterDrag = await page.getByRole('button', { name: '拖动打卡排序', exact: true }).boundingBox()
+expect(orderAfterDrag && orderAfterDrag.y > dragFrom.y + 4, '拖动后侧栏顺序没有变化')
 await page.getByRole('button', { name: '取消固定文档工作台', exact: true }).click()
 await page.getByRole('button', { name: '固定白板', exact: true }).click()
 await page.getByRole('button', { name: '完成' }).click()

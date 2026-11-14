@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Box, Button, Checkbox, FormControl, IconButton, InputLabel, MenuItem, Select,
@@ -6,7 +6,12 @@ import {
 } from '@mui/material'
 import { Divider } from '@mui/material'
 import {
-  ArrowDown, ArrowUp, AspectRatio, Brush, ChevronDown, ContentCut, Crop, Delete, Download, GridView,
+  DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
+} from '@dnd-kit/core'
+import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import {
+  AspectRatio, Brush, ChevronDown, ContentCut, Crop, Delete, Download, DragIndicator, GridView,
   Lock, LockOpen, Palette, Picture, Plus, RoundedCorner, TextFields, Tune, WaterDrop,
 } from '@/icons'
 import { confirmDialog, toast } from '@/ui/feedback'
@@ -53,6 +58,48 @@ function LabeledSelect({ label, value, onChange, children, sx }: {
   )
 }
 
+function SortableAsset({ id, children }: { id: number; children: ReactNode }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id })
+  return (
+    <Box
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform), transition,
+        zIndex: isDragging ? 2 : undefined, opacity: isDragging ? 0.65 : 1, position: 'relative',
+      }}
+    >
+      <DragHandleContext.Provider value={{ attributes, listeners, setActivatorNodeRef }}>
+        {children}
+      </DragHandleContext.Provider>
+    </Box>
+  )
+}
+
+type DragHandle = {
+  attributes: Record<string, any>
+  listeners: Record<string, any> | undefined
+  setActivatorNodeRef: (node: HTMLElement | null) => void
+}
+const DragHandleContext = createContext<DragHandle | null>(null)
+
+function AssetDragHandle({ label }: { label: string }) {
+  const drag = useContext(DragHandleContext)
+  if (!drag) return null
+  return (
+    <IconButton
+      ref={drag.setActivatorNodeRef}
+      {...drag.attributes}
+      {...drag.listeners}
+      size="small"
+      aria-label={`拖动${label}排序`}
+      title="拖动排序"
+      sx={{ cursor: 'grab', touchAction: 'none', '&:active': { cursor: 'grabbing' } }}
+    >
+      <DragIndicator sx={{ fontSize: 13 }} />
+    </IconButton>
+  )
+}
+
 const TOOL_TABS = [
   { label: '调整', hint: '裁剪、旋转与输出尺寸', icon: Tune },
   { label: '色彩', hint: '滤镜、调色、叠加与去底', icon: Palette },
@@ -96,6 +143,10 @@ export default function ImagesPage() {
   ))
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState('')
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
   const [lastExport, setLastExport] = useState('')
   const [sending, setSending] = useState(false)
   const [wbOpen, setWbOpen] = useState(false)
@@ -259,13 +310,13 @@ export default function ImagesPage() {
     setAssets(next)
   }
 
-  const moveAsset = (index: number, delta: number) => {
+  const reorderAssets = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
     setAssets((prev) => {
-      const target = index + delta
-      if (target < 0 || target >= prev.length) return prev
-      const next = [...prev]
-      ;[next[index], next[target]] = [next[target], next[index]]
-      return next
+      const oldIndex = prev.findIndex((asset) => asset.id === active.id)
+      const newIndex = prev.findIndex((asset) => asset.id === over.id)
+      return oldIndex < 0 || newIndex < 0 ? prev : arrayMove(prev, oldIndex, newIndex)
     })
   }
 
@@ -665,33 +716,37 @@ export default function ImagesPage() {
             <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>{assets.length} / 30</Typography>
           </Stack>
           <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 0.75, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-            {assets.map((asset, index) => (
-              <Box
-                key={asset.id}
-                sx={{
-                  border: 1, borderRadius: 1, p: 0.5,
-                  borderColor: asset.id === selectedId ? 'primary.main' : 'divider',
-                  bgcolor: asset.id === selectedId ? 'action.selected' : 'transparent',
-                }}
-              >
-                <Box component="button" onClick={() => selectAsset(asset.id)} sx={{ display: 'block', width: '100%', border: 0, bgcolor: 'transparent', cursor: 'pointer', p: 0, textAlign: 'left' }}>
-                  <Box component="img" src={asset.url} alt="" sx={{ width: '100%', height: 64, objectFit: 'contain', bgcolor: 'action.hover', borderRadius: 0.5 }} />
-                  <Typography sx={{ fontSize: 10.5, mt: 0.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{asset.name}</Typography>
-                </Box>
-                <Stack direction="row" alignItems="center" justifyContent="space-between">
-                  <Checkbox
-                    size="small" sx={{ p: 0.25 }} checked={asset.checked}
-                    onChange={(event) => setAssets((prev) => prev.map((item) => item.id === asset.id ? { ...item, checked: event.target.checked } : item))}
-                    inputProps={{ 'aria-label': `选择 ${asset.name}` }}
-                  />
-                  <Stack direction="row" spacing={0}>
-                    <IconButton size="small" aria-label="上移" disabled={index === 0} onClick={() => moveAsset(index, -1)}><ArrowUp sx={{ fontSize: 13 }} /></IconButton>
-                    <IconButton size="small" aria-label="下移" disabled={index === assets.length - 1} onClick={() => moveAsset(index, 1)}><ArrowDown sx={{ fontSize: 13 }} /></IconButton>
-                    <IconButton size="small" aria-label="删除图片" onClick={() => removeAsset(asset.id)}><Delete sx={{ fontSize: 13 }} /></IconButton>
-                  </Stack>
-                </Stack>
-              </Box>
-            ))}
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={reorderAssets}>
+              <SortableContext items={assets.map((asset) => asset.id)} strategy={verticalListSortingStrategy}>
+                {assets.map((asset) => (
+                  <SortableAsset key={asset.id} id={asset.id}>
+                    <Box
+                      sx={{
+                        border: 1, borderRadius: 1, p: 0.5,
+                        borderColor: asset.id === selectedId ? 'primary.main' : 'divider',
+                        bgcolor: asset.id === selectedId ? 'action.selected' : 'transparent',
+                      }}
+                    >
+                      <Box component="button" onClick={() => selectAsset(asset.id)} sx={{ display: 'block', width: '100%', border: 0, bgcolor: 'transparent', cursor: 'pointer', p: 0, textAlign: 'left' }}>
+                        <Box component="img" src={asset.url} alt="" sx={{ width: '100%', height: 64, objectFit: 'contain', bgcolor: 'action.hover', borderRadius: 0.5 }} />
+                        <Typography sx={{ fontSize: 10.5, mt: 0.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{asset.name}</Typography>
+                      </Box>
+                      <Stack direction="row" alignItems="center" justifyContent="space-between">
+                        <Checkbox
+                          size="small" sx={{ p: 0.25 }} checked={asset.checked}
+                          onChange={(event) => setAssets((prev) => prev.map((item) => item.id === asset.id ? { ...item, checked: event.target.checked } : item))}
+                          inputProps={{ 'aria-label': `选择 ${asset.name}` }}
+                        />
+                        <Stack direction="row" spacing={0}>
+                          <AssetDragHandle label={asset.name} />
+                          <IconButton size="small" aria-label="删除图片" onClick={() => removeAsset(asset.id)}><Delete sx={{ fontSize: 13 }} /></IconButton>
+                        </Stack>
+                      </Stack>
+                    </Box>
+                  </SortableAsset>
+                ))}
+              </SortableContext>
+            </DndContext>
           </Box>
           <Box sx={{ p: 0.75, borderTop: 1, borderColor: 'divider', flexShrink: 0 }}>
             <Button fullWidth size="small" disabled={busy} onClick={clearAll}>清空素材</Button>

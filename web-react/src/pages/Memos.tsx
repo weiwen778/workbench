@@ -6,7 +6,7 @@ import {
 } from '@mui/material'
 import { Divider } from '@mui/material'
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
-import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates, useSortable } from '@dnd-kit/sortable'
+import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { CopyDocument, Delete, DragIndicator, Edit, MoreFilled, Plus, Refresh, Search, Brush, Tune } from '@/icons'
 import GridView from '@mui/icons-material/GridView'
@@ -361,30 +361,37 @@ export default function MemosPage() {
               </SortableContext>
             </DndContext>
           ) : (
-            <List sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, bgcolor: 'background.paper', py: 0 }}>
-              {memos.map((memo) => (
-                <ListItem key={memo.id} divider disablePadding sx={{ '&:last-child': { borderBottom: 0 } }}>
-                  <ListItemButton onClick={() => setViewing(memo)} sx={{ gap: 1.25, px: 1.75, py: 1.25, alignItems: 'center' }}>
-                    <Box sx={{ width: 3, alignSelf: 'stretch', minHeight: 34, borderRadius: 2, bgcolor: memoAccent(memo.color), flexShrink: 0 }} />
-                    <ListItemText
-                      primary={memo.display_title}
-                      secondary={(memo.content || '').replace(/\s+/g, ' ')}
-                      primaryTypographyProps={{ fontSize: 13.5, fontWeight: 600, noWrap: true }}
-                      secondaryTypographyProps={{ fontSize: 11.5, noWrap: true }}
-                      sx={{ minWidth: 0, my: 0 }}
-                    />
-                    <Stack direction="row" spacing={1.25} alignItems="center" sx={{ flexShrink: 0 }}>
-                      <Typography component="span" sx={{ fontSize: 11.5, color: 'text.secondary' }}>{memo.display_category}</Typography>
-                      <Typography component="span" sx={{ fontSize: 11.5, color: 'text.disabled' }}>{formatDate(memo.updated_at)}</Typography>
-                    </Stack>
-                    <Stack direction="row" spacing={0.25} sx={{ flexShrink: 0 }} onClick={(event) => event.stopPropagation()}>
-                      <Tooltip title="编辑"><IconButton size="small" aria-label="编辑便利贴" onClick={() => openEdit(memo)}><Edit fontSize="small" /></IconButton></Tooltip>
-                      <Tooltip title="更多"><IconButton size="small" aria-label="更多便利贴操作" onClick={(event) => setCardMenu({ el: event.currentTarget, memo })}><MoreFilled fontSize="small" /></IconButton></Tooltip>
-                    </Stack>
-                  </ListItemButton>
-                </ListItem>
-              ))}
-            </List>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(event) => void onMemoDragEnd(event)}>
+              <SortableContext items={memos.map((memo) => memo.id)} strategy={verticalListSortingStrategy}>
+                <List sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, bgcolor: 'background.paper', py: 0 }}>
+                  {memos.map((memo) => (
+                    <SortableMemo key={memo.id} id={memo.id} disabled={loading || ordering}>
+                      <ListItem divider disablePadding sx={{ '&:last-child': { borderBottom: 0 } }}>
+                        <MemoDragHandle label={memo.display_title} />
+                        <ListItemButton onClick={() => setViewing(memo)} sx={{ flex: 1, minWidth: 0, gap: 1.25, pl: 0.5, pr: 1.75, py: 1.25, alignItems: 'center' }}>
+                          <Box sx={{ width: 3, alignSelf: 'stretch', minHeight: 34, borderRadius: 2, bgcolor: memoAccent(memo.color), flexShrink: 0 }} />
+                          <ListItemText
+                            primary={memo.display_title}
+                            secondary={(memo.content || '').replace(/\s+/g, ' ')}
+                            primaryTypographyProps={{ fontSize: 13.5, fontWeight: 600, noWrap: true }}
+                            secondaryTypographyProps={{ fontSize: 11.5, noWrap: true }}
+                            sx={{ minWidth: 0, my: 0 }}
+                          />
+                          <Stack direction="row" spacing={1.25} alignItems="center" sx={{ flexShrink: 0 }}>
+                            <Typography component="span" sx={{ fontSize: 11.5, color: 'text.secondary' }}>{memo.display_category}</Typography>
+                            <Typography component="span" sx={{ fontSize: 11.5, color: 'text.disabled' }}>{formatDate(memo.updated_at)}</Typography>
+                          </Stack>
+                          <Stack direction="row" spacing={0.25} sx={{ flexShrink: 0 }} onClick={(event) => event.stopPropagation()}>
+                            <Tooltip title="编辑"><IconButton size="small" aria-label="编辑便利贴" onClick={() => openEdit(memo)}><Edit fontSize="small" /></IconButton></Tooltip>
+                            <Tooltip title="更多"><IconButton size="small" aria-label="更多便利贴操作" onClick={(event) => setCardMenu({ el: event.currentTarget, memo })}><MoreFilled fontSize="small" /></IconButton></Tooltip>
+                          </Stack>
+                        </ListItemButton>
+                      </ListItem>
+                    </SortableMemo>
+                  ))}
+                </List>
+              </SortableContext>
+            </DndContext>
           )}
         </Box>
       </PageBody>

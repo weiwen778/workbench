@@ -5,7 +5,12 @@ import {
   IconButton, InputAdornment, List, ListItemButton, ListItemIcon, ListItemText, Stack, TextField, Tooltip, Typography,
 } from '@mui/material'
 import PushPin from '@mui/icons-material/PushPin'
-import { ArrowDown, ArrowUp, Close, Search, Setting, SwitchButton } from '@/icons'
+import {
+  DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
+} from '@dnd-kit/core'
+import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { Close, DragIndicator, Search, Setting, SwitchButton } from '@/icons'
 import { logout, useSession } from '@/session'
 import {
   APP_NAV_GROUPS, APP_NAV_ITEMS, DEFAULT_PINNED_KEYS, MAX_PINNED, appNavItem, type AppNavItem,
@@ -115,6 +120,44 @@ export function NavAllDrawer({
   )
 }
 
+function SortablePinnedRow({ item, onUnpin }: { item: AppNavItem; onUnpin: () => void }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: item.key })
+  const Icon = item.icon
+  return (
+    <Box
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform), transition,
+        zIndex: isDragging ? 2 : undefined, opacity: isDragging ? 0.7 : 1, position: 'relative',
+      }}
+      sx={{ display: 'flex', alignItems: 'center', minHeight: 38, gap: 1, px: 1.25, bgcolor: 'background.paper' }}
+    >
+      <Box
+        ref={setActivatorNodeRef}
+        {...attributes}
+        {...listeners}
+        component="button"
+        type="button"
+        aria-label={`拖动${item.label}排序`}
+        title="拖动排序"
+        sx={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          width: 22, height: 22, p: 0, border: 0, borderRadius: 0.75, bgcolor: 'transparent',
+          color: 'text.disabled', cursor: 'grab', touchAction: 'none',
+          '&:hover': { bgcolor: 'action.hover', color: 'text.secondary' },
+          '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 1 },
+          '&:active': { cursor: 'grabbing' },
+        }}
+      >
+        <DragIndicator sx={{ fontSize: 17 }} />
+      </Box>
+      <Box sx={{ minWidth: 28, display: 'flex' }}><Icon sx={{ fontSize: 18 }} /></Box>
+      <Typography sx={{ flex: 1, fontSize: 13 }}>{item.label}</Typography>
+      <Button size="small" aria-label={`取消固定${item.label}`} onClick={onUnpin}>取消固定</Button>
+    </Box>
+  )
+}
+
 export function ManageNavDialog({
   open, onClose, pinned, onChange,
 }: {
@@ -127,18 +170,23 @@ export function ManageNavDialog({
   const pinnedItems = pinned.map((key) => appNavItem(key)).filter((item): item is AppNavItem => Boolean(item))
   const available = APP_NAV_ITEMS.filter((item) => !pinned.includes(item.key) && matches(query, item.label))
   const groups = APP_NAV_GROUPS.map((group) => ({ ...group, items: available.filter((item) => item.group === group.key) })).filter((group) => group.items.length)
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
 
-  const move = (index: number, delta: number) => {
-    const target = index + delta
-    if (target < 0 || target >= pinned.length) return
-    const next = [...pinned]
-    ;[next[index], next[target]] = [next[target], next[index]]
-    onChange(next)
-  }
   const unpin = (key: string) => onChange(pinned.filter((value) => value !== key))
   const pin = (key: string) => {
     if (pinned.length >= MAX_PINNED || pinned.includes(key)) return
     onChange([...pinned, key])
+  }
+  const onDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = pinned.indexOf(String(active.id))
+    const newIndex = pinned.indexOf(String(over.id))
+    if (oldIndex < 0 || newIndex < 0) return
+    onChange(arrayMove(pinned, oldIndex, newIndex))
   }
 
   return (
@@ -156,21 +204,16 @@ export function ManageNavDialog({
           sx={{ mb: 1.5 }}
         />
         <Typography sx={{ fontSize: 12, fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>已固定</Typography>
-        <List dense disablePadding sx={{ border: 1, borderColor: 'divider', borderRadius: 1, mb: 2 }}>
-          {pinnedItems.map((item, index) => {
-            const Icon = item.icon
-            return (
-              <Box key={item.key} sx={{ display: 'flex', alignItems: 'center', minHeight: 38, gap: 1, px: 1.25 }}>
-                <Box sx={{ minWidth: 28, display: 'flex' }}><Icon sx={{ fontSize: 18 }} /></Box>
-                <Typography sx={{ flex: 1, fontSize: 13 }}>{item.label}</Typography>
-                <IconButton size="small" aria-label={`上移${item.label}`} disabled={index === 0} onClick={() => move(index, -1)}><ArrowUp fontSize="small" /></IconButton>
-                <IconButton size="small" aria-label={`下移${item.label}`} disabled={index === pinned.length - 1} onClick={() => move(index, 1)}><ArrowDown fontSize="small" /></IconButton>
-                <Button size="small" aria-label={`取消固定${item.label}`} onClick={() => unpin(item.key)}>取消固定</Button>
-              </Box>
-            )
-          })}
-          {!pinnedItems.length ? <Typography sx={{ p: 2, fontSize: 12, color: 'text.secondary' }}>还没有固定项</Typography> : null}
-        </List>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+          <SortableContext items={pinned} strategy={verticalListSortingStrategy}>
+            <List dense disablePadding sx={{ border: 1, borderColor: 'divider', borderRadius: 1, mb: 2 }}>
+              {pinnedItems.map((item) => (
+                <SortablePinnedRow key={item.key} item={item} onUnpin={() => unpin(item.key)} />
+              ))}
+              {!pinnedItems.length ? <Typography sx={{ p: 2, fontSize: 12, color: 'text.secondary' }}>还没有固定项</Typography> : null}
+            </List>
+          </SortableContext>
+        </DndContext>
         <Typography sx={{ fontSize: 12, fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>全部功能</Typography>
         <List dense disablePadding sx={{ border: 1, borderColor: 'divider', borderRadius: 1, maxHeight: 300, overflow: 'auto' }}>
           {groups.map((group) => (

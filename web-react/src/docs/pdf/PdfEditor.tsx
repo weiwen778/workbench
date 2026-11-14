@@ -16,7 +16,7 @@ import CheckIcon from '@mui/icons-material/Check'
 import SignatureIcon from '@mui/icons-material/DriveFileRenameOutline'
 import RedactIcon from '@mui/icons-material/VisibilityOff'
 import OpenWithIcon from '@mui/icons-material/OpenWith'
-import { ArrowLeft, Check, CopyDocument, Delete, Download, Edit, MoreFilled, Picture, Plus, Refresh, Search, Upload } from '@/icons'
+import { ArrowLeft, Check, CopyDocument, Delete, Download, DragIndicator, Edit, MoreFilled, Picture, Plus, Refresh, Search, Upload } from '@/icons'
 import { apiError } from '@/api/client'
 import { confirmDialog, promptDialog, toast } from '@/ui/feedback'
 import { downloadBlob, downloadOutputs } from '@/convert/files'
@@ -808,16 +808,29 @@ export default function PdfEditor() {
         <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>图片合成 PDF</DialogTitle>
         <DialogContent sx={{ pt: 2 }}>
           <Button size="small" startIcon={<Picture fontSize="small" />} onClick={() => imageInput.current?.click()}>选择图片（可多选）</Button>
-          <Stack spacing={0.5} sx={{ mt: 1.25, maxHeight: 260, overflow: 'auto' }}>
-            {imageFiles.map((file, index) => (
-              <Stack key={`${file.name}-${index}-${file.size}`} direction="row" spacing={0.5} alignItems="center" sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 0.5 }}>
-                <Typography sx={{ fontSize: 12, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{index + 1}. {file.name}</Typography>
-                <Button size="small" disabled={index === 0} onClick={() => setImageFiles(arrayMove(imageFiles, index, index - 1))}>上移</Button>
-                <Button size="small" disabled={index === imageFiles.length - 1} onClick={() => setImageFiles(arrayMove(imageFiles, index, index + 1))}>下移</Button>
-                <IconButton size="small" aria-label="移除图片" onClick={() => setImageFiles(imageFiles.filter((_, i) => i !== index))}><Delete fontSize="small" /></IconButton>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={(event) => {
+              const { active, over } = event
+              if (!over || active.id === over.id) return
+              setImageFiles((prev) => arrayMove(prev, Number(active.id), Number(over.id)))
+            }}
+          >
+            <SortableContext items={imageFiles.map((_, index) => String(index))} strategy={verticalListSortingStrategy}>
+              <Stack spacing={0.5} sx={{ mt: 1.25, maxHeight: 260, overflow: 'auto' }}>
+                {imageFiles.map((file, index) => (
+                  <SortableImageFile
+                    key={`${file.name}-${index}-${file.size}`}
+                    id={String(index)}
+                    file={file}
+                    index={index}
+                    onRemove={() => setImageFiles((prev) => prev.filter((_, itemIndex) => itemIndex !== index))}
+                  />
+                ))}
               </Stack>
-            ))}
-          </Stack>
+            </SortableContext>
+          </DndContext>
           {imageBusy ? <Box sx={{ mt: 1 }}><LinearProgress variant="determinate" value={imageProgress} /></Box> : null}
         </DialogContent>
         <DialogActions><Button size="small" onClick={() => setImageDialog(false)}>取消</Button><Button size="small" variant="contained" disabled={!imageFiles.length || imageBusy} onClick={() => void composeImages()}>生成并加入</Button></DialogActions>
@@ -837,6 +850,45 @@ export default function PdfEditor() {
         <DialogActions><Button size="small" onClick={() => setImageExportDialog(false)}>取消</Button><Button size="small" variant="contained" disabled={imageExportBusy} onClick={() => void exportImages()}>导出图片</Button></DialogActions>
       </Dialog>
     </Box>
+  )
+}
+
+function SortableImageFile({ id, file, index, onRemove }: { id: string; file: File; index: number; onRemove: () => void }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id })
+  return (
+    <Stack
+      ref={setNodeRef}
+      direction="row"
+      spacing={0.5}
+      alignItems="center"
+      style={{
+        transform: CSS.Transform.toString(transform), transition,
+        zIndex: isDragging ? 2 : undefined, opacity: isDragging ? 0.65 : 1, position: 'relative',
+      }}
+      sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 0.5, bgcolor: 'background.paper' }}
+    >
+      <Box
+        ref={setActivatorNodeRef}
+        {...attributes}
+        {...listeners}
+        component="button"
+        type="button"
+        aria-label={`拖动${file.name}排序`}
+        title="拖动排序"
+        sx={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22,
+          p: 0, border: 0, borderRadius: 0.75, bgcolor: 'transparent', color: 'text.disabled',
+          cursor: 'grab', touchAction: 'none',
+          '&:hover': { bgcolor: 'action.hover', color: 'text.secondary' },
+          '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 1 },
+          '&:active': { cursor: 'grabbing' },
+        }}
+      >
+        <DragIndicator sx={{ fontSize: 17 }} />
+      </Box>
+      <Typography sx={{ fontSize: 12, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{index + 1}. {file.name}</Typography>
+      <IconButton size="small" aria-label="移除图片" onClick={onRemove}><Delete fontSize="small" /></IconButton>
+    </Stack>
   )
 }
 
