@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from '@/ui/feedback'
 import {
   adoptPet, fetchPet, renamePet, runPetAction,
   type PetAction, type PetEnvelope,
@@ -19,7 +20,11 @@ export function useAdoptPet() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (name?: string) => adoptPet(name),
-    onSuccess: (data) => qc.setQueryData<PetEnvelope>(PET_KEY, { pet: data.pet, daily_bonus: null }),
+    onSuccess: (data) => {
+      qc.setQueryData<PetEnvelope>(PET_KEY, { pet: data.pet, daily_bonus: null })
+      // 提示放在 hook 层：AdoptCard 会在领养成功后立刻卸载，组件级 onSuccess 会丢。
+      toast.success('领养成功')
+    },
   })
 }
 

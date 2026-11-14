@@ -4,11 +4,14 @@ import { apiError } from '@/api/client'
 import { EmptyHint, LoadingBlock, Page, PageBody, PageToolbar } from '@/ui/common'
 import { toast } from '@/ui/feedback'
 import AdoptCard from '@/pets/AdoptCard'
-import { usePetQuery, useRenamePet } from '@/pets/usePet'
+import ActionBar from '@/pets/ActionBar'
+import NeedsPanel from '@/pets/NeedsPanel'
+import { usePetAction, usePetQuery, useRenamePet } from '@/pets/usePet'
 
 export default function PetPage() {
-  const { data, isLoading, isError, refetch } = usePetQuery()
+  const { data, dataUpdatedAt, isLoading, isError, refetch } = usePetQuery()
   const rename = useRenamePet()
+  const action = usePetAction()
   const [renameOpen, setRenameOpen] = useState(false)
   const [renameValue, setRenameValue] = useState('')
   const bonusShown = useRef('')
@@ -44,8 +47,24 @@ export default function PetPage() {
         <Button onClick={() => { setRenameValue(pet.name); setRenameOpen(true) }}>改名</Button>
       </PageToolbar>
       <PageBody>
-        <Box sx={{ flex: 1, minHeight: 320, borderRadius: 2, bgcolor: 'action.hover', display: 'grid', placeItems: 'center' }}>
-          <Typography color="text.secondary">房间和状态面板即将出现</Typography>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) 320px' }, gap: 2, flex: 1, minHeight: 0 }}>
+          <Box sx={{ minWidth: 0, minHeight: 320, borderRadius: 2, bgcolor: 'action.hover', display: 'grid', placeItems: 'center' }}>
+            <Typography color="text.secondary">狗狗的房间</Typography>
+          </Box>
+          <Box sx={{ minWidth: 0, borderRadius: 2, border: 1, borderColor: 'divider', p: 2 }}>
+            <NeedsPanel pet={pet} />
+            <Box sx={{ mt: 2 }}>
+              <ActionBar
+                pet={pet}
+                syncedAt={dataUpdatedAt}
+                pending={action.isPending ? action.variables ?? null : null}
+                onAction={(next) => action.mutate(next, {
+                  onSuccess: (result) => toast.success(result.message),
+                  onError: (error) => toast.error(apiError(error).message),
+                })}
+              />
+            </Box>
+          </Box>
         </Box>
       </PageBody>
       <Dialog open={renameOpen} onClose={() => setRenameOpen(false)} aria-labelledby="rename-pet-title">

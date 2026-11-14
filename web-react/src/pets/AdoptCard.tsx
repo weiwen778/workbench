@@ -19,7 +19,6 @@ export default function AdoptCard() {
         variant="contained" sx={{ mt: 2 }} disabled={adopt.isPending}
         onClick={() => adopt.mutate(name, {
           onError: (error) => toast.error(apiError(error).message),
-          onSuccess: () => toast.success('领养成功'),
         })}
       >
         领养
