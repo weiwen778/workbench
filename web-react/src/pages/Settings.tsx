@@ -30,7 +30,7 @@ const groups = [
     items: [
       { key: 'ai', label: 'AI 能力', icon: InfoFilled, description: '配置智谱模型，用于 AI 填表和 AI 生成看板图表。', keywords: 'GLM OCR 视觉 文本 图片 识别 看板 图表 API Key 模型' },
       { key: 'translation', label: '翻译服务', icon: Translate, description: '配置、启用和测试翻译服务，密钥留空时保留原有值。', keywords: '百度 有道 DeepSeek 智谱 密钥 模型 翻译 字号 服务' },
-      { key: 'agents', label: 'Agent 接入', icon: Todo, description: '管理自动化助手的访问权限和写入记录。', keywords: '令牌 API token 自动化 权限 暂存 审核 活动' },
+      { key: 'agents', label: 'Agent 接入', icon: Todo, description: '让 Agent 直接接管工作台，记录每次操作并支持撤销。', keywords: '令牌 API token 自动化 权限 直接写入 撤销 暂存 审核 活动' },
     ],
   },
   {

@@ -106,6 +106,7 @@ async def merge(change_id:int,payload:ReviewIn,request:Request,user:User=Depends
             refs={};results=[]
             for index,original in enumerate(operations):
                 op=staging.normalize(staging.resolve(original,refs))
+                staging.authorize(token,op['path'],True,op['method'],work)
                 response=await staging.dispatch(request.app,work,user.id,f'Agent 合并: {token.name}；审核: {user.username}',op)
                 try:result=response.json()
                 except ValueError:

@@ -7,7 +7,8 @@
     "smoke": "node react-smoke.mjs",
     "smoke:crud": "node react-smoke-crud.mjs",
     "full": "node react-full.mjs",
-    "ui": "node react-ui-consistency.mjs"
+    "ui": "node react-ui-consistency.mjs",
+    "agent:direct": "node agent-direct.mjs"
   },
   "devDependencies": {
     "playwright": "^1.55.0"

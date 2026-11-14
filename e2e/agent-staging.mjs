@@ -1,3 +1,4 @@
+// LEGACY: review-mode UI labels/selectors predate direct mode. Use agent-direct.mjs for current acceptance.
 import {chromium} from '../e2e/node_modules/playwright/index.mjs';
 import assert from 'node:assert/strict';
 const browser=await chromium.launch({headless:true,executablePath:'/home/weiwen/.cache/ms-playwright/chromium-1194/chrome-linux/chrome'});

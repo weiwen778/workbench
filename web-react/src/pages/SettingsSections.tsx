@@ -27,6 +27,18 @@ function LabeledField({ label, children }: { label: string; children: React.Reac
 export function AgentsSection() {
   const [tokens, setTokens] = useState<any[]>([])
   const [activity, setActivity] = useState<any[]>([])
+  const [runs, setRuns] = useState<any[]>([])
+  const [runTotal, setRunTotal] = useState(0)
+  const [runCounts, setRunCounts] = useState<Record<string, number>>({})
+  const [runUndoCounts, setRunUndoCounts] = useState<Record<string, number>>({})
+  const [runStatus, setRunStatus] = useState('all')
+  const [runUndoStatus, setRunUndoStatus] = useState('all')
+  const [runPage, setRunPage] = useState(1)
+  const [runQuery, setRunQuery] = useState('')
+  const [runsLoading, setRunsLoading] = useState(false)
+  const [runDetailOpen, setRunDetailOpen] = useState(false)
+  const [runDetail, setRunDetail] = useState<any | null>(null)
+  const [undoing, setUndoing] = useState<number | null>(null)
   const [changes, setChanges] = useState<any[]>([])
   const [counts, setCounts] = useState<Record<string, number>>({})
   const [changeStatus, setChangeStatus] = useState('pending')
@@ -36,6 +48,10 @@ export function AgentsSection() {
   const [changesLoading, setChangesLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const [editToken, setEditToken] = useState<any | null>(null)
+  const [editForm, setEditForm] = useState<any | null>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
   const [secret, setSecret] = useState<any | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [detail, setDetail] = useState<any | null>(null)
@@ -45,19 +61,28 @@ export function AgentsSection() {
   const [splitOpen, setSplitOpen] = useState(false)
   const [splitIndices, setSplitIndices] = useState<number[]>([])
   const [splitting, setSplitting] = useState(false)
-  const [form, setForm] = useState({ name: '', scopes: ['all:read', 'all:stage'], expires_in_days: 90 })
+  const [form, setForm] = useState<any>({
+    name: '', scopes: ['all:read', 'all:stage'], expires_in_days: 90,
+    write_mode: 'direct',
+    policy: {
+      modules: [], tables: [], operations: ['create', 'update', 'delete'],
+      allow_schema: true, allow_files: false, allow_external: false, allow_irreversible: false,
+      max_operations: 100, daily_runs: 1000,
+    },
+  })
+  const [policyPreset, setPolicyPreset] = useState('takeover')
   const [creating, setCreating] = useState(false)
 
   const scopeOptions = [
     { key: 'all:read', label: '读取全部业务', hint: '表格、待办、笔记、便利贴、打卡、看板、网址等' },
-    { key: 'all:stage', label: '全部业务写入（先暂存）', hint: '新增、修改、删除都会进入待审核，不会直接生效' },
+    { key: 'all:stage', label: '全部业务写入', hint: '新增、修改、删除；是否直接生效由上面的写入模式决定' },
     { key: 'todos:read', label: '只读取待办', hint: '适合只做提醒或汇总的 Agent' },
-    { key: 'todos:write', label: '只写入待办（先暂存）', hint: '自动建待办、改状态，仍需你审核' },
+    { key: 'todos:write', label: '只写入待办', hint: '自动建待办、改状态；模式决定直接生效或先暂存' },
     { key: 'tables:read', label: '只读取表格', hint: '报表、数据分析类 Agent' },
-    { key: 'tables:write', label: '只写入表格（先暂存）', hint: '自动补数据、改记录，仍需你审核' },
+    { key: 'tables:write', label: '只写入表格', hint: '自动补数据、改记录；模式决定直接生效或先暂存' },
   ] as const
   const grantLabels: Record<string, string> = Object.fromEntries(scopeOptions.map((item) => [item.key, item.label]))
-  grantLabels['all:stage'] = '全部业务写入（先暂存）'
+  grantLabels['all:stage'] = '全部业务写入'
   const endpoint = `${window.location.origin}/api/v1/agent`
 
   const time = (value: string | null) => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '尚未使用'
@@ -73,6 +98,17 @@ export function AgentsSection() {
     const { data } = await http.get('/agent-activity')
     setActivity(data.items)
   }
+  const loadRuns = async (status = runStatus, undoStatus = runUndoStatus, page = runPage, query = runQuery) => {
+    setRunsLoading(true)
+    try {
+      const { data } = await http.get('/agent-runs', { params: { status, undo_status: undoStatus, page, q: query.trim() || undefined } })
+      setRuns(data.items || [])
+      setRunTotal(data.total || 0)
+      setRunCounts(data.counts || {})
+      setRunUndoCounts(data.undo_counts || {})
+    } catch (error) { toast.error(apiError(error).message) }
+    finally { setRunsLoading(false) }
+  }
   const loadChanges = async (status = changeStatus, page = changePage, query = changeQuery) => {
     setChangesLoading(true)
     try {
@@ -85,31 +121,64 @@ export function AgentsSection() {
   }
   const load = async () => {
     setLoading(true)
-    try { await Promise.all([loadTokens(), loadActivity(), loadChanges()]) }
+    try { await Promise.all([loadTokens(), loadActivity(), loadChanges(), loadRuns()]) }
     catch (error) { toast.error(apiError(error).message) }
     finally { setLoading(false) }
   }
 
   useEffect(() => { void load() }, [])
   useEffect(() => { void loadChanges(changeStatus, changePage, changeQuery) }, [changeStatus, changePage])
+  useEffect(() => { void loadRuns(runStatus, runUndoStatus, runPage, runQuery) }, [runStatus, runUndoStatus, runPage])
   useEffect(() => {
     const timer = window.setInterval(() => {
       if (document.hidden) return
       void loadChanges(changeStatus, changePage, changeQuery)
+      void loadRuns(runStatus, runUndoStatus, runPage, runQuery)
       void loadActivity()
     }, 20000)
     return () => window.clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [changeStatus, changePage])
+  }, [changeStatus, changePage, runStatus, runUndoStatus, runPage])
+
+  const applyPolicyPreset = (preset: string) => {
+    setPolicyPreset(preset)
+    if (preset === 'observer') {
+      setForm((current: any) => ({
+        ...current, scopes: ['all:read'], write_mode: 'review',
+        policy: { ...current.policy, operations: ['create', 'update', 'delete'], allow_schema: false, allow_files: false, allow_external: false, allow_irreversible: false },
+      }))
+    } else if (preset === 'assistant') {
+      setForm((current: any) => ({
+        ...current, scopes: ['all:read', 'all:stage'], write_mode: 'review',
+        policy: { ...current.policy, operations: ['create', 'update'], allow_schema: false, allow_files: false, allow_external: false, allow_irreversible: false },
+      }))
+    } else if (preset === 'takeover') {
+      setForm((current: any) => ({
+        ...current, scopes: ['all:read', 'all:stage'], write_mode: 'direct',
+        policy: { ...current.policy, operations: ['create', 'update', 'delete'], allow_schema: true, allow_files: false, allow_external: false, allow_irreversible: false },
+      }))
+    }
+  }
 
   const createToken = async () => {
     if (!form.name.trim() || !form.scopes.length) { toast.warning('请填写 Agent 名称并选择至少一项权限'); return }
     setCreating(true)
     try {
-      const { data } = await http.post('/agent-tokens', form)
+      const payload: any = { ...form }
+      if (form.write_mode !== 'direct') delete payload.policy
+      const { data } = await http.post('/agent-tokens', payload)
       setSecret(data)
       setCreateOpen(false)
-      setForm({ name: '', scopes: ['all:read', 'all:stage'], expires_in_days: 90 })
+      setForm({
+        name: '', scopes: ['all:read', 'all:stage'], expires_in_days: 90,
+        write_mode: 'direct',
+        policy: {
+          modules: [], tables: [], operations: ['create', 'update', 'delete'],
+          allow_schema: true, allow_files: false, allow_external: false, allow_irreversible: false,
+          max_operations: 100, daily_runs: 1000,
+        },
+      })
+      setPolicyPreset('takeover')
       await loadTokens()
     } catch (error) { toast.error(apiError(error).message) }
     finally { setCreating(false) }
@@ -120,6 +189,38 @@ export function AgentsSection() {
     if (!ok) return
     try { await http.delete(`/agent-tokens/${token.id}`); toast.success('令牌已撤销'); await loadTokens() }
     catch (error) { toast.error(apiError(error).message) }
+  }
+
+  const openEdit = (token: any) => {
+    setEditToken(token)
+    setEditForm({
+      name: token.name,
+      write_mode: token.write_mode || 'review',
+      policy: {
+        modules: token.policy?.modules || [],
+        tables: token.policy?.tables || [],
+        operations: token.policy?.operations || ['create', 'update', 'delete'],
+        allow_schema: Boolean(token.policy?.allow_schema),
+        allow_files: Boolean(token.policy?.allow_files),
+        allow_external: Boolean(token.policy?.allow_external),
+        allow_irreversible: Boolean(token.policy?.allow_irreversible),
+        max_operations: token.policy?.max_operations || 100,
+        daily_runs: token.policy?.daily_runs || 1000,
+      },
+    })
+    setEditOpen(true)
+  }
+
+  const saveEdit = async () => {
+    if (!editToken || !editForm) return
+    setSavingEdit(true)
+    try {
+      await http.patch(`/agent-tokens/${editToken.id}`, { name: editForm.name, write_mode: editForm.write_mode, policy: editForm.policy })
+      toast.success('Agent 设置已更新')
+      setEditOpen(false)
+      await loadTokens()
+    } catch (error) { toast.error(apiError(error).message) }
+    finally { setSavingEdit(false) }
   }
 
   const copyGuide = async () => {
@@ -138,9 +239,48 @@ export function AgentsSection() {
 
   const copyConfig = async () => {
     if (!secret) return
-    const config = JSON.stringify({ base_url: endpoint, authorization: `Bearer ${secret.token}`, write_mode: 'staged', requires_user_merge: true }, null, 2)
+    const config = JSON.stringify({ base_url: endpoint, authorization: `Bearer ${secret.token}`, write_mode: secret.write_mode || 'review', requires_user_merge: secret.write_mode !== 'direct', undo: '用户可在设置 → Agent 操作记录中撤销' }, null, 2)
     if (await copyText(config)) toast.success('配置已复制')
     else toast.error('复制失败，请手动复制令牌')
+  }
+
+  const copyFullConfig = async () => {
+    if (!secret) return
+    try {
+      const { data } = await http.get('/agent-guide')
+      const text = data.guide.replaceAll('{{BASE_URL}}', window.location.origin).replaceAll('{{TOKEN}}', secret.token)
+      if (await copyText(text)) toast.success('完整接入包已复制，直接交给 Agent 即可')
+      else toast.error('复制失败，请重试')
+    } catch (error) { toast.error(apiError(error).message) }
+  }
+
+  const openRun = async (run: any) => {
+    setRunDetailOpen(true); setRunDetail(null)
+    try {
+      const { data } = await http.get(`/agent-runs/${run.id}`)
+      setRunDetail(data)
+    } catch (error) { toast.error(apiError(error).message); setRunDetailOpen(false) }
+  }
+
+  const undoRun = async (run: any) => {
+    const ok = await confirmDialog({ title: '撤销 Agent 操作', confirmText: '撤销这次写入', danger: true, message: `将按相反顺序撤销「${run.title}」中的 ${run.operation_count || 1} 个操作。若内容在 Agent 写入后又被修改，撤销会被拒绝，不会覆盖你的新修改。` })
+    if (!ok) return
+    setUndoing(run.id)
+    try {
+      await http.post(`/agent-runs/${run.id}/undo`, {}, { timeout: 180000 })
+      toast.success('已撤销这次 Agent 写入')
+      setRunDetailOpen(false)
+      await Promise.all([loadRuns(), loadActivity(), loadTokens()])
+      window.dispatchEvent(new Event('wb:tables-changed'))
+      window.dispatchEvent(new Event('wb:todos-changed'))
+      window.dispatchEvent(new Event('wb:notes-changed'))
+    } catch (error) {
+      const details = (error as any)?.response?.data?.detail?.details
+      const extra = details?.conflicts?.join('；') || details?.unsupported?.join('；')
+      toast.error(extra ? `${apiError(error).message}：${extra}` : apiError(error).message)
+      await loadRuns()
+      if (runDetailOpen) void openRun(run)
+    } finally { setUndoing(null) }
   }
 
   const openDetail = async (change: any) => {
@@ -226,7 +366,7 @@ export function AgentsSection() {
           <Box>
             <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.5 }}>Agent 接入</Typography>
             <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
-              读取即时生效；写入需人工确认。
+              默认直接接管，写入即时生效并记录前后差异；可随时撤销，也可切换为先审核。
             </Typography>
           </Box>
           <Stack direction="row" spacing={1}>
@@ -237,9 +377,9 @@ export function AgentsSection() {
 
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, gap: 1.5, mt: 2 }}>
           {[
-            { title: '创建令牌', text: '按需勾选权限，令牌只显示一次。' },
-            { title: '交给 Agent', text: '复制接入说明，配置接口地址和令牌。' },
-            { title: '审核合并', text: '写操作进入暂存区，核对后合并。' },
+            { title: '创建 Agent', text: '选择接管级别和可操作范围，令牌只显示一次。' },
+            { title: '交给 Agent', text: '复制一份完整配置，Agent 直接读写工作台。' },
+            { title: '随时撤销', text: '每次写入都有记录和前后差异，可一键撤销。' },
           ].map((step, index) => (
             <Box key={step.title} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1.5 }}>
               <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: 'primary.main', fontFamily: '"IBM Plex Mono", monospace' }}>0{index + 1}</Typography>
@@ -275,8 +415,9 @@ export function AgentsSection() {
                   </Box>
                 ),
               },
-              { key: 'scopes', label: '权限', width: 260, render: (row) => (
+              { key: 'scopes', label: '权限', width: 280, render: (row) => (
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, py: 0.25 }}>
+                  <Chip size="small" color={row.write_mode === 'direct' ? 'success' : 'warning'} label={row.write_mode === 'direct' ? '直接写入' : '先审核'} />
                   {row.scopes.map((scope: string) => <Chip key={scope} size="small" label={grantLabels[scope] || scope} />)}
                 </Box>
               ) },
@@ -294,7 +435,12 @@ export function AgentsSection() {
               },
               { key: 'last_used_at', label: '最近使用', width: 150, render: (row) => <Typography sx={{ fontSize: 12 }}>{time(row.last_used_at)}</Typography> },
               { key: 'status', label: '状态', width: 90, render: (row) => <Chip size="small" label={({ active: '有效', revoked: '已撤销', expired: '已过期' } as any)[row.status] || row.status} color={row.status === 'active' ? 'success' : 'default'} /> },
-              { key: 'actions', label: '操作', width: 80, render: (row) => row.status === 'active' ? <Button size="small" color="error" onClick={() => void revoke(row)}>撤销</Button> : null },
+              { key: 'actions', label: '操作', width: 130, render: (row) => row.status === 'active' ? (
+                <Stack direction="row" spacing={0.5}>
+                  <Button size="small" onClick={() => openEdit(row)}>设置</Button>
+                  <Button size="small" color="error" onClick={() => void revoke(row)}>撤销</Button>
+                </Stack>
+              ) : null },
             ]}
           />
         ) : (
@@ -303,6 +449,77 @@ export function AgentsSection() {
             <Button size="small" variant="contained" sx={{ mt: 1.25 }} onClick={() => setCreateOpen(true)}>创建第一个令牌</Button>
           </Box>
         )}
+      </Card>
+
+      <Card>
+        <SectionTitle
+          action={(
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Button size="small" onClick={() => void loadRuns()}>刷新</Button>
+            </Stack>
+          )}
+        >
+          Agent 操作记录{runTotal ? `（${runTotal}）` : ''}
+        </SectionTitle>
+        <Tabs value={runStatus} onChange={(_, value) => { setRunStatus(value); setRunPage(1) }} sx={{ mb: 1, minHeight: 34 }}>
+          <Tab value="all" label={`全部${(runCounts.applied || 0) + (runCounts.undone || 0) ? `（${(runCounts.applied || 0) + (runCounts.undone || 0)}）` : ''}`} />
+          <Tab value="applied" label={`已写入${runCounts.applied ? `（${runCounts.applied}）` : ''}`} />
+          <Tab value="undone" label={`已撤销${runCounts.undone ? `（${runCounts.undone}）` : ''}`} />
+        </Tabs>
+        <Stack direction="row" spacing={1} sx={{ mb: 1.25, mt: 0.75 }} flexWrap="wrap" useFlexGap>
+          <Select size="small" value={runUndoStatus} onChange={(event) => { setRunUndoStatus(event.target.value); setRunPage(1) }} sx={{ minWidth: 150 }}>
+            <MenuItem value="all">全部撤销状态</MenuItem>
+            <MenuItem value="available">可撤销{runUndoCounts.available ? `（${runUndoCounts.available}）` : ''}</MenuItem>
+            <MenuItem value="undone">已撤销</MenuItem>
+            <MenuItem value="unsupported">不可自动撤销</MenuItem>
+            <MenuItem value="failed">撤销失败</MenuItem>
+          </Select>
+          <TextField
+            size="small" label="搜索操作记录" placeholder="标题或 Agent 名称" value={runQuery}
+            onChange={(event) => setRunQuery(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') { setRunPage(1); void loadRuns(runStatus, runUndoStatus, 1, runQuery) } }}
+            sx={{ width: 250 }}
+          />
+          <Button size="small" onClick={() => { setRunPage(1); void loadRuns(runStatus, runUndoStatus, 1, runQuery) }}>搜索</Button>
+        </Stack>
+
+        {runsLoading && !runs.length ? <LinearProgress sx={{ my: 2 }} /> : null}
+        {runs.length ? runs.map((run) => (
+          <Box key={run.id} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1.5, mb: 1 }}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1} flexWrap="wrap" useFlexGap>
+              <Box sx={{ minWidth: 0 }}>
+                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                  <Typography sx={{ fontSize: 13, fontWeight: 600 }} noWrap>{run.title}</Typography>
+                  <Chip size="small" label={run.status === 'undone' ? '已撤销' : '已写入'} color={run.status === 'undone' ? 'default' : 'success'} />
+                  {run.undo_status === 'unsupported' ? <Chip size="small" color="warning" label="不可自动撤销" /> : null}
+                  {run.undo_status === 'failed' ? <Chip size="small" color="error" label="撤销失败" /> : null}
+                  {run.operation_count ? <Typography sx={{ fontSize: 11.5, color: 'text.disabled' }}>{run.operation_count} 个操作</Typography> : null}
+                </Stack>
+                <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 0.25 }}>
+                  {run.agent_name || 'Agent'} · {time(run.created_at)}
+                  {run.undone_at ? ` · 撤销于 ${time(run.undone_at)}` : ''}
+                </Typography>
+              </Box>
+              <Stack direction="row" spacing={1} flexShrink={0}>
+                <Button size="small" onClick={() => void openRun(run)}>查看详情</Button>
+                {run.status === 'applied' && run.undo_status !== 'unsupported' ? (
+                  <Button size="small" color="warning" disabled={undoing === run.id} onClick={() => void undoRun(run)}>
+                    {undoing === run.id ? '撤销中…' : '撤销'}
+                  </Button>
+                ) : null}
+              </Stack>
+            </Stack>
+          </Box>
+        )) : !runsLoading ? (
+          <Typography sx={{ fontSize: 13, color: 'text.secondary', py: 2 }}>
+            {runStatus === 'all' && runUndoStatus === 'all' ? '还没有直接写入记录。创建「直接写入」Agent 后，这里会显示每次操作。' : '没有符合条件的操作记录。'}
+          </Typography>
+        ) : null}
+        {runTotal > 20 ? (
+          <Stack direction="row" justifyContent="center" sx={{ mt: 1 }}>
+            <Pagination size="small" count={Math.ceil(runTotal / 20)} page={runPage} onChange={(_, value) => setRunPage(value)} showFirstButton showLastButton />
+          </Stack>
+        ) : null}
       </Card>
 
       <Card>
@@ -378,23 +595,100 @@ export function AgentsSection() {
           columns={[
             { key: 'created_at', label: '时间', width: 150, render: (row) => time(row.created_at) },
             { key: 'agent_name', label: 'Agent', width: 130 },
-            { key: 'method', label: '操作', width: 150, render: (row) => row.method === 'MERGE' ? '用户审核合并' : row.method },
+            { key: 'method', label: '操作', width: 150, render: (row) => row.method === 'MERGE' ? '用户审核合并' : row.method === 'UNDO' ? '用户撤销' : row.method },
             { key: 'path', label: '请求路径', width: 280, ellipsis: true },
           ]}
         />
       </Card>
 
+      <Dialog open={editOpen} onClose={() => !savingEdit && setEditOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>Agent 设置 · {editToken?.name}</DialogTitle>
+        <DialogContent>
+          {editForm ? (
+            <>
+              {editToken && !editToken.policy ? <Alert severity="info" sx={{ mb: 1.5 }}>这个令牌来自旧版本。保存后会启用精细权限策略；如果只想保持原来的全部权限，请取消。</Alert> : null}
+              <FieldRow label="Agent 名称" required><TextField fullWidth value={editForm.name} inputProps={{ maxLength: 100 }} onChange={(event) => setEditForm({ ...editForm, name: event.target.value })} /></FieldRow>
+              <FieldRow label="写入模式">
+                <Select fullWidth value={editForm.write_mode} onChange={(event) => setEditForm({ ...editForm, write_mode: event.target.value })}>
+                  <MenuItem value="direct">直接写入 — 立即生效，记录操作并可撤销</MenuItem>
+                  <MenuItem value="review">先暂存 — 每次写入等你审核合并</MenuItem>
+                </Select>
+              </FieldRow>
+              <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1.25, mb: 1.5 }}>
+                <Typography sx={{ fontSize: 12.5, fontWeight: 600, mb: 0.75 }}>可操作范围</Typography>
+                <FormControlLabel control={<Checkbox size="small" checked={editForm.policy.operations.includes('delete')} onChange={(event) => setEditForm({ ...editForm, policy: { ...editForm.policy, operations: event.target.checked ? ['create', 'update', 'delete'] : ['create', 'update'] } })} />} label={<Typography sx={{ fontSize: 12.5 }}>允许删除</Typography>} />
+                <br />
+                <FormControlLabel control={<Checkbox size="small" checked={editForm.policy.allow_schema} onChange={(event) => setEditForm({ ...editForm, policy: { ...editForm.policy, allow_schema: event.target.checked } })} />} label={<Typography sx={{ fontSize: 12.5 }}>允许修改表格结构</Typography>} />
+                <br />
+                <FormControlLabel control={<Checkbox size="small" checked={editForm.policy.allow_files} onChange={(event) => setEditForm({ ...editForm, policy: { ...editForm.policy, allow_files: event.target.checked } })} />} label={<Typography sx={{ fontSize: 12.5 }}>允许文件导入导出</Typography>} />
+                <br />
+                <FormControlLabel control={<Checkbox size="small" checked={editForm.policy.allow_external} onChange={(event) => setEditForm({ ...editForm, policy: { ...editForm.policy, allow_external: event.target.checked } })} />} label={<Typography sx={{ fontSize: 12.5 }}>允许外部服务</Typography>} />
+                <br />
+                <FormControlLabel control={<Checkbox size="small" checked={editForm.policy.allow_irreversible} onChange={(event) => setEditForm({ ...editForm, policy: { ...editForm.policy, allow_irreversible: event.target.checked } })} />} label={<Typography sx={{ fontSize: 12.5 }}>允许不可撤销操作（仍会标记为不可自动撤销）</Typography>} />
+                <TextField fullWidth size="small" label="限定模块（逗号分隔，留空=全部）" placeholder="tables,todos,notes" value={(editForm.policy.modules || []).join(',')} onChange={(event) => setEditForm({ ...editForm, policy: { ...editForm.policy, modules: event.target.value.split(',').map((item: string) => item.trim()).filter(Boolean) } })} sx={{ mt: 1 }} />
+                <TextField fullWidth size="small" label="限定可写表格 ID（逗号分隔，留空=全部）" value={(editForm.policy.tables || []).join(',')} onChange={(event) => setEditForm({ ...editForm, policy: { ...editForm.policy, tables: event.target.value.split(',').map((item: string) => item.trim()).filter(Boolean).map(Number).filter((item: number) => Number.isInteger(item) && item > 0) } })} sx={{ mt: 1 }} />
+                <Stack direction="row" spacing={1.5} sx={{ mt: 1 }}>
+                  <TextField size="small" type="number" label="单次最多操作" value={editForm.policy.max_operations} onChange={(event) => setEditForm({ ...editForm, policy: { ...editForm.policy, max_operations: Number(event.target.value) } })} sx={{ flex: 1 }} />
+                  <TextField size="small" type="number" label="每日最多写入" value={editForm.policy.daily_runs} onChange={(event) => setEditForm({ ...editForm, policy: { ...editForm.policy, daily_runs: Number(event.target.value) } })} sx={{ flex: 1 }} />
+                </Stack>
+              </Box>
+              <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>保存后立即生效。模式切到「先暂存」后，新的写入会进入暂存区；已有操作记录不受影响。</Typography>
+            </>
+          ) : null}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button size="small" disabled={savingEdit} onClick={() => setEditOpen(false)}>取消</Button>
+          <Button size="small" variant="contained" disabled={savingEdit} onClick={() => void saveEdit()}>{savingEdit ? '保存中…' : '保存设置'}</Button>
+        </DialogActions>
+      </Dialog>
+
       <Dialog open={createOpen} onClose={() => !creating && setCreateOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>创建 Agent 令牌</DialogTitle>
         <DialogContent>
           <FieldRow label="Agent 名称" required><TextField fullWidth autoFocus value={form.name} inputProps={{ maxLength: 100 }} placeholder="例如：运营助手、报表 Agent" onChange={(event) => setForm({ ...form, name: event.target.value })} /></FieldRow>
+          <FieldRow label="写入模式">
+            <Select fullWidth value={form.write_mode} onChange={(event) => setForm({ ...form, write_mode: event.target.value })}>
+              <MenuItem value="direct">直接写入（推荐）— 立即生效，记录前后差异，可一键撤销</MenuItem>
+              <MenuItem value="review">先暂存 — 每次写入都等你审核合并</MenuItem>
+            </Select>
+          </FieldRow>
+          <FieldRow label="权限预设">
+            <Select fullWidth value={policyPreset} onChange={(event) => applyPolicyPreset(event.target.value)}>
+              <MenuItem value="observer">观察者 — 只读，不写入</MenuItem>
+              <MenuItem value="assistant">助理 — 先审核，不能删除或改表结构</MenuItem>
+              <MenuItem value="takeover">接管者 — 直接写入，可撤销，不能碰文件和外部服务</MenuItem>
+              <MenuItem value="custom">自定义 — 保持下面的手动设置</MenuItem>
+            </Select>
+          </FieldRow>
+          <Typography sx={{ fontSize: 11.5, color: 'text.secondary', mb: 1.25 }}>
+            预设只用于快速填充，下面的权限、表格范围和限额仍可逐项调整。
+          </Typography>
+          {form.write_mode === 'direct' ? (
+            <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1.25, mb: 1.5 }}>
+              <Typography sx={{ fontSize: 12.5, fontWeight: 600, mb: 0.75 }}>接管范围</Typography>
+              <FormControlLabel control={<Checkbox size="small" checked={form.policy.operations.includes('delete')} onChange={(event) => setForm({ ...form, policy: { ...form.policy, operations: event.target.checked ? ['create', 'update', 'delete'] : ['create', 'update'] } })} />} label={<Typography sx={{ fontSize: 12.5 }}>允许删除（删除后会进回收站，可撤销）</Typography>} />
+              <br />
+              <FormControlLabel control={<Checkbox size="small" checked={form.policy.allow_schema} onChange={(event) => setForm({ ...form, policy: { ...form.policy, allow_schema: event.target.checked } })} />} label={<Typography sx={{ fontSize: 12.5 }}>允许修改表格结构（建表、改列、改视图）</Typography>} />
+              <br />
+              <FormControlLabel control={<Checkbox size="small" checked={form.policy.allow_files} onChange={(event) => setForm({ ...form, policy: { ...form.policy, allow_files: event.target.checked } })} />} label={<Typography sx={{ fontSize: 12.5 }}>允许上传、导入、导出文件</Typography>} />
+              <br />
+              <FormControlLabel control={<Checkbox size="small" checked={form.policy.allow_external} onChange={(event) => setForm({ ...form, policy: { ...form.policy, allow_external: event.target.checked } })} />} label={<Typography sx={{ fontSize: 12.5 }}>允许调用翻译、网页信息等外部服务</Typography>} />
+              <br />
+              <FormControlLabel control={<Checkbox size="small" checked={form.policy.allow_irreversible} onChange={(event) => setForm({ ...form, policy: { ...form.policy, allow_irreversible: event.target.checked } })} />} label={<Typography sx={{ fontSize: 12.5 }}>允许不可撤销操作（文件、外部服务等；记录会标记为不可自动撤销）</Typography>} />
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mt: 1 }}>
+                <TextField size="small" label="限定可写表格 ID（逗号分隔，留空=全部）" value={(form.policy.tables || []).join(',')} onChange={(event) => setForm({ ...form, policy: { ...form.policy, tables: event.target.value.split(',').map((item: string) => item.trim()).filter(Boolean).map(Number).filter((item: number) => Number.isInteger(item) && item > 0) } })} sx={{ flex: 1 }} />
+                <TextField size="small" type="number" label="单次最多操作" value={form.policy.max_operations} onChange={(event) => setForm({ ...form, policy: { ...form.policy, max_operations: Number(event.target.value) } })} sx={{ width: 140 }} />
+                <TextField size="small" type="number" label="每日最多写入" value={form.policy.daily_runs} onChange={(event) => setForm({ ...form, policy: { ...form.policy, daily_runs: Number(event.target.value) } })} sx={{ width: 140 }} />
+              </Stack>
+            </Box>
+          ) : null}
           <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 0.75 }}>权限（只勾选需要的）</Typography>
           <Stack spacing={0.5} sx={{ mb: 1.5 }}>
             {scopeOptions.map((scope) => (
               <Box key={scope.key} sx={{ border: 1, borderColor: form.scopes.includes(scope.key) ? 'primary.main' : 'divider', borderRadius: 1, px: 1.25, py: 0.75 }}>
                 <FormControlLabel
                   sx={{ m: 0, alignItems: 'flex-start' }}
-                  control={<Checkbox size="small" sx={{ py: 0.25 }} checked={form.scopes.includes(scope.key)} onChange={(event) => setForm({ ...form, scopes: event.target.checked ? [...form.scopes, scope.key] : form.scopes.filter((item) => item !== scope.key) })} />}
+                  control={<Checkbox size="small" sx={{ py: 0.25 }} checked={form.scopes.includes(scope.key)} onChange={(event) => setForm({ ...form, scopes: event.target.checked ? [...form.scopes, scope.key] : form.scopes.filter((item: string) => item !== scope.key) })} />}
                   label={(
                     <Box>
                       <Typography sx={{ fontSize: 12.5 }}>{scope.label}</Typography>
@@ -429,15 +723,70 @@ export function AgentsSection() {
           <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 0.5 }}>接口地址</Typography>
           <Typography sx={{ fontSize: 12, fontFamily: '"IBM Plex Mono", monospace', bgcolor: 'action.hover', px: 1.25, py: 0.75, borderRadius: 1, mb: 1.5 }}>{endpoint}</Typography>
           <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 1.5 }}>
-            Agent 名称：{secret?.name} · 有效期至 {time(secret?.expires_at)} · 写入模式：先暂存，需人工合并。
+            Agent 名称：{secret?.name} · 有效期至 {time(secret?.expires_at)} · 写入模式：{secret?.write_mode === 'direct' ? '直接写入，记录操作并可撤销' : '先暂存，需人工合并'}。
           </Typography>
-          <Stack direction="row" spacing={1}>
-            <Button size="small" startIcon={<CopyDocument fontSize="small" />} onClick={() => void copyGuide()}>复制接入说明</Button>
-            <Button size="small" onClick={() => void copyConfig()}>复制配置</Button>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Button size="small" variant="contained" startIcon={<CopyDocument fontSize="small" />} onClick={() => void copyFullConfig()}>复制完整接入包</Button>
+            <Button size="small" onClick={() => void copyConfig()}>复制配置 JSON</Button>
+            <Button size="small" onClick={() => void copyGuide()}>只看接入说明</Button>
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button size="small" variant="contained" onClick={() => setSecret(null)}>我已保存</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={runDetailOpen} onClose={() => !undoing && setRunDetailOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ fontSize: 16, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
+          操作详情
+          {runDetail ? <Chip size="small" label={runDetail.status === 'undone' ? '已撤销' : '已写入'} color={runDetail.status === 'undone' ? 'default' : 'success'} /> : null}
+          {runDetail?.undo_status === 'unsupported' ? <Chip size="small" color="warning" label="不可自动撤销" /> : null}
+        </DialogTitle>
+        <DialogContent>
+          {!runDetail ? <LinearProgress sx={{ my: 2 }} /> : (
+            <>
+              <Typography sx={{ fontSize: 14, fontWeight: 600 }}>{runDetail.title}</Typography>
+              <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 0.5, mb: 1.5 }}>
+                {runDetail.agent_name || 'Agent'} · {time(runDetail.created_at)} · {runDetail.operation_count || runDetail.preview?.length || 0} 个操作
+              </Typography>
+              <Alert severity={runDetail.status === 'undone' ? 'info' : 'success'} sx={{ mb: 1.5 }}>{runDetail.message}</Alert>
+              {runDetail.undo_error ? <Alert severity="error" sx={{ mb: 1.5 }}>{runDetail.undo_error}</Alert> : null}
+              <Stack spacing={1}>
+                {(runDetail.preview || []).map((op: any, index: number) => (
+                  <Box key={index} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1.25 }}>
+                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                      <Chip size="small" label={op.method} />
+                      <Typography sx={{ fontSize: 12.5, fontWeight: 600 }}>{op.summary || '变更'}</Typography>
+                    </Stack>
+                    <Typography sx={{ fontSize: 11, color: 'text.disabled', fontFamily: '"IBM Plex Mono", monospace', mt: 0.25 }}>{op.path}</Typography>
+                    {op.undoable === false && op.undo_reason ? (
+                      <Alert severity="warning" sx={{ mt: 0.75, py: 0.25 }}>{op.undo_reason}</Alert>
+                    ) : null}
+                    {op.changes?.length ? (
+                      <Box sx={{ mt: 0.75 }}>
+                        {op.changes.map((change: any, changeIndex: number) => (
+                          <Stack key={changeIndex} direction="row" spacing={1} sx={{ fontSize: 12, py: 0.25, flexWrap: 'wrap' }}>
+                            <Typography sx={{ fontSize: 12, color: 'text.secondary', minWidth: 90 }}>{change.label}</Typography>
+                            <Typography sx={{ fontSize: 12, color: 'text.disabled', textDecoration: 'line-through' }}>{change.before === null || change.before === undefined || change.before === '' ? '空' : String(change.before)}</Typography>
+                            <Typography sx={{ fontSize: 12, color: 'text.disabled' }}>→</Typography>
+                            <Typography sx={{ fontSize: 12 }}>{change.after === null || change.after === undefined || change.after === '' ? '空' : String(change.after)}</Typography>
+                          </Stack>
+                        ))}
+                      </Box>
+                    ) : null}
+                  </Box>
+                ))}
+              </Stack>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button size="small" onClick={() => setRunDetailOpen(false)}>关闭</Button>
+          {runDetail?.status === 'applied' && runDetail.undo_status !== 'unsupported' ? (
+            <Button size="small" color="warning" disabled={Boolean(undoing)} onClick={() => void undoRun(runDetail)}>
+              {undoing ? '撤销中…' : '撤销这次写入'}
+            </Button>
+          ) : null}
         </DialogActions>
       </Dialog>
 

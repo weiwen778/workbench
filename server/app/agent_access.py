@@ -11,7 +11,7 @@ from .security import hash_token
 
 SCOPES = {
     'all:read': '读取全部业务数据',
-    'all:stage': '全部业务操作（先暂存，需人工合并）',
+    'all:stage': '全部业务写入（直接生效或先暂存由写入模式决定）',
     'todos:read': '读取待办',
     'todos:write': '添加和修改待办',
     'tables:read': '读取表格',

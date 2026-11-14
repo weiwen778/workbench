@@ -173,6 +173,8 @@ def create_app() -> FastAPI:
     app.include_router(agent.router, prefix=api)
     from .routers import agent_changes
     app.include_router(agent_changes.router, prefix=api)
+    from .routers import agent_runs
+    app.include_router(agent_runs.router, prefix=api)
     app.include_router(agent_tokens.router, prefix=api)
     app.include_router(dashboards.router, prefix=api)
     app.include_router(preferences.router, prefix=api)

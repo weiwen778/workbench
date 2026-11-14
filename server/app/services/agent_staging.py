@@ -6,22 +6,18 @@ import json
 from pathlib import Path
 import re
 from urllib.parse import unquote, urlsplit
-import uuid
 
 import httpx
 from fastapi.encoders import jsonable_encoder
-from fastapi.routing import APIRoute
 from sqlalchemy import select
-from sqlalchemy.orm import Session
-from starlette.routing import Match
 
 from ..agent_runtime import AgentExecution, AgentSession, execution
 from ..config import settings
 from ..db import Base
 from ..errors import ApiError
 from ..utils import iso_z
-from ..models import AgentChange, AgentToken, DataRecord, Todo, User, utcnow
-from .encryption import encrypt_config, decrypt_config
+from ..models import DataRecord, Todo
+from .encryption import decrypt_config
 
 ROOTS = {
  'search','tasks','activity','todo-lists','todos','tables','fields','records','table-views','table-changes','note-folders','note-tags','notes','memos','bookmarks',
@@ -79,15 +75,19 @@ def module(path):
     return root
 
 
-def authorize(token, path, write=False, method=None):
+def authorize(token, path, write=False, method=None, db=None):
     scope='all:stage' if write else 'all:read'
-    if scope in token.scopes: return
-    group=module(path)
-    legacy=f"{group}:{'write' if write else 'read'}"
-    # Legacy grants keep their old scope; all new writes still go through staging.
-    if legacy in token.scopes and group in {'tables','todos'}:
-        if not write or method!='DELETE' and (group=='todos' or '/records' in path): return
-    raise ApiError('AGENT_FORBIDDEN', '此令牌没有全部业务暂存权限' if write else '此令牌没有读取该模块的权限',403)
+    if scope not in token.scopes:
+        group=module(path)
+        legacy=f"{group}:{'write' if write else 'read'}"
+        # Legacy grants keep their old scope; all new writes still go through staging.
+        if not (legacy in token.scopes and group in {'tables','todos'}):
+            raise ApiError('AGENT_FORBIDDEN', '此令牌没有全部业务暂存权限' if write else '此令牌没有读取该模块的权限',403)
+        if write and (method=='DELETE' or (group=='tables' and '/records' not in path)):
+            raise ApiError('AGENT_FORBIDDEN', '此令牌没有全部业务暂存权限' if write else '此令牌没有读取该模块的权限',403)
+    from ..agent_policy import check_policy
+    check_policy(token,path,write,method or ('GET' if not write else 'POST'),db)
+
 
 
 def route_for(app, method, path):
