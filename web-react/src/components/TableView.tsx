@@ -107,7 +107,6 @@ export default function TableView({ tableId }: { tableId: number }) {
   const [editingCell, setEditingCell] = useState<{ rowId: number; key: string } | null>(null)
   const [editValue, setEditValue] = useState<any>('')
   const [cellSaving, setCellSaving] = useState(false)
-  const [quickValue, setQuickValue] = useState('')
   const skipBlur = useRef(false)
 
   const viewActive = useRef(true)
@@ -323,28 +322,6 @@ export default function TableView({ tableId }: { tableId: number }) {
     )
   }
 
-  const quickField = fields.find((field) => ['short_text', 'number', 'long_text', 'url'].includes(field.type))
-  const addQuickRow = async () => {
-    if (!quickField || !quickValue.trim()) return
-    try {
-      await http.post(`/tables/${tableId}/records`, { data: { [quickField.key]: quickValue.trim() } })
-      setQuickValue('')
-      await loadRecords()
-    } catch (error) { toast.error(apiError(error).message) }
-  }
-
-  const submitQuick = () => {
-    if (!quickField || !quickValue.trim()) return
-    // Long or multiline text is almost always pasted unstructured data; open AI fill instead of stuffing it into one column.
-    if (quickValue.length > 60 || quickValue.includes('\n')) {
-      setAiInitialText(quickValue)
-      setQuickValue('')
-      setAiOpen(true)
-      return
-    }
-    void addQuickRow()
-  }
-
   const allVisibleSelected = rows.length > 0 && rows.every((row) => selection.includes(row.id))
   const someVisibleSelected = rows.some((row) => selection.includes(row.id)) && !allVisibleSelected
   const toggleVisibleSelection = (checked: boolean) => {
@@ -428,26 +405,6 @@ export default function TableView({ tableId }: { tableId: number }) {
         <Button size="small" startIcon={<AutoAwesome fontSize="small" />} onClick={() => { setAiInitialText(''); setAiOpen(true) }}>AI 填入</Button>
         <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={openCreate}>添加一行</Button>
       </PageToolbar>
-
-      {quickField ? (
-        <Paper variant="outlined" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1.25, mb: 1, flexShrink: 0 }}>
-          <Plus sx={{ fontSize: 16, color: 'text.disabled' }} />
-          <TextField
-            fullWidth variant="standard" value={quickValue} placeholder="快速新增一行"
-            onChange={(event) => setQuickValue(event.target.value)}
-            onKeyDown={(event) => { if (event.key === 'Enter') submitQuick() }}
-            InputProps={{ disableUnderline: true }}
-            sx={{ minWidth: 0, '& .MuiInputBase-input': { textAlign: centerX ? 'center' : 'left' } }}
-          />
-          <Typography sx={{ fontSize: 11, color: 'text.disabled', whiteSpace: 'nowrap' }}>仅填「{quickField.name}」</Typography>
-          {quickValue.trim() ? (
-            <Button size="small" sx={{ fontSize: 11.5, whiteSpace: 'nowrap' }} onClick={() => { setAiInitialText(quickValue); setQuickValue(''); setAiOpen(true) }}>识别文本</Button>
-          ) : null}
-          <IconButton size="small" aria-label="添加" disabled={!quickValue.trim()} onClick={submitQuick}>
-            <Plus fontSize="small" />
-          </IconButton>
-        </Paper>
-      ) : null}
 
       {(filtersOpen) ? (
         <Paper variant="outlined" sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', p: 1.25, mb: 1, flexShrink: 0 }}>
