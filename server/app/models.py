@@ -83,6 +83,8 @@ class AgentToken(Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     prefix: Mapped[str] = mapped_column(String(20))
     scopes: Mapped[list] = mapped_column(JSON)
+    write_mode: Mapped[str] = mapped_column(String(10), default='review')
+    policy: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -718,6 +720,33 @@ class AgentReviewNote(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey('users.id'))
     note: Mapped[str] = mapped_column(String(1000))
     created_at: Mapped[datetime] = mapped_column(DateTime,default=utcnow)
+
+
+class AgentRun(Base, TimestampMixin):
+    """A direct Agent write, with the exact inverse plan needed to undo it."""
+
+    __tablename__ = 'agent_runs'
+    __table_args__ = (UniqueConstraint('token_id', 'request_key', name='uq_agent_run_request'),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    token_id: Mapped[int] = mapped_column(ForeignKey('agent_tokens.id', ondelete='CASCADE'), index=True)
+    request_key: Mapped[str | None] = mapped_column(String(128))
+    title: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(16), default='applied', index=True)
+    undo_status: Mapped[str] = mapped_column(String(16), default='available', index=True)
+    operations_cipher: Mapped[str] = mapped_column(Text)
+    plan_cipher: Mapped[str] = mapped_column(Text)
+    payload_hash: Mapped[str] = mapped_column(String(64))
+    preview: Mapped[list] = mapped_column(JSON, default=list)
+    results: Mapped[list | None] = mapped_column(JSON)
+    operation_count: Mapped[int] = mapped_column(Integer, default=0)
+    result_status: Mapped[int] = mapped_column(Integer, default=200)
+    error: Mapped[str | None] = mapped_column(String(1000))
+    undo_error: Mapped[str | None] = mapped_column(String(1000))
+    undone_at: Mapped[datetime | None] = mapped_column(DateTime)
+    undone_by: Mapped[int | None] = mapped_column(ForeignKey('users.id'))
+
 
 class AiConnection(Base):
     __tablename__ = 'ai_connections'

@@ -23,6 +23,7 @@ const ImagesPage = lazy(() => import('@/pages/Images'))
 const ConvertPage = lazy(() => import('@/pages/Convert'))
 const ColorPage = lazy(() => import('@/pages/Color'))
 const CodesPage = lazy(() => import('@/pages/Codes'))
+const MediaPage = lazy(() => import('@/pages/Media'))
 const FeedsPage = lazy(() => import('@/pages/Feeds'))
 const DocsPage = lazy(() => import('@/pages/Docs'))
 const WhiteboardsPage = lazy(() => import('@/pages/Whiteboards'))
@@ -81,6 +82,7 @@ function Root() {
               <Route path="/convert" element={<ConvertPage />} />
               <Route path="/color" element={<ColorPage />} />
               <Route path="/codes" element={<CodesPage />} />
+              <Route path="/media" element={<MediaPage />} />
               <Route path="/feeds" element={<FeedsPage />} />
               <Route path="/docs" element={<DocsPage />} />
               <Route path="/whiteboards" element={<WhiteboardsPage />} />

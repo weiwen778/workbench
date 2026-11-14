@@ -13,7 +13,7 @@ import socket
 import ssl
 import time
 import zlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlsplit
 
 USER_AGENT = "Mozilla/5.0 (compatible; NexusFeed/1.0; +local-workbench)"
@@ -35,6 +35,7 @@ class PublicResponse:
     body: bytes
     final_url: str
     elapsed_ms: int = 0
+    set_cookies: list[str] = field(default_factory=list)
 
 
 def _port(parts) -> int:
@@ -70,15 +71,20 @@ def public_target(url: str, *, allow_loopback: bool = False) -> tuple[object, in
         raise PublicHttpError("DNS_FAILED", "无法解析来源域名")
     addresses = [info[4][0] for info in infos]
     only_loopback = all(ipaddress.ip_address(address).is_loopback for address in addresses)
-    if allow_loopback and only_loopback:
-        return parts, port, addresses[0]
-    if any(not ipaddress.ip_address(address).is_global for address in addresses):
+    if not (allow_loopback and only_loopback) and any(
+        not ipaddress.ip_address(address).is_global for address in addresses
+    ):
         raise PublicHttpError("PRIVATE_ADDRESS", "来源地址指向非公开网络")
+    addresses.sort(key=lambda value: ipaddress.ip_address(value).version != 4)
     return parts, port, addresses[0]
 
 
 def _read_headers(response: http.client.HTTPResponse) -> dict[str, str]:
     return {key.lower(): value for key, value in response.getheaders()}
+
+
+def read_set_cookies(response) -> list[str]:
+    return [value for key, value in response.getheaders() if key.lower() == "set-cookie"]
 
 
 def _retry_after(headers: dict[str, str]) -> int | None:
@@ -189,6 +195,7 @@ def fetch_public(
                 return PublicResponse(
                     status=304, headers=response_headers, body=b"", final_url=current,
                     elapsed_ms=int((time.monotonic() - started) * 1000),
+                    set_cookies=read_set_cookies(response),
                 )
             if response.status < 200 or response.status >= 300:
                 retry_after = _retry_after(response_headers)
@@ -217,6 +224,7 @@ def fetch_public(
             return PublicResponse(
                 status=response.status, headers=response_headers, body=body, final_url=current,
                 elapsed_ms=int((time.monotonic() - started) * 1000),
+                set_cookies=read_set_cookies(response),
             )
         finally:
             connection.close()

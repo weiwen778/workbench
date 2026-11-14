@@ -159,6 +159,7 @@ def create_app() -> FastAPI:
         transfers,
         whiteboards,
         translate,
+        media,
         trash,
     )
 
@@ -170,6 +171,8 @@ def create_app() -> FastAPI:
     app.include_router(agent.router, prefix=api)
     from .routers import agent_changes
     app.include_router(agent_changes.router, prefix=api)
+    from .routers import agent_runs
+    app.include_router(agent_runs.router, prefix=api)
     app.include_router(agent_tokens.router, prefix=api)
     app.include_router(dashboards.router, prefix=api)
     app.include_router(preferences.router, prefix=api)
@@ -189,6 +192,7 @@ def create_app() -> FastAPI:
     app.include_router(memos.router, prefix=api)
     app.include_router(bookmarks.router, prefix=api)
     app.include_router(translate.router, prefix=api)
+    app.include_router(media.router, prefix=api)
     from .routers import ai_tables
     app.include_router(ai_tables.router, prefix=api)
     app.include_router(trash.router, prefix=api)

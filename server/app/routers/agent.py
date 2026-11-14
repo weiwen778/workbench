@@ -12,12 +12,14 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from ..agent_access import get_agent_token
+from ..agent_policy import effective_policy, write_mode
 from ..agent_runtime import AgentSession
 from ..agent_guide import GUIDE
 from ..config import settings
 from ..db import get_db
 from ..errors import ApiError
-from ..models import AgentActivity, AgentChange, AgentToken, Todo, DataRecord
+from ..models import AgentActivity, AgentChange, AgentRun, AgentToken, Todo, DataRecord
+from ..services import agent_direct
 from ..services import agent_staging as staging
 from ..services.encryption import encrypt_config
 from .agent_tokens import token_payload
@@ -39,7 +41,8 @@ class ChangeIn(BaseModel):
 
 @router.get('/me')
 def me(token:AgentToken=Depends(get_agent_token)):
-    return {**token_payload(token),'write_mode':'staged','requires_user_merge':True}
+    mode=write_mode(token)
+    return {**token_payload(token),'write_mode':mode,'requires_user_merge':mode=='review','undo_supported':True}
 
 @router.get('/guide')
 def guide(_token=Depends(get_agent_token)):
@@ -56,9 +59,12 @@ def capabilities(request:Request,token:AgentToken=Depends(get_agent_token)):
                     routes.append({'path':path.replace('{resource}',resource),'methods':sorted(method.upper() for method in methods if method in {'get','post','put','patch','delete'})})
             if path.strip('/').split('/')[0] in staging.ROOTS:
                 routes.append({'path':path,'methods':sorted(method.upper() for method in methods if method in {'get','post','put','patch','delete'})})
-    return {'write_mode':'staged','review':'用户在设置 → Agent 暂存区合并','scopes':token.scopes,'routes':routes,
-        'reserved':['账号登录','令牌管理','暂存审批'],'batch_endpoint':'/agent/changes','max_operations_per_change':100,
-        'references':'同批操作可用 {{前一步ref.id}} 或 {{前一步ref.fields.0.key}} 引用创建结果。预览中的 ID 不是正式 ID。'}
+    payload = token_payload(token)
+    policy = payload['policy'] or effective_policy(token)
+    return {'write_mode':payload['write_mode'],'review':'用户在设置 → Agent 操作记录中撤销' if payload['write_mode']=='direct' else '用户在设置 → Agent 暂存区合并','scopes':token.scopes,'routes':routes,
+        'policy':policy,
+        'reserved':['账号登录','令牌管理','暂存审批'],'batch_endpoint':'/agent/changes','max_operations_per_change':policy['max_operations'],
+        'references':'同批操作可用 {{前一步ref.id}} 或 {{前一步ref.fields.0.key}} 引用创建结果。'}
 
 
 def own(db,token,change_id):
@@ -86,11 +92,12 @@ def own_file(change_id:int,index:int,token=Depends(get_agent_token),db=Depends(g
 
 
 async def submit(request,token,db,title,operations,key=None):
+    agent_direct.enforce_limits(token,db,len(operations))
     if len(json.dumps(operations,ensure_ascii=False).encode())>staging.MAX_BYTES: raise ApiError('CHANGE_TOO_LARGE','单份暂存内容最多 20 MB',413)
     refs=set()
     for op in operations:
         if op['method'].upper() not in {'POST','PUT','PATCH','DELETE'}: raise ApiError('INVALID_CHANGE_METHOD','暂存只接受新增、修改、删除操作',422)
-        op['path']=staging.canonical(op['path']);staging.authorize(token,op['path'],True,op['method'].upper())
+        op['path']=staging.canonical(op['path']);staging.authorize(token,op['path'],True,op['method'].upper(),db)
         if op.get('ref'):
             if op['ref'] in refs: raise ApiError('DUPLICATE_REFERENCE','同批操作的 ref 不能重复',422)
             refs.add(op['ref'])
@@ -124,7 +131,12 @@ async def submit(request,token,db,title,operations,key=None):
 
 @router.post('/changes',status_code=202)
 async def create_change(payload:ChangeIn,request:Request,token=Depends(get_agent_token),db=Depends(get_db)):
-    return await submit(request,token,db,payload.title,[op.model_dump(exclude_none=True) for op in payload.operations],payload.request_key or request.headers.get('Idempotency-Key'))
+    operations=[op.model_dump(exclude_none=True) for op in payload.operations]
+    key=payload.request_key or request.headers.get('Idempotency-Key')
+    if write_mode(token)=='direct':
+        result=await agent_direct.execute(request,token,db,payload.title,operations,key)
+        return JSONResponse(result,status_code=200)
+    return await submit(request,token,db,payload.title,operations,key)
 
 # These two convenient read endpoints existed before staging; retain their contracts.
 @router.get('/todos/{todo_id}')
@@ -143,11 +155,27 @@ def one_record(record_id:int,token=Depends(get_agent_token),db=Depends(get_db)):
     tables._get_table(db,record.table_id)
     return tables.record_payload(record,db)
 
+
+def own_run(db,token,run_id):
+    run=db.scalar(select(AgentRun).where(AgentRun.id==run_id,AgentRun.token_id==token.id,AgentRun.user_id==token.user_id))
+    if run is None: raise ApiError('NOT_FOUND','操作记录不存在',404)
+    return run
+
+@router.get('/runs')
+def own_runs(token=Depends(get_agent_token),db=Depends(get_db)):
+    rows=db.scalars(select(AgentRun).where(AgentRun.token_id==token.id,AgentRun.user_id==token.user_id).order_by(AgentRun.id.desc()).limit(100)).all()
+    return {'items':[{k:v for k,v in agent_direct.run_payload(row,token.name).items() if k not in {'preview','results'}} for row in rows]}
+
+@router.get('/runs/{run_id}')
+def own_run_detail(run_id:int,token=Depends(get_agent_token),db=Depends(get_db)):
+    return agent_direct.run_payload(own_run(db,token,run_id),token.name)
+
+
 @router.api_route('/{path:path}',methods=['GET','POST','PUT','PATCH','DELETE'],include_in_schema=False)
 async def business(path:str,request:Request,token=Depends(get_agent_token),db=Depends(get_db)):
     target=staging.canonical('/'+path+('?'+request.url.query if request.url.query else ''))
     readonly=request.method=='GET' or (request.method=='POST' and path=='dashboards/preview')
-    staging.authorize(token,target,not readonly,request.method)
+    staging.authorize(token,target,not readonly,request.method,db)
     body=None;upload=None;form=None
     content_type=request.headers.get('content-type','')
     if request.method!='GET':
@@ -178,6 +206,15 @@ async def business(path:str,request:Request,token=Depends(get_agent_token),db=De
             finally:sandbox.rollback()
         headers={k:v for k,v in response.headers.items() if k.lower() in {'content-type','content-disposition'}}
         return Response(response.content,status_code=response.status_code,headers=headers)
+    if write_mode(token)=='direct':
+        try:
+            result=await agent_direct.execute(request,token,db,'',[operation],request.headers.get('Idempotency-Key'))
+        except BaseException:
+            if upload:Path(upload['path']).unlink(missing_ok=True)
+            raise
+        if upload:staging.cleanup_uploads([operation])
+        headers={'X-Agent-Run-Id':str(result['run_id']),'X-Agent-Write-Mode':'direct','X-Agent-Undo-Status':result['undo_status']}
+        return JSONResponse(result['results'][0],status_code=result['result_status'],headers=headers)
     try:
         result=await submit(request,token,db,request.method+' '+url_path(target),[operation],request.headers.get('Idempotency-Key'))
         if upload:

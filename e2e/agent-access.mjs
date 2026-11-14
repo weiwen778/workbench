@@ -1,3 +1,4 @@
+// LEGACY: UI labels/selectors predate direct mode. Use agent-direct.mjs for current acceptance.
 // Run against a disposable development database, never production.
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
