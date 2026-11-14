@@ -168,7 +168,7 @@ export default function CalendarDashboard() {
         gridArea: isNarrow ? undefined : 'data1',
         minHeight: 0,
         flex: isNarrow ? '0 0 auto' : undefined,
-        height: isNarrow ? 'auto' : '100%',
+        height: isNarrow ? 320 : '100%',
         display: 'flex',
       }}>
         <DataPanels
@@ -184,7 +184,7 @@ export default function CalendarDashboard() {
         gridArea: isNarrow ? undefined : 'data2',
         minHeight: 0,
         flex: isNarrow ? '0 0 auto' : undefined,
-        height: isNarrow ? 'auto' : '100%',
+        height: isNarrow ? 240 : '100%',
         display: 'flex',
       }}>
         <DataPanels
@@ -200,7 +200,7 @@ export default function CalendarDashboard() {
         gridArea: isNarrow ? undefined : 'data3',
         minHeight: 0,
         flex: isNarrow ? '0 0 auto' : undefined,
-        height: isNarrow ? 'auto' : '100%',
+        height: isNarrow ? 240 : '100%',
         display: 'flex',
       }}>
         <DataPanels
@@ -216,7 +216,7 @@ export default function CalendarDashboard() {
         gridArea: isNarrow ? undefined : 'data4',
         minHeight: 0,
         flex: isNarrow ? '0 0 auto' : undefined,
-        height: isNarrow ? 'auto' : '100%',
+        height: isNarrow ? 220 : '100%',
         display: 'flex',
       }}>
         <DataPanels
