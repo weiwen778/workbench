@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import case, or_, select, update
 from sqlalchemy.orm import Session
 
 from ..errors import ApiError
@@ -311,9 +311,28 @@ def claim_daily_bonus(db: Session, pet: Pet, now: datetime) -> dict | None:
     if not (has_checkin or has_todo):
         return None
 
-    pet.daily_bonus_date = day
-    pet.mood = _clamp(pet.mood + 6)
-    pet.treats = min(5, pet.treats + 1)
+    claim = db.execute(
+        update(Pet)
+        .where(
+            Pet.id == pet.id,
+            or_(Pet.daily_bonus_date.is_(None), Pet.daily_bonus_date != day),
+        )
+        .values(
+            daily_bonus_date=day,
+            mood=case(
+                (Pet.mood + 6 < 0, 0.0),
+                (Pet.mood + 6 > 100, 100.0),
+                else_=Pet.mood + 6,
+            ),
+            treats=case((Pet.treats >= 5, 5), else_=Pet.treats + 1),
+            updated_at=now,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if claim.rowcount != 1:
+        return None
+
+    db.refresh(pet)
     return {
         "mood": 6,
         "treats": 1,

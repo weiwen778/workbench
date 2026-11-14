@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
+from app.db import SessionLocal
 from app.errors import ApiError
 from app.models import (
     CheckinGroup,
@@ -443,6 +444,31 @@ def test_daily_bonus_prefers_checkin_when_both_sources_match(db):
     bonus = claim_daily_bonus(db, pet, T0)
 
     assert bonus["source"] == "checkin"
+
+
+def test_daily_bonus_claim_gate_rejects_stale_pet_instance(db):
+    db.expire_on_commit = False
+    pet = _make_pet(db, mood=80, treats=0)
+    _completed_todo(db, T0)
+    db.commit()
+    assert pet.daily_bonus_date is None
+
+    with SessionLocal() as competing_db:
+        claimed_pet = competing_db.get(Pet, pet.id)
+        claimed_pet.daily_bonus_date = date(2026, 11, 14)
+        claimed_pet.mood = 86
+        claimed_pet.treats = 1
+        competing_db.commit()
+
+    # The original session still has the pre-claim date and stats in memory.
+    assert pet.daily_bonus_date is None
+    bonus = claim_daily_bonus(db, pet, T0)
+
+    assert bonus is None
+    db.refresh(pet)
+    assert pet.daily_bonus_date == date(2026, 11, 14)
+    assert pet.mood == pytest.approx(86)
+    assert pet.treats == 1
 
 
 def test_daily_bonus_treat_cap(db):
