@@ -102,7 +102,6 @@ def extract_text(table_id:int,payload:TextIn,user:User=Depends(browser_only),db:
     fields=[field_payload(f) for f in _fields(db,table_id)]
     if not any(f['type'] in service.WRITABLE for f in fields):raise ApiError('NO_FIELDS','此表没有可识别填写的字段',422)
     c=connection(db);key=decrypt_config(c.encrypted_config if c else None).get('api_key')
-    if not key:raise ApiError('AI_NOT_CONFIGURED','请先在设置 → AI 能力中配置 API Key',409)
     version=table.schema_version;uid=user.id
     db.commit()
     result=service.recognize_text(key,payload.text,fields)

@@ -313,10 +313,10 @@ export default function TranslatePage() {
   })
 
   return (
-    <Page variant="dense">
+    <Page variant="dense" scroll>
       <PageToolbar sx={{ rowGap: 1 }}>
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          <FormControl size="small" sx={{ width: 138 }}>
+        <Stack direction="row" spacing={0.75} alignItems="center" useFlexGap sx={{ width: { xs: '100%', sm: 'auto' } }}>
+          <FormControl size="small" sx={{ width: { sm: 138 }, flex: { xs: 1, sm: 'none' }, minWidth: 0 }}>
             <InputLabel shrink>原文语言</InputLabel>
             <Select label="原文语言" value={sourceLang} onChange={(event) => changeSourceLang(event.target.value)}>
               <MenuItem value="auto">自动检测</MenuItem>
@@ -326,14 +326,14 @@ export default function TranslatePage() {
           <Tooltip title="交换语言（Alt+S）">
             <IconButton size="small" aria-label="交换语言" onClick={swap}><Switch sx={{ fontSize: 18 }} /></IconButton>
           </Tooltip>
-          <FormControl size="small" sx={{ width: 138 }}>
+          <FormControl size="small" sx={{ width: { sm: 138 }, flex: { xs: 1, sm: 'none' }, minWidth: 0 }}>
             <InputLabel shrink>译文语言</InputLabel>
             <Select label="译文语言" value={targetLang} onChange={(event) => setTargetLang(event.target.value)}>
               {supportedLangs.map((language) => <MenuItem key={language.code} value={language.code}>{language.name}</MenuItem>)}
             </Select>
           </FormControl>
         </Stack>
-        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
+        <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', sm: 'block' }, mx: 0.5, my: 0.5 }} />
         <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
           <Button
             size="small" variant="contained" startIcon={translating ? <CircularProgress size={13} color="inherit" /> : <Promotion fontSize="small" />}
@@ -350,12 +350,12 @@ export default function TranslatePage() {
 
       <Stack spacing={1}>
         {connections.length && !enabledConnections.length ? (
-          <Alert severity="warning" action={<Button size="small" onClick={() => navigate('/settings/translation')}>去启用</Button>}>
+          <Alert severity="warning" action={<Button size="small" sx={{ whiteSpace: 'nowrap' }} onClick={() => navigate('/settings/translation')}>去启用</Button>}>
             还没有启用翻译服务，请先在设置中配置并启用至少一个服务。
           </Alert>
         ) : null}
         {currentConn && !currentReady && enabledConnections.length > 0 ? (
-          <Alert severity="warning" action={<Button size="small" onClick={() => navigate('/settings/translation')}>去启用</Button>}>
+          <Alert severity="warning" action={<Button size="small" sx={{ whiteSpace: 'nowrap' }} onClick={() => navigate('/settings/translation')}>去启用</Button>}>
             「{currentConn.name}」{currentConn.configured ? '已停用' : '尚未配置'}，启用后才能翻译。
           </Alert>
         ) : null}
@@ -366,7 +366,7 @@ export default function TranslatePage() {
         ) : null}
       </Stack>
 
-      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 1, flex: 1, minHeight: 0 }}>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 1, flex: { xs: 'none', lg: '1 0 auto' } }}>
         <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 220, ...panelSx }}>
           <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ px: 1.5, py: 0.75, borderBottom: 1, ...separatorSx }}>
             <Stack direction="row" spacing={0.5} alignItems="center">
@@ -385,7 +385,7 @@ export default function TranslatePage() {
             fullWidth multiline value={sourceText} placeholder="输入或粘贴需要翻译的内容，Ctrl / Command + Enter 开始翻译"
             onChange={(event) => { setSourceText(event.target.value); if (error) setError('') }}
             onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); void translate(event.shiftKey) } }}
-            sx={{ flex: 1, '& .MuiInputBase-root': { height: '100%', alignItems: 'flex-start', fontSize: translationFont(sourceText, preferences), lineHeight: 1.65 }, '& fieldset': { border: 0 } }}
+            sx={{ flex: 1, minHeight: 0, '& .MuiInputBase-root': { height: '100%', alignItems: 'flex-start', fontSize: translationFont(sourceText, preferences), lineHeight: 1.65 }, '& textarea::placeholder': { fontSize: 15 }, '& fieldset': { border: 0 } }}
           />
           <Stack direction="row" spacing={0.5} sx={{ px: 1, py: 0.5, borderTop: 1, ...separatorSx }}>
             <Button size="small" startIcon={<DocumentCopy fontSize="small" />} title="粘贴剪贴板内容（Alt+P）" onClick={() => void pasteSource()}>粘贴</Button>
@@ -423,8 +423,8 @@ export default function TranslatePage() {
         </Box>
       </Box>
 
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '320px minmax(0,1fr)' }, gap: 1, flex: { xs: 'none', lg: 1 }, minHeight: { lg: 220 } }}>
-        <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 200, ...panelSx }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0,1fr)', lg: '320px minmax(0,1fr)' }, gap: 1, flex: { xs: '0 1 auto', lg: 1 }, minWidth: 0, minHeight: { lg: 220 } }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 200, ...panelSx }}>
           <Stack direction="row" justifyContent="space-between" sx={{ px: 1.5, py: 0.75, borderBottom: 1, ...separatorSx }}>
             <Typography sx={{ fontSize: 13, fontWeight: 600 }}>收藏</Typography><Typography sx={{ fontSize: 12, color: 'text.secondary' }}>共 {favorites.length} 条</Typography>
           </Stack>
@@ -433,7 +433,7 @@ export default function TranslatePage() {
           </Box>
         </Box>
 
-        <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 200, ...panelSx }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 200, ...panelSx }}>
           <Stack direction="row" spacing={1.5} alignItems="center" sx={{ px: 1.5, py: 1.25, borderBottom: 1, ...separatorSx, flexWrap: 'wrap' }}>
             <Typography sx={{ fontSize: 13, fontWeight: 600 }}>历史</Typography>
             <TextField

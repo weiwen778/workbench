@@ -116,7 +116,7 @@ try {
     await page.getByRole('button', { name: '保存', exact: true }).click()
     await page.waitForTimeout(1200)
 
-    const card = page.locator('.MuiCard-root', { hasText: '回收站流程验证' }).first()
+    const card = page.locator('.MuiPaper-root', { has: page.getByRole('button', { name: '回收站流程验证', exact: true }) }).last()
     await card.waitFor({ timeout: 10000 })
     await card.getByRole('button', { name: '更多便利贴操作' }).click()
     await page.getByRole('menuitem', { name: '删除便利贴' }).click()
@@ -143,17 +143,21 @@ try {
     record('回收站恢复（新建→删除→恢复）', true)
 
     // 清理：把测试便利贴再删一次并彻底删除，保持库内原状
-    const cleanupCard = page.locator('.MuiCard-root', { hasText: '回收站流程验证' }).first()
+    const cleanupCard = page.locator('.MuiPaper-root', { has: page.getByRole('button', { name: '回收站流程验证', exact: true }) }).last()
     await cleanupCard.getByRole('button', { name: '更多便利贴操作' }).click()
     await page.getByRole('menuitem', { name: '删除便利贴' }).click()
     await page.getByRole('button', { name: '删除', exact: true }).click()
     await page.waitForTimeout(1200)
     await page.evaluate(async () => {
+      const csrf = document.cookie.split('; ').find((part) => part.startsWith('wb_csrf='))?.slice('wb_csrf='.length)
       const res = await fetch('/api/v1/trash', { credentials: 'include' })
       const data = await res.json()
       for (const item of data.items || []) {
         if (item.kind === 'memo' && item.name === '回收站流程验证') {
-          await fetch(`/api/v1/trash/memo/${item.entity_id}`, { method: 'DELETE', credentials: 'include' })
+          const deleted = await fetch(`/api/v1/trash/memo/${item.entity_id}`, {
+            method: 'DELETE', credentials: 'include', headers: { 'X-CSRF-Token': csrf || '' },
+          })
+          if (!deleted.ok) throw new Error(`清理测试便利贴失败（${deleted.status}）`)
         }
       }
     })

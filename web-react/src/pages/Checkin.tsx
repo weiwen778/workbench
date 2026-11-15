@@ -122,6 +122,18 @@ export default function CheckinPage() {
   const periodLabel = { daily: '今天', weekly: '本周', monthly: '本月' }[period]
   const periodUnit = { daily: '日', weekly: '周', monthly: '月' }[period]
 
+  // 后端周期是左闭右开（end 为次日 / 下周期第一天），直接展示会让人误读成"今天到明天"。
+  // 展示时把 end 扣一天换回区间内最后一天；单日区间只显示一个日期。
+  const displayRange = (start?: string, end?: string) => {
+    if (!start) return ''
+    if (!end) return start
+    const date = new Date(`${end.slice(0, 10)}T00:00:00Z`)
+    if (Number.isNaN(date.getTime())) return `${start} ~ ${end}`
+    date.setUTCDate(date.getUTCDate() - 1)
+    const last = date.toISOString().slice(0, 10)
+    return last === start ? start : `${start} ~ ${last}`
+  }
+
   const refresh = useCallback(async (showLoading = false) => {
     const request = ++requestVersion.current
     if (showLoading) setLoading(true)
@@ -133,7 +145,7 @@ export default function CheckinPage() {
       setGroups(data.groups)
       setTargets(data.targets)
       setStats(data.statistics)
-      setRange(`${data.period_start} ~ ${data.period_end}`)
+      setRange(displayRange(data.period_start, data.period_end))
       setNoteDraft((prev) => {
         const next = { ...prev }
         for (const group of data.groups) for (const item of group.items) if (next[item.id] === undefined) next[item.id] = item.note || ''

@@ -53,7 +53,8 @@ class NoteSave(BaseModel):
 def _tags_of(db: Session, note_id: int) -> list[NoteTag]:
     return list(
         db.scalars(
-            select(NoteTag).join(NoteTagLink, NoteTagLink.tag_id == NoteTag.id).where(NoteTagLink.note_id == note_id)
+            select(NoteTag).join(NoteTagLink, NoteTagLink.tag_id == NoteTag.id)
+            .where(NoteTagLink.note_id == note_id).order_by(NoteTagLink.id)
         ).all()
     )
 
@@ -169,14 +170,13 @@ def delete_tag(tag_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
+def _clean_tags(names: list[str]) -> list[str]:
+    return list(dict.fromkeys(name.strip()[:50] for name in names if name.strip()))
+
+
 def _bind_tags(db: Session, note_id: int, names: list[str]) -> None:
-    clean: list[str] = []
-    for name in names:
-        name = (name or "").strip()
-        if name and name not in clean:
-            clean.append(name[:50])
     db.query(NoteTagLink).filter(NoteTagLink.note_id == note_id).delete(synchronize_session=False)
-    for name in clean:
+    for name in names:
         tag = db.scalar(select(NoteTag).where(NoteTag.name == name))
         if not tag:
             tag = NoteTag(name=name)
@@ -233,10 +233,12 @@ def list_notes(
 def create_note(payload: NoteIn, db: Session = Depends(get_db)):
     if len(payload.content.encode("utf-8")) > MAX_CONTENT:
         raise ApiError("NOTE_TOO_LARGE", "笔记正文不能超过 1 MiB", 413)
+    if payload.folder_id is not None and not db.get(NoteFolder, payload.folder_id):
+        raise ApiError("FOLDER_NOT_FOUND", "文件夹不存在", 422)
     note = Note(title=payload.title.strip(), content=payload.content, folder_id=payload.folder_id)
     db.add(note)
     db.flush()
-    _bind_tags(db, note.id, payload.tags)
+    _bind_tags(db, note.id, _clean_tags(payload.tags))
     db.add(NoteRevision(note_id=note.id, title=note.title, content=note.content, reason="auto"))
     _sync_note_files(db, note, payload.content)
     db.commit()
@@ -268,15 +270,20 @@ def save_note(note_id: int, payload: NoteSave, db: Session = Depends(get_db)):
     new_content = payload.content if payload.content is not None else note.content
     if len(new_content.encode("utf-8")) > MAX_CONTENT:
         raise ApiError("NOTE_TOO_LARGE", "笔记正文不能超过 1 MiB", 413)
-    if 'folder_id' in payload.model_fields_set and payload.folder_id != note.folder_id:
-        if payload.folder_id and not db.get(NoteFolder, payload.folder_id):
+    folder_changed = 'folder_id' in payload.model_fields_set and payload.folder_id != note.folder_id
+    if folder_changed:
+        if payload.folder_id is not None and not db.get(NoteFolder, payload.folder_id):
             raise ApiError("FOLDER_NOT_FOUND", "文件夹不存在", 422)
         note.folder_id = payload.folder_id
+    tags_changed = False
     if payload.tags is not None:
-        _bind_tags(db, note.id, payload.tags)
+        tags = _clean_tags(payload.tags)
+        tags_changed = tags != [tag.name for tag in _tags_of(db, note.id)]
+        if tags_changed:
+            _bind_tags(db, note.id, tags)
 
-    changed = new_title != note.title or new_content != note.content
-    if changed:
+    content_changed = new_title != note.title or new_content != note.content
+    if content_changed:
         last = db.scalar(
             select(NoteRevision)
             .where(NoteRevision.note_id == note.id)
@@ -295,9 +302,10 @@ def save_note(note_id: int, payload: NoteSave, db: Session = Depends(get_db)):
             _trim_revisions(db, note.id)
         note.title = new_title
         note.content = new_content
+        _sync_note_files(db, note, new_content)
+    if content_changed or folder_changed or tags_changed:
         note.version += 1
         note.updated_at = utcnow()
-        _sync_note_files(db, note, new_content)
     db.commit()
     return note_detail(db, note)
 

@@ -1,16 +1,27 @@
 """Encrypted full backups. The recovery key is separate from backup archives."""
 from __future__ import annotations
-import base64,hashlib,json,os,re,shutil,sqlite3,subprocess,tarfile,tempfile,threading,uuid
+import base64,hashlib,json,logging,os,re,shutil,sqlite3,subprocess,tarfile,tempfile,threading,uuid
+from contextlib import closing
 from pathlib import Path
 from datetime import datetime,timezone
 from cryptography.hazmat.primitives.ciphers import Cipher,algorithms,modes
 from sqlalchemy.engine import make_url
 from ..config import settings
 from ..db import engine
+from ..errors import ApiError
 
 _lock=threading.Lock()
+logger = logging.getLogger(__name__)
 NAME=re.compile(r'^backup-[0-9TZ-]+-[a-f0-9]{8}$')
 BLOCK=1024*1024
+_SNAPSHOT_ATTACHMENTS = """
+    SELECT CASE WHEN EXISTS (
+        SELECT 1 FROM data_transfer_jobs WHERE file_id = files.id AND kind = 'export'
+    ) THEN 'exports/' ELSE 'files/' END || storage_key
+    FROM files
+    UNION ALL
+    SELECT storage_key FROM whiteboard_assets
+"""
 
 
 def directory():
@@ -77,29 +88,74 @@ def decrypt_archive(archive,destination,key):
 
 
 def create_backup(progress=lambda done,total:None):
-    if not _lock.acquire(blocking=False):raise RuntimeError('已有备份正在执行')
+    if not _lock.acquire(blocking=False):
+        raise RuntimeError('已有备份正在执行')
+    try:
+        item = _create_verified_backup(progress)
+        try:
+            for expired in list_backups()[settings.backup_keep:]:
+                archive = archive_path(expired['id'])
+                archive.unlink(missing_ok=True)
+                archive.with_suffix('.json').unlink(missing_ok=True)
+        except OSError:
+            logger.exception('Could not prune expired backups')
+        return item
+    finally:
+        _lock.release()
+
+
+def _dump_database(database: Path) -> set[str]:
+    if settings.is_sqlite:
+        with closing(sqlite3.connect(database)) as destination:
+            connection = engine.raw_connection()
+            try:
+                connection.driver_connection.backup(destination)
+            finally:
+                connection.close()
+            return {row[0] for row in destination.execute(_SNAPSHOT_ATTACHMENTS)}
+
+    url = make_url(settings.database_url)
+    env = {**os.environ, 'PGPASSWORD': url.password or ''}
+    with engine.connect().execution_options(isolation_level='REPEATABLE READ') as connection:
+        snapshot = connection.exec_driver_sql('SELECT pg_export_snapshot()').scalar_one()
+        attachments = set(connection.exec_driver_sql(_SNAPSHOT_ATTACHMENTS).scalars())
+        subprocess.run(
+            ['pg_dump', '-h', url.host or 'localhost', '-p', str(url.port or 5432), '-U', url.username or '',
+             '-Fc', '--snapshot', snapshot, '-f', str(database), url.database or ''],
+            env=env, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=600,
+        )
+    return attachments
+
+
+def _create_verified_backup(progress):
     name='backup-'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'-'+uuid.uuid4().hex[:8]
-    target=archive_path(name);pending=target.with_suffix('.partial')
+    target = archive_path(name)
+    pending = target.with_suffix('.partial')
+    metadata = target.with_suffix('.json')
     try:
         key=base64.urlsafe_b64decode(key_file().read_bytes())
         with tempfile.TemporaryDirectory(prefix='.backup-',dir=directory()) as temporary:
             work=Path(temporary);work.chmod(0o700);database=work/'database.dump'
-            url=make_url(settings.database_url)
-            if settings.is_sqlite:
-                destination=sqlite3.connect(database)
-                connection=engine.raw_connection()
-                try:connection.driver_connection.backup(destination)
-                finally:destination.close();connection.close()
-            else:
-                env=os.environ.copy();env['PGPASSWORD']=url.password or ''
-                subprocess.run(['pg_dump','-h',url.host or 'localhost','-p',str(url.port or 5432),'-U',url.username or '', '-Fc','-f',str(database),url.database or ''],env=env,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,timeout=600)
+            attachments = _dump_database(database)
             progress(10,100)
-            storage=settings.storage_dir.resolve();files=sorted(p for p in storage.rglob('*') if p.is_file() and not p.is_symlink()) if storage.exists() else []
+            storage = settings.storage_dir.resolve()
+            files = {
+                path.relative_to(storage).as_posix(): path
+                for path in sorted(storage.rglob('*'))
+                if path.is_file() and not path.is_symlink()
+            }
+            missing = attachments - files.keys()
+            if missing:
+                raise ApiError(
+                    'BACKUP_ATTACHMENT_MISSING',
+                    f'数据库快照中的附件有 {len(missing)} 项无法读取，请核对附件存储后重试备份',
+                    409,
+                )
             manifest={'id':name,'format':1,'database_kind':'sqlite' if settings.is_sqlite else 'postgresql','created_at':datetime.now(timezone.utc).isoformat(),'files':{}}
             recovery=work/'env.json';recovery.write_text(json.dumps({'WB_ENCRYPTION_KEY':settings.encryption_key}));recovery.chmod(0o600)
             packed=work/'contents.tar.gz'
             with tarfile.open(packed,'w:gz') as archive:
-                for path,label in [(database,'database.dump'),(recovery,'recovery/env.json')]+[(p,'storage/'+p.relative_to(storage).as_posix()) for p in files]:
+                for path,label in [(database,'database.dump'),(recovery,'recovery/env.json')]+[(path,'storage/'+label) for label,path in files.items()]:
                     if not path.exists():raise RuntimeError('附件在备份过程中发生变化，请重试备份')
                     manifest['files'][label]={'sha256':_hash(path),'size':path.stat().st_size}
                     archive.add(path,arcname=label,recursive=False)
@@ -107,16 +163,16 @@ def create_backup(progress=lambda done,total:None):
             progress(70,100);_encrypt(packed,pending,key);pending.replace(target)
             verify_backup(name)
             item={k:v for k,v in manifest.items() if k!='files'};item['verified']=True;item.update(size=target.stat().st_size,file_count=len(files),sha256=_hash(target))
-            (directory()/(name+'.json')).write_text(json.dumps(item,ensure_ascii=False));(directory()/(name+'.json')).chmod(0o600)
-        # Only managed complete archives are eligible for retention.
-        for old in list_backups()[settings.backup_keep:]:
-            archive_path(old['id']).unlink(missing_ok=True);(directory()/(old['id']+'.json')).unlink(missing_ok=True)
-        progress(100,100);return item
+            progress(100,100)
+            metadata.write_text(json.dumps(item,ensure_ascii=False))
+            metadata.chmod(0o600)
+        return item
     except Exception:
-        target.unlink(missing_ok=True);(directory()/(name+'.json')).unlink(missing_ok=True)
+        target.unlink(missing_ok=True)
+        metadata.unlink(missing_ok=True)
         raise
     finally:
-        pending.unlink(missing_ok=True);_lock.release()
+        pending.unlink(missing_ok=True)
 
 
 def unpack_verified(archive,key,work):

@@ -18,8 +18,15 @@ from ..models import (
     WorkTarget,
     utcnow,
 )
-from ..services.checkins import change_rule_period, effective_period, ensure_target_period
-from ..services.periods import next_period_start, period_bounds
+from ..services.checkins import (
+    change_rule_period,
+    collapse_pending,
+    effective_period,
+    ensure_target_period,
+    pending_period_start,
+    period_change_start,
+)
+from ..services.periods import PERIODS, next_period_start, period_bounds
 from ..utils import iso_z, now_local, today_local
 
 router = APIRouter(tags=["checkin-config"], dependencies=[Depends(get_current_user)])
@@ -79,6 +86,9 @@ def target_payload(t: WorkTarget) -> dict:
 
 
 def rule_payload(r: CheckinRule, group_name: str | None = None) -> dict:
+    today = today_local()
+    active_period = effective_period(r, today)
+    starts_on = pending_period_start(r)
     return {
         "id": r.id,
         "target_id": r.target_id,
@@ -87,11 +97,18 @@ def rule_payload(r: CheckinRule, group_name: str | None = None) -> dict:
         "title": r.title,
         "description": r.description,
         "period": r.period,
-        "effective_period": effective_period(r),
+        "effective_period": active_period,
         "active": r.active,
         "sort_order": r.sort_order,
         "pending_period": r.pending_period,
-        "pending_effective_from": r.pending_effective_from.isoformat() if r.pending_effective_from else None,
+        "pending_effective_from": starts_on.isoformat() if starts_on else None,
+        "period_change_starts": {
+            period: (
+                starts_on if starts_on is not None and period == r.pending_period
+                else period_change_start(active_period, period, today)
+            ).isoformat()
+            for period in PERIODS if period != active_period
+        },
         "version": r.version,
     }
 
@@ -419,13 +436,18 @@ def update_rule(rule_id: int, payload: RulePatch, db: Session = Depends(get_db))
     if not rule:
         raise ApiError("NOT_FOUND", "任务不存在", 404)
     target = db.get(WorkTarget, rule.target_id)
+    if target:
+        collapse_pending(db, rule, target)
     group = db.get(CheckinGroup, rule.group_id)
     changes: list[str] = []
     period_change: dict | None = None
 
-    if payload.period and payload.period != rule.period:
-        period_change = change_rule_period(db, rule, payload.period)
-        changes.append("修改周期")
+    if payload.period is not None:
+        if payload.period not in PERIODS:
+            raise ApiError("INVALID_PERIOD", "时间范围只能是今日／本周／本月", 422)
+        if payload.period != (rule.pending_period or rule.period):
+            period_change = change_rule_period(rule, payload.period)
+            changes.append("修改周期")
 
     if payload.group_id is not None and payload.group_id != rule.group_id:
         new_group = db.get(CheckinGroup, payload.group_id)
@@ -475,6 +497,7 @@ def update_rule(rule_id: int, payload: RulePatch, db: Session = Depends(get_db))
             synchronize_session=False,
         )
     if target:
+        db.flush()
         ensure_target_period(db, target, "daily")
     db.commit()
     payload_out = rule_payload(rule, group.name if group else None)

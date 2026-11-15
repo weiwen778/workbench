@@ -42,7 +42,7 @@
 - 编辑内核用 Univer 社区版，公式、样式、合并单元格、冻结窗格、数字格式、查找替换都由内核提供，不再维护项目内自写的公式引擎。
 - **XLSX 读写走本地桥接**（`web-react/src/docs/sheet/xlsx-bridge.ts`）：Univer 官方 XLSX exchanger 属 Pro 版且需要服务端转换服务，离线工作台不采用，改用项目已有的 SheetJS 做双向转换。
   - 导入：单元格值、公式、合并区域、列宽、行高、数字格式（经 Facade `setNumberFormat` 回写）。
-  - 导出：XLSX（全部工作表）、CSV（当前工作表）、Univer 快照（无损）。
+  - 导出：XLSX（全部工作表，保留数字格式）、CSV / TSV（当前工作表）、Univer 快照（无损）。
 - 保存项目落两份附件：`*.xlsx`（交付/导出用）与 `*.univer.json`（无损快照）。重开优先用快照，快照缺失时回退解析 XLSX。
 - 每次装载（导入或重开）都会分配新的 Univer `unitId`，否则会撞 `[UniverInstanceService]: cannot create a unit with the same unit id`。
 - Univer 内部自建 React 根，与 StrictMode 的「挂载 → 清理 → 再挂载」会互相踩踏（表现为画布不挂载），因此实例创建被推迟到下一个宏任务并在清理时取消。
@@ -193,6 +193,9 @@ export WB_E2E_PASSWORD='你的管理员密码'
 node react-full.mjs        # 搜索/任务中心/表格库/AI 填表/看板/翻译设置/Agent/图片编辑器/移动端弹窗
 node react-smoke-crud.mjs  # 待办与便利贴增删闭环
 node react-flows.mjs       # 打卡勾选与历史、Excel 导入向导、回收站恢复
+node document-workbook.mjs # 工作簿导入、项目重开、数字格式及当前工作表导出
+node agent-direct.mjs      # Agent 直接写入、操作记录、撤销
+node agent-staging.mjs     # Agent 暂存、人工通过与驳回
 ```
 
 说明：
@@ -242,7 +245,8 @@ docs/                  PRD、设计说明、交付与审查记录
 
 - 审查记录：[代码审查报告-2026-11-15](docs/代码审查报告-2026-11-15.md)（Standards / Spec 双轴 + 复核结论 + 仿真结果）。
 - 已修复：生产 `create_all` 导致的结构漂移、附件归属校验空实现、附件解绑不回收、日历 62 天 off-by-one、前后端双时钟、宠物成长进度未展示。
-- 已知未改：`/checkins` 列表 GET 内做周期补齐并写库（读接口带写事务）；`Dockerfile` 的 `--forwarded-allow-ips='*'` 在反代部署下可伪造来源 IP；`maintenance.py` 清理失败日志缺 `exc_info`。
+- 已修复（2026-11-15 全模块巡检，见 [UI与功能巡检-2026-11-15](docs/UI与功能巡检-2026-11-15.md)）：反代信任边界收紧为 `FORWARDED_ALLOW_IPS`（compose 指向 web 容器固定 IP，`Dockerfile` 不再用 `--forwarded-allow-ips='*'`）；看板/表格卡片在窄屏被内容撑破、翻译页收藏面板横向溢出、文档页签 320px 截断、网址回退图标取到「【」、打卡周期把次日当成结束日展示。
+- 已知未改：`/checkins` 列表 GET 内做周期补齐并写库（读接口带写事务）；`maintenance.py` 清理失败日志缺 `exc_info`。
 - 工作簿：XLSX 往返丢单元格样式、图表/透视/宏不迁移、大表截断（见上文「已知差异」）。
 - 环境限制：Google Trends 与 Pinterest Trends 在当前网络不可达；TEMU 需登录态；`tech` 平台规则接口无公开文档，平台改版可能失效。
 
@@ -255,7 +259,8 @@ docs/                  PRD、设计说明、交付与审查记录
 - [文档工作台](docs/文档工作台.md)：三页签的选型、能力矩阵、验收项与已知限制（含 Univer 工作簿细节）
 - [个人工作台 PRD v2.1](docs/个人工作台_PRD_v2.1.md)（Element Plus 时代基线，功能语义仍可参考）
 - 模块：[信息聚合](docs/信息聚合.md)、[白板](docs/白板.md)、[数据可视化](docs/数据可视化.md)、[Agent 接入](docs/Agent接入.md)
-- 工程：[代码审查报告-2026-11-15](docs/代码审查报告-2026-11-15.md)、[开源组件选型与前端计算架构建议](docs/开源组件选型与前端计算架构建议.md)、[全局动效](docs/全局动效.md)、[备份与恢复](docs/备份与恢复.md)
+- 工程：[代码审查报告-2026-11-15](docs/代码审查报告-2026-11-15.md)、[UI 与功能巡检-2026-11-15](docs/UI与功能巡检-2026-11-15.md)、[开源组件选型与前端计算架构建议](docs/开源组件选型与前端计算架构建议.md)、[全局动效](docs/全局动效.md)、[备份与恢复](docs/备份与恢复.md)
+- 验收脚本：`e2e/audit-*.mjs`（全页面巡检 / 窄屏暗色弹窗 / 主流程闭环），用法见巡检报告第 1 节。
 
 ## 提交约定
 

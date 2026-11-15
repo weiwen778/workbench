@@ -15,3 +15,15 @@ def test_bookmark_crud(auth):
 def test_reject_unsafe_urls(auth):
     for url in ['javascript:alert(1)', 'file:///etc/passwd', 'https://user:password@example.com', 'https://example.com:999999']:
         assert auth.post('/api/v1/bookmarks', json={'url':url}).status_code == 422
+
+
+def test_bookmarks_reject_reserved_navigation_categories(auth):
+    payload = {'url': 'https://example.com', 'category': '待查阅'}
+    created = auth.post('/api/v1/bookmarks', json=payload)
+    assert created.status_code == 201
+    path = f"/api/v1/bookmarks/{created.json()['id']}"
+    for category in ('__all', ' __none '):
+        invalid = {**payload, 'category': category}
+        assert auth.post('/api/v1/bookmarks', json=invalid).status_code == 422
+        assert auth.put(path, json=invalid).status_code == 422
+    assert [row['category'] for row in auth.get('/api/v1/bookmarks').json()] == ['待查阅']

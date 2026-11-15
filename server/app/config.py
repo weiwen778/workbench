@@ -3,8 +3,9 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import URL
 
 
 class Settings(BaseSettings):
@@ -16,6 +17,10 @@ class Settings(BaseSettings):
     env: str = "dev"
 
     database_url: str = "sqlite:///./data/workbench.db"
+    db_host: str | None = None
+    db_user: str = "workbench"
+    db_name: str = "workbench"
+    db_password: SecretStr | None = None
     storage_dir: Path = Path("./data/storage")
 
     admin_username: str = "admin"
@@ -101,6 +106,20 @@ class Settings(BaseSettings):
     max_bytes_baidu: int = 6000
     max_chars_youdao: int = 5000
     max_chars_deepseek: int = 4000
+
+    @model_validator(mode="before")
+    @classmethod
+    def build_database_url(cls, values: dict) -> dict:
+        if values.get("database_url") is not None or not values.get("db_host"):
+            return values
+        password = values.get("db_password")
+        if isinstance(password, SecretStr):
+            password = password.get_secret_value()
+        return {**values, "database_url": URL.create(
+            "postgresql+psycopg", username=values.get("db_user", "workbench"),
+            password=password, host=values["db_host"], port=5432,
+            database=values.get("db_name", "workbench"),
+        ).render_as_string(hide_password=False)}
 
     @property
     def is_sqlite(self) -> bool:

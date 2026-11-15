@@ -40,7 +40,7 @@ function isWorkbookFile(name: string) { return /\.(xlsx|xls|xlsb|ods|csv|tsv)$/i
  * XLSX 读写走本地 SheetJS 桥接（Univer 官方 XLSX exchanger 属 Pro + 服务端，离线不可用）。
  * 项目保存落两份附件：XLSX（可交付/导出）与 Univer 快照（重开无损）。
  */
-export default function WorkbookEditor() {
+export default function WorkbookEditor({ active }: { active: boolean }) {
   const theme = useTheme()
   const dark = theme.palette.mode === 'dark'
   const hostRef = useRef<HTMLDivElement>(null)
@@ -77,6 +77,12 @@ export default function WorkbookEditor() {
         instance = created
         apiRef.current = created.univerAPI
         created.univerAPI.createWorkbook({ name: '未命名工作簿' })
+        const refreshSheetCount = () => {
+          const workbook = created.univerAPI.getActiveWorkbook()
+          if (workbook) setSheetCount(workbook.getSheets().length)
+        }
+        created.univerAPI.addEvent(created.univerAPI.Event.SheetCreated, refreshSheetCount)
+        created.univerAPI.addEvent(created.univerAPI.Event.SheetDeleted, refreshSheetCount)
         setReady(true)
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : '工作簿初始化失败')
@@ -103,7 +109,7 @@ export default function WorkbookEditor() {
     }
   }, [])
 
-  const replaceWorkbook = useCallback((data: Partial<IWorkbookData>, formats: NumberFormatPatch[] = []) => {
+  const replaceWorkbook = useCallback((data: Partial<IWorkbookData>, formats: NumberFormatPatch[] = [], activeSheetId?: string) => {
     const api = apiRef.current
     if (!api) throw new Error('编辑器尚未就绪')
     const previousId = api.getActiveWorkbook()?.getId()
@@ -111,6 +117,8 @@ export default function WorkbookEditor() {
     const created = api.createWorkbook({ ...data, id: nextUnitId() })
     if (previousId && previousId !== created.getId()) api.disposeUnit(previousId)
     applyNumberFormats(formats)
+    const activeSheet = activeSheetId ? created.getSheetBySheetId(activeSheetId) : undefined
+    if (activeSheet) created.setActiveSheet(activeSheet)
     setSheetCount(created.getSheets().length || 1)
   }, [applyNumberFormats])
 
@@ -138,12 +146,16 @@ export default function WorkbookEditor() {
       if (snapshotFile) {
         const bytes = await getFileBytes(snapshotFile.id)
         const data = JSON.parse(new TextDecoder().decode(bytes)) as IWorkbookData
-        replaceWorkbook(data)
+        const activeSheetId = typeof detail.state.activeSheetId === 'string' ? detail.state.activeSheetId : undefined
+        replaceWorkbook(data, [], activeSheetId)
       } else if (workbookFile) {
         const bytes = await getFileBytes(workbookFile.id)
         const parsed = XLSX.read(new Uint8Array(bytes), { type: 'array', cellFormula: true, cellNF: true, cellDates: false })
         const result = sheetJsToUniver(parsed, detail.title)
-        replaceWorkbook(result.data, result.numberFormats)
+        const activeIndex = detail.state.activeSheet
+        const activeSheetId = typeof activeIndex === 'number' && Number.isInteger(activeIndex)
+          ? result.data.sheetOrder?.[activeIndex] : undefined
+        replaceWorkbook(result.data, result.numberFormats, activeSheetId)
         setWarnings(result.warnings)
       } else {
         throw new Error('项目里没有工作簿附件')
@@ -154,13 +166,17 @@ export default function WorkbookEditor() {
 
   const buildSave = async () => {
     const workbook = apiRef.current?.getActiveWorkbook()
+    if (workbook?.isCellEditing()) await workbook.endEditingAsync(true)
     const snapshot = workbook?.save()
     if (!snapshot) throw new Error('还没有工作簿')
     const blob = workbookToBlob(univerToSheetJs(snapshot))
     const name = `${baseName(title || workbook?.getName() || '工作簿')}.xlsx`
     const snapshotName = `${baseName(title || '工作簿')}${SNAPSHOT_SUFFIX}`
     return {
-      state: { fileName: name, snapshotName, engine: 'univer', engineVersion: '1.5.0', sheets: snapshot.sheetOrder?.length || 1 },
+      state: {
+        fileName: name, snapshotName, engine: 'univer', engineVersion: '1.5.0',
+        sheets: snapshot.sheetOrder?.length || 1, activeSheetId: workbook?.getActiveSheet()?.getSheetId(),
+      },
       files: [
         new File([blob], name, { type: blob.type }),
         new File([JSON.stringify(snapshot)], snapshotName, { type: 'application/json' }),
@@ -168,25 +184,28 @@ export default function WorkbookEditor() {
     }
   }
 
-  const exportAs = (kind: 'xlsx' | 'csv' | 'json') => {
+  const exportAs = async (kind: 'xlsx' | 'csv' | 'tsv' | 'json') => {
     setExportAnchor(null)
     const workbook = apiRef.current?.getActiveWorkbook()
-    const snapshot = workbook?.save()
-    if (!snapshot) { toast.warning('还没有工作簿'); return }
     try {
+      if (workbook?.isCellEditing()) await workbook.endEditingAsync(true)
+      const snapshot = workbook?.save()
+      if (!snapshot) { toast.warning('还没有工作簿'); return }
       if (kind === 'json') {
         downloadBlob(new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' }), `${baseName(title)}.univer.json`)
         return
       }
-      const book = univerToSheetJs(snapshot)
       if (kind === 'xlsx') {
-        downloadBlob(workbookToBlob(book), `${baseName(title)}.xlsx`)
+        downloadBlob(workbookToBlob(univerToSheetJs(snapshot)), `${baseName(title)}.xlsx`)
         return
       }
+      const sheetId = workbook?.getActiveSheet()?.getSheetId()
+      if (!sheetId || !snapshot.sheets[sheetId]) { toast.warning('没有可导出的工作表'); return }
+      const book = univerToSheetJs({ ...snapshot, sheetOrder: [sheetId] })
       const sheetName = book.SheetNames[0]
-      if (!sheetName) { toast.warning('没有可导出的工作表'); return }
-      const csv = XLSX.utils.sheet_to_csv(book.Sheets[sheetName], { FS: ',' })
-      downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `${baseName(title)}.csv`)
+      const text = XLSX.utils.sheet_to_csv(book.Sheets[sheetName], { FS: kind === 'tsv' ? '\t' : ',' })
+      const mime = kind === 'tsv' ? 'text/tab-separated-values' : 'text/csv'
+      downloadBlob(new Blob([text], { type: `${mime};charset=utf-8` }), `${baseName(title)}.${kind}`)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '导出失败')
     }
@@ -209,12 +228,14 @@ export default function WorkbookEditor() {
         <ProjectActions
           kind="sheet" kindLabel="工作簿" title={title} onTitleChange={setTitle}
           current={current} onCurrentChange={setCurrent} buildSave={buildSave} onOpen={openProject}
+          disabled={!ready || loading} saveShortcut={active}
         />
         <Button size="small" startIcon={<Upload fontSize="small" />} onClick={() => inputRef.current?.click()}>导入</Button>
         <Button size="small" startIcon={<Download fontSize="small" />} onClick={(event) => setExportAnchor(event.currentTarget)}>导出</Button>
         <Menu anchorEl={exportAnchor} open={Boolean(exportAnchor)} onClose={() => setExportAnchor(null)}>
           <MenuItem onClick={() => exportAs('xlsx')}>导出 XLSX（全部工作表）</MenuItem>
           <MenuItem onClick={() => exportAs('csv')}>导出 CSV（当前工作表）</MenuItem>
+          <MenuItem onClick={() => exportAs('tsv')}>导出 TSV（当前工作表）</MenuItem>
           <MenuItem onClick={() => exportAs('json')}>导出 Univer 快照（无损）</MenuItem>
         </Menu>
       </Stack>

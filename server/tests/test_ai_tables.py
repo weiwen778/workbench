@@ -54,6 +54,20 @@ def test_auth_config_and_invalid_image(client,auth):
     assert auth.put('/api/v1/ai/config',json={'default_model':'unknown'}).status_code==422
     client.cookies.clear();assert client.get('/api/v1/ai/config').status_code==401
 
+
+def test_local_text_extraction_without_provider_key(auth):
+    target = table(auth)
+    url = f'/api/v1/tables/{target["id"]}/ai/extract-text'
+    with patch.object(ai.httpx, 'post') as upstream:
+        response = auth.post(url, json={'text': '姓名：张三，年龄：32'})
+        assert response.status_code == 200, response.text
+        result = response.json()['results'][0]
+        assert result['model'] == 'rules'
+        fields = {field['name']: field['key'] for field in target['fields']}
+        assert result['records'] == [{fields['姓名']: '张三', fields['年龄']: '32'}]
+        assert auth.post(url, json={'text': '请整理这份报告'}).json()['code'] == 'AI_NOT_CONFIGURED'
+        upstream.assert_not_called()
+
 def test_ocr_orientation_and_mapping():
     fields=[{'key':'name','name':'姓名','type':'short_text','options':[]},{'key':'age','name':'年龄','type':'number','options':[]}]
     html='<table><tr><td>1</td><td>姓名</td><td>张三</td></tr><tr><td>2</td><td>年龄</td><td>76</td></tr></table>'

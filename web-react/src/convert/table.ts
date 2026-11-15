@@ -38,7 +38,9 @@ export async function readCsv(file: File, settings: ConvertSettings): Promise<Ta
     delimiter: settings.delimiter === 'auto' ? undefined : settings.delimiter,
     skipEmptyLines: 'greedy',
   })
-  const fatal = parsed.errors.find((error) => error.type === 'Delimiter' || error.type === 'Quotes')
+  const singleColumn = parsed.data.every((row) => row.length === 1)
+  const fatal = parsed.errors.find((error) => error.type === 'Quotes'
+    || (error.type === 'Delimiter' && (error.code !== 'UndetectableDelimiter' || !singleColumn)))
   if (fatal) throw new Error(`CSV 解析失败：${fatal.message}`)
   const data = parsed.data.filter((row) => Array.isArray(row))
   if (!data.length) throw new Error('CSV 没有可读取的数据')

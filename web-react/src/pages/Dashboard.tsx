@@ -605,7 +605,7 @@ export default function DashboardPage() {
 
             {boards.length ? (
               boardView === 'cards' ? (
-                <StaggerList sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0,1fr))', lg: 'repeat(3, minmax(0,1fr))', xl: 'repeat(4, minmax(0,1fr))' }, gap: 1.5, alignContent: 'start' }}>
+                <StaggerList sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0,1fr)', sm: 'repeat(2, minmax(0,1fr))', lg: 'repeat(3, minmax(0,1fr))', xl: 'repeat(4, minmax(0,1fr))' }, gap: 1.5, alignContent: 'start' }}>
                   {visibleBoards.map((board) => {
                     const favorite = boardFavorites.includes(board.id)
                     return (
@@ -619,6 +619,7 @@ export default function DashboardPage() {
                         onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openBoard(board) } }}
                         sx={{
                           p: 2, display: 'flex', flexDirection: 'column', gap: 1, minHeight: 158,
+                          width: '100%', minWidth: 0,
                           borderRadius: 1.5, cursor: 'pointer', transition: 'border-color .15s, box-shadow .15s',
                           '&:hover': { borderColor: 'primary.main', boxShadow: '0 4px 14px rgba(26,36,38,0.06)' },
                           '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 1 },

@@ -1004,8 +1004,9 @@ export function TranslationSection() {
     finally { setBusy((prev) => ({ ...prev, [connection.provider]: '' })) }
   }
   const update = (connection: any, data: any) => setConnections((prev) => prev.map((item) => item.provider === connection.provider ? data : item))
-  const visibleConnections = showAll ? connections : connections.filter((connection) => connection.configured || connection.enabled)
-  const unconfiguredCount = connections.filter((connection) => !connection.configured && !connection.enabled).length
+  const configuredConnections = connections.filter((connection) => connection.configured || connection.enabled || connection.decrypt_error)
+  const visibleConnections = showAll ? connections : configuredConnections
+  const unconfiguredCount = connections.length - configuredConnections.length
   const save = (connection: any) => perform(connection, 'save', async () => {
     const meta = providerMeta[connection.provider] || { fields: [] }
     const config = Object.fromEntries(Object.entries(draft[connection.provider] || {}).map(([key, value]) => [key, value.trim()]).filter(([, value]) => value))
@@ -1077,7 +1078,7 @@ export function TranslationSection() {
                 {meta.tag ? <Chip size="small" label={meta.tag} /> : null}
               </Stack>
               <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 0.5 }}>
-                {connection.configured
+                {connection.decrypt_error ? '密钥需要重新配置' : connection.configured
                   ? connection.enabled
                     ? '已启用'
                     : connection.provider === 'zhipu' && !connection.masked?.api_key
@@ -1087,7 +1088,7 @@ export function TranslationSection() {
               </Typography>
             </Box>
             <Checkbox
-              checked={Boolean(connection.enabled)} disabled={!connection.configured || Boolean(busy[connection.provider])}
+              checked={Boolean(connection.enabled)} disabled={(!connection.configured && !connection.enabled) || Boolean(busy[connection.provider])}
               inputProps={{ 'aria-label': `启用${connection.name}` }}
               onChange={(event) => void perform(connection, 'toggle', async () => {
                 const { data } = await http.put(`/translation-connections/${connection.provider}`, { enabled: event.target.checked })
@@ -1096,6 +1097,7 @@ export function TranslationSection() {
               })}
             />
           </Stack>
+          {connection.decrypt_error ? <Alert severity="warning" sx={{ mb: 1.5 }}>{connection.decrypt_error}</Alert> : null}
           {meta.help ? <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 1.5, lineHeight: 1.7 }}>{meta.help}</Typography> : null}
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} flexWrap="wrap" useFlexGap>
             {(meta.fields || []).map((field) => (
@@ -1147,7 +1149,7 @@ export function TranslationSection() {
             })}>连接测试</Button>
             <div className="spacer" />
             {meta.fields?.length ? (
-            <Button size="small" color="error" disabled={!connection.configured || Boolean(busy[connection.provider])} onClick={async () => {
+            <Button size="small" color="error" disabled={(!connection.configured && !connection.decrypt_error) || Boolean(busy[connection.provider])} onClick={async () => {
               const ok = await confirmDialog({ title: '清除翻译密钥', danger: true, confirmText: '清除并停用', message: `清除${connection.name}的已保存密钥并停用该服务？再次使用需要重新填写。` })
               if (!ok) return
               await perform(connection, 'clear', async () => {

@@ -5,14 +5,14 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVER_DIR="$ROOT/server"
-WEB_DIR="$ROOT/web"
+WEB_DIR="$ROOT/web-react"
+WEB_DIST="$ROOT/web/dist"
 HOST="${WB_HOST:-127.0.0.1}"
 PORT="${WB_PORT:-18080}"
 PID_FILE="/tmp/wb_api_${PORT}.pid"
 LOG_FILE="$SERVER_DIR/data/api.log"
 HEALTH="http://${HOST}:${PORT}/api/v1/health"
 PIP_MIRROR="https://pypi.tuna.tsinghua.edu.cn/simple"
-NPM_REGISTRY="https://registry.npmmirror.com"
 
 # venv 识别：优先项目内 server/.venv，其次复用 ~/.venvs/workbench
 pick_venv() {
@@ -28,7 +28,7 @@ do_install() {
   local venv; venv="$(pick_venv)"
   if [[ -z "$venv" ]]; then
     echo "[1/3] 创建虚拟环境 server/.venv ..."
-    python3 -m venv "$SERVER_DIR/.venv" || { echo "创建 venv 失败"; return 1; }
+    python3.12 -m venv "$SERVER_DIR/.venv" || { echo "请确认已安装 Python 3.12 和 venv"; return 1; }
     venv="$SERVER_DIR/.venv"
   else
     echo "[1/3] 使用已有虚拟环境：$venv"
@@ -42,10 +42,10 @@ do_install() {
   echo "[3/3] 安装前端依赖并构建 ..."
   cd "$WEB_DIR" || return 1
   if [[ ! -d node_modules ]]; then
-    npm install --registry "$NPM_REGISTRY" || { echo "npm install 失败"; return 1; }
+    npm ci || { echo "npm ci 失败"; return 1; }
   fi
   npm run build || { echo "前端构建失败"; return 1; }
-  echo "      前端产物：$WEB_DIR/dist"
+  echo "      前端产物：$WEB_DIST"
   [[ -f "$SERVER_DIR/.env" ]] || cp "$SERVER_DIR/.env.example" "$SERVER_DIR/.env"
   echo "完成。用 scripts/wb.sh start 启动。"
 }
@@ -57,7 +57,7 @@ do_start() {
   fi
   local venv; venv="$(pick_venv)"
   if [[ -z "$venv" ]]; then echo "未找到虚拟环境，请先执行：scripts/wb.sh install"; return 1; fi
-  if [[ ! -d "$WEB_DIR/dist" ]]; then echo "缺少前端产物 web/dist，请先执行：scripts/wb.sh install"; return 1; fi
+  if [[ ! -f "$WEB_DIST/index.html" ]]; then echo "缺少前端产物 web/dist，请先执行：scripts/wb.sh install"; return 1; fi
   mkdir -p "$SERVER_DIR/data/storage"
   cd "$SERVER_DIR" || return 1
   setsid "$venv/bin/uvicorn" app.main:app --host "$HOST" --port "$PORT" \
@@ -89,13 +89,25 @@ do_stop() {
   if alive; then
     pkill -f "uvicorn app.main:app --host ${HOST} --port ${PORT}" 2>/dev/null && stopped=1
   fi
-  [[ $stopped -eq 1 ]] && echo "已停止" || echo "没有在运行"
+  if [[ $stopped -eq 0 ]]; then
+    echo "没有脚本启动的进程"
+    return 0
+  fi
+  for _ in $(seq 1 60); do
+    if ! alive; then
+      echo "已停止"
+      return 0
+    fi
+    sleep 0.2
+  done
+  echo "等待服务退出超时：$HEALTH" >&2
+  return 1
 }
 
 do_status() {
   echo "项目目录： $ROOT"
   echo "虚拟环境： $(pick_venv || true)"
-  echo "前端产物： $([[ -d "$WEB_DIR/dist" ]] && echo 存在 || echo 缺失)"
+  echo "前端产物： $([[ -f "$WEB_DIST/index.html" ]] && echo 存在 || echo 缺失)"
   if alive; then
     echo "服务状态： 运行中  http://${HOST}:${PORT}"
     curl -fsS --max-time 3 "$HEALTH" 2>/dev/null; echo
@@ -105,7 +117,7 @@ do_status() {
 }
 
 do_reset() {
-  do_stop
+  do_stop || return 1
   rm -f "$SERVER_DIR/data/workbench.db"
   rm -rf "$SERVER_DIR/data/storage"/*
   echo "开发库与附件已清空"
@@ -116,7 +128,7 @@ case "${1:-start}" in
   install) do_install ;;
   start)   do_start ;;
   stop)    do_stop ;;
-  restart) do_stop; do_start ;;
+  restart) do_stop && do_start ;;
   status)  do_status ;;
   logs)    tail -n 100 -f "$LOG_FILE" ;;
   reset)   do_reset ;;

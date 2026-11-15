@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
   IconButton, List, ListItemButton, ListItemText, Stack, Tooltip, Typography,
@@ -30,6 +30,7 @@ interface Props {
   onOpen: (project: ProjectDetail) => void | Promise<void>
   saving?: boolean
   disabled?: boolean
+  saveShortcut?: boolean
 }
 
 function when(value: string) {
@@ -38,7 +39,7 @@ function when(value: string) {
 }
 
 export default function ProjectActions({
-  kind, kindLabel, title, onTitleChange, current, onCurrentChange, onSaved, buildSave, onOpen, saving, disabled,
+  kind, kindLabel, title, onTitleChange, current, onCurrentChange, onSaved, buildSave, onOpen, saving, disabled, saveShortcut,
 }: Props) {
   const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState(false)
@@ -46,6 +47,19 @@ export default function ProjectActions({
   const [items, setItems] = useState<ProjectSummary[]>([])
   const [error, setError] = useState('')
   const operationSeq = useRef(0)
+  const saveButton = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!saveShortcut) return
+    const handleSaveShortcut = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 's') return
+      event.preventDefault()
+      event.stopPropagation()
+      if (!event.repeat) saveButton.current?.click()
+    }
+    window.addEventListener('keydown', handleSaveShortcut, true)
+    return () => window.removeEventListener('keydown', handleSaveShortcut, true)
+  }, [saveShortcut])
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -136,7 +150,7 @@ export default function ProjectActions({
     <>
       <Stack direction="row" spacing={0.5} alignItems="center" sx={{ minWidth: 0 }}>
         <Button size="small" startIcon={<FolderOpened fontSize="small" />} disabled={busy || saving} onClick={openList}>项目</Button>
-        <Button size="small" variant="outlined" startIcon={busy ? <CircularProgress size={13} /> : <Upload fontSize="small" />} disabled={busy || saving || disabled} onClick={() => void save()}>
+        <Button ref={saveButton} size="small" variant="outlined" startIcon={busy ? <CircularProgress size={13} /> : <Upload fontSize="small" />} disabled={busy || saving || disabled} onClick={() => void save()}>
           保存项目
         </Button>
         {current ? <Chip size="small" variant="outlined" label={current.title} sx={{ maxWidth: 180, height: 22, fontSize: 10.5 }} /> : null}

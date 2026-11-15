@@ -110,6 +110,88 @@ def test_encrypted_backup_verify_restore_and_no_overwrite(auth,db,tmp_path,monke
     with pytest.raises(InvalidTag):backups.decrypt_archive(tampered,tmp_path/'bad.tar',base64.urlsafe_b64decode(backups.key_file().read_bytes()))
 
 
+def test_backup_directory_failure_allows_retry(tmp_path, monkeypatch):
+    from threading import Lock
+
+    monkeypatch.setattr(backups, '_lock', Lock())
+    monkeypatch.setattr(settings, 'storage_dir', tmp_path / 'storage')
+    monkeypatch.setattr(settings, 'backup_dir', settings.storage_dir / 'backups')
+    with pytest.raises(RuntimeError, match='备份目录必须放在附件目录之外'):
+        backups.create_backup()
+
+    monkeypatch.setattr(settings, 'backup_dir', tmp_path / 'backups')
+    result = backups.create_backup()
+    assert backups.verify_backup(result['id'])['verified']
+
+
+def test_cancelled_backup_keeps_previous_verified_archive(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, 'backup_dir', tmp_path / 'backups')
+    monkeypatch.setattr(settings, 'backup_keep', 1)
+    previous = backups.create_backup()
+
+    def cancel_at_final_progress(done, total):
+        if done == total:
+            raise jobs.Cancelled()
+
+    with pytest.raises(jobs.Cancelled):
+        backups.create_backup(cancel_at_final_progress)
+
+    assert [item['id'] for item in backups.list_backups()] == [previous['id']]
+    assert backups.verify_backup(previous['id'])['verified']
+
+
+def test_backup_retention_failure_preserves_new_archive(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, 'backup_dir', tmp_path / 'backups')
+    monkeypatch.setattr(settings, 'backup_keep', 1)
+    previous = backups.create_backup()
+    old_archive = backups.archive_path(previous['id'])
+    unlink = Path.unlink
+
+    def fail_only_for_old_archive(path, *args, **kwargs):
+        if path == old_archive:
+            raise PermissionError('simulated backup retention failure')
+        return unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'unlink', fail_only_for_old_archive)
+    result = backups.create_backup()
+
+    assert backups.verify_backup(result['id'])['verified']
+    assert backups.verify_backup(previous['id'])['verified']
+
+
+def test_backup_rejects_attachment_deleted_after_database_snapshot(auth, tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, 'storage_dir', tmp_path / 'storage')
+    monkeypatch.setattr(settings, 'backup_dir', tmp_path / 'backups')
+    response = auth.post('/api/v1/files', files={'file': ('fixture.pdf', b'attachment', 'application/pdf')})
+    assert response.status_code == 201
+    file_id = response.json()['id']
+
+    def delete_after_snapshot(done, total):
+        if done == 10:
+            assert auth.delete(f'/api/v1/files/{file_id}').status_code == 200
+
+    with pytest.raises(ApiError, match='数据库快照中的附件') as failure:
+        backups.create_backup(delete_after_snapshot)
+
+    assert failure.value.code == 'BACKUP_ATTACHMENT_MISSING'
+    assert backups.list_backups() == []
+
+
+def test_backup_task_explains_missing_attachment(auth, tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, 'storage_dir', tmp_path / 'storage')
+    monkeypatch.setattr(settings, 'backup_dir', tmp_path / 'backups')
+    upload = auth.post('/api/v1/files', files={'file': ('fixture.pdf', b'attachment', 'application/pdf')})
+    assert upload.status_code == 201
+    next((settings.storage_dir / 'files').iterdir()).unlink()
+
+    queued = auth.post('/api/v1/backups')
+    assert queued.status_code == 202
+    assert jobs.run_next()
+    task = auth.get(f"/api/v1/tasks/{queued.json()['id']}").json()
+    assert task['status'] == 'failed'
+    assert '数据库快照中的附件' in task['error']
+
+
 def test_search_escapes_wildcards_excludes_deleted_and_logs_no_secrets(auth):
     note=auth.post('/api/v1/notes',json={'title':'查找专用100%','content':'唯一标记XYZ'}).json()
     gone=auth.post('/api/v1/notes',json={'title':'已删除XYZ','content':'删除内容'}).json()

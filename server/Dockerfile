@@ -25,4 +25,6 @@ ENV WB_STORAGE_DIR=/data/storage
 EXPOSE 8000
 
 # 启动前执行数据库迁移；迁移失败则容器不启动，避免半套结构对外服务
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"]
+# 只启用 --proxy-headers，具体信任哪些地址由 FORWARDED_ALLOW_IPS 环境变量决定（compose 里指向反代容器 IP）。
+# 不要在这里写 --forwarded-allow-ips='*'：那会让任意来源伪造 X-Forwarded-For 绕过按 IP 的限流与登录锁定。
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers"]

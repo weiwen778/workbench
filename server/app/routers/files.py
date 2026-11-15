@@ -30,7 +30,13 @@ INLINE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "applicati
 
 def _safe_name(name: str) -> str:
     name = Path(name or "file").name
-    return re.sub(r"[^\w\u4e00-\u9fa5.\- ()（）]+", "_", name)[:200].strip() or "file"
+    cleaned = re.sub(r"[^\w\u4e00-\u9fa5.\- ()（）]+", "_", name).strip()
+    suffix = Path(cleaned).suffix
+    if cleaned.lower().endswith(".univer.json"):
+        suffix = cleaned[-len(".univer.json"):]
+    if len(cleaned) > 200 and 0 < len(suffix) < 200:
+        return cleaned[:200 - len(suffix)].rstrip() + suffix
+    return cleaned[:200].rstrip() or "file"
 
 
 def file_payload(f: FileObject) -> dict:

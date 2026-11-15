@@ -35,6 +35,13 @@ class NoteIn(BaseModel):
     note: str | None = Field(default=None, max_length=2000)
 
 
+def _parse_filter_date(value: str | None) -> date | None:
+    try:
+        return parse_date(value)
+    except ValueError as error:
+        raise ApiError("INVALID_DATE", "请输入有效的日期", 422) from error
+
+
 def _load_instances(
     db: Session,
     *,
@@ -93,7 +100,7 @@ def list_instances(
     if status not in {"all", "pending", "done"}:
         raise ApiError("INVALID_STATUS", "状态筛选不合法", 422)
 
-    ref = parse_date(period_start)
+    ref = _parse_filter_date(period_start)
     instances = _load_instances(
         db, kind=kind, period=period, target_id=target_id, status=status, period_start=ref
     )
@@ -165,8 +172,8 @@ def history(
         stmt = stmt.where(CheckinInstance.completed_at.is_(None))
     elif status == "done":
         stmt = stmt.where(CheckinInstance.completed_at.is_not(None))
-    start = parse_date(date_from)
-    end = parse_date(date_to)
+    start = _parse_filter_date(date_from)
+    end = _parse_filter_date(date_to)
     if start:
         stmt = stmt.where(CheckinInstance.period_start >= start)
     if end:

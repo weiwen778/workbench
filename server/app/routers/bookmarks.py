@@ -11,6 +11,8 @@ from ..utils import iso_z
 
 router = APIRouter(tags=["bookmarks"], dependencies=[Depends(get_current_user)])
 
+RESERVED_CATEGORIES = {"__all", "__none"}
+
 class BookmarkInput(BaseModel):
     url: str = Field(min_length=1, max_length=2048)
     title: str = Field(default="", max_length=200)
@@ -40,6 +42,8 @@ def assign(row, data):
     row.icon_url = validate_url(data.icon_url) if data.icon_url else ""
     row.title = data.title.strip() or urlsplit(row.url).hostname or row.url
     row.category = data.category.strip()
+    if row.category in RESERVED_CATEGORIES:
+        raise ApiError("INVALID_CATEGORY", "请输入有效的分类名称", 422)
     row.description = data.description.strip()
     row.updated_at = utcnow()
 
@@ -92,7 +96,7 @@ def categories(db: Session = Depends(get_db)):
 @router.post('/bookmarks/categories')
 def create_category(data: CategoryInput, db: Session = Depends(get_db)):
     name=data.name.strip()
-    if not name or name in {'__all','__none'}:
+    if not name or name in RESERVED_CATEGORIES:
         raise ApiError('INVALID_CATEGORY','请输入有效的分类名称',422)
     ensure_category(db,name);db.commit()
     return {'name':name}

@@ -185,6 +185,8 @@ export function univerToSheetJs(data: IWorkbookData): XLSX.WorkBook {
         else if (typeof value === 'boolean') { entry.t = 'b'; entry.v = value }
         else if (value !== undefined && value !== null && value !== '') { entry.t = 's'; entry.v = String(value) }
         else continue
+        const style = typeof cell?.s === 'string' ? data.styles?.[cell.s] : cell?.s
+        if (style?.n?.pattern) entry.z = style.n.pattern
         worksheet[address] = entry
         maxRow = Math.max(maxRow, rowIndex)
         maxCol = Math.max(maxCol, colIndex)

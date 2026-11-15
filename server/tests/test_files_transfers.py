@@ -78,6 +78,15 @@ def test_file_size_boundary(auth):
     assert too_big.json()["code"] == "FILE_TOO_LARGE"
 
 
+def test_long_workbook_names_keep_their_suffixes(auth):
+    for suffix in (".xlsx", ".univer.json"):
+        response = upload(auth, "长" * 200 + suffix, b"file contents")
+        assert response.status_code == 201, response.text
+        name = response.json()["name"]
+        assert len(name) <= 200
+        assert name.endswith(suffix)
+
+
 def test_file_type_whitelist(auth):
     resp = upload(auth, "evil.exe", b"MZ" * 10, "application/octet-stream")
     assert resp.status_code == 415

@@ -5,7 +5,7 @@ from typing import Annotated
 from datetime import date, datetime, time
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,8 @@ from ..models import Todo, TodoList, utcnow
 from ..utils import LOCAL_TZ, iso_z, now_local, parse_date, today_local
 
 router = APIRouter(tags=["todos"], dependencies=[Depends(get_current_user)])
+
+TodoTitle = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
 
 class ListIn(BaseModel):
@@ -30,14 +32,14 @@ class ListPatch(BaseModel):
 class TodoIn(BaseModel):
     list_id: int
     parent_id: int | None = None
-    title: str = Field(min_length=1, max_length=200)
+    title: TodoTitle
     note: str | None = Field(default=None, max_length=5000)
     due_date: str | None = None
     due_time: str | None = None
 
 
 class TodoPatch(BaseModel):
-    title: str | None = Field(default=None, min_length=1, max_length=200)
+    title: TodoTitle | None = None
     note: str | None = Field(default=None, max_length=5000)
     due_date: str | None = None
     due_time: str | None = None
@@ -60,6 +62,25 @@ def _due_at(todo: Todo) -> datetime | None:
     if todo.due_time:
         return datetime.combine(todo.due_date, todo.due_time, tzinfo=LOCAL_TZ)
     return datetime.combine(todo.due_date, time(23, 59, 59), tzinfo=LOCAL_TZ)
+
+
+def _parse_due_date(value: str | None) -> date | None:
+    try:
+        return parse_date(value)
+    except ValueError as error:
+        raise ApiError("INVALID_DUE_DATE", "请输入有效的截止日期", 422) from error
+
+
+def _parse_due_time(value: str | None) -> time | None:
+    if not value:
+        return None
+    try:
+        parsed = time.fromisoformat(value)
+    except ValueError as error:
+        raise ApiError("INVALID_DUE_TIME", "请输入有效的截止时间", 422) from error
+    if parsed.tzinfo is not None:
+        raise ApiError("INVALID_DUE_TIME", "截止时间应使用本地时间", 422)
+    return parsed
 
 
 def is_overdue(todo: Todo) -> bool:
@@ -290,15 +311,15 @@ def create_todo(payload: TodoIn, db: Session = Depends(get_db)):
         if parent.list_id != payload.list_id:
             raise ApiError("LIST_MISMATCH", "子任务必须与父任务属于同一清单", 422)
 
-    due_date = parse_date(payload.due_date)
-    due_time = time.fromisoformat(payload.due_time) if payload.due_time else None
+    due_date = _parse_due_date(payload.due_date)
+    due_time = _parse_due_time(payload.due_time)
     if due_time and not due_date:
         raise ApiError("DUE_TIME_NEEDS_DATE", "指定时间需要同时选择日期", 422)
 
     todo = Todo(
         list_id=payload.list_id,
         parent_id=payload.parent_id,
-        title=payload.title.strip(),
+        title=payload.title,
         note=payload.note,
         due_date=due_date,
         due_time=due_time,
@@ -320,7 +341,7 @@ def update_todo(todo_id: int, payload: TodoPatch, db: Session = Depends(get_db))
     if not todo:
         raise ApiError("NOT_FOUND", "待办不存在", 404)
     if payload.title is not None:
-        todo.title = payload.title.strip()
+        todo.title = payload.title
     if payload.note is not None:
         todo.note = payload.note
     if payload.clear_due:
@@ -328,11 +349,11 @@ def update_todo(todo_id: int, payload: TodoPatch, db: Session = Depends(get_db))
         todo.due_time = None
     else:
         if payload.due_date is not None:
-            todo.due_date = parse_date(payload.due_date)
-        if payload.due_time is not None:
-            todo.due_time = time.fromisoformat(payload.due_time) if payload.due_time else None
-            if todo.due_time and not todo.due_date:
-                raise ApiError("DUE_TIME_NEEDS_DATE", "指定时间需要同时选择日期", 422)
+            todo.due_date = _parse_due_date(payload.due_date)
+        if "due_time" in payload.model_fields_set:
+            todo.due_time = _parse_due_time(payload.due_time)
+        if todo.due_time and not todo.due_date:
+            raise ApiError("DUE_TIME_NEEDS_DATE", "指定时间需要同时选择日期", 422)
     todo.version += 1
     db.commit()
     children = db.scalars(select(Todo).where(Todo.parent_id == todo.id)).all()

@@ -116,22 +116,20 @@ def _effective_config(db: Session, conn: TranslationConnection) -> dict:
     return config
 
 
-def connection_payload(conn: TranslationConnection, config: dict | None = None) -> dict:
+def connection_payload(db: Session, conn: TranslationConnection) -> dict:
     key_ready = bool(settings.encryption_key)
     decrypt_error = None
-    if key_ready and config is None:
-        try:
-            config = decrypt_config(conn.encrypted_config)
-        except ApiError as exc:
-            decrypt_error = exc.message
-            config = {}
-    config = config or {}
+    try:
+        config = _effective_config(db, conn)
+    except ApiError as exc:
+        decrypt_error = exc.message
+        config = {}
     masked = {field: mask(config.get(field)) for field in FIELDS.get(conn.provider, [])}
     return {
         "provider": conn.provider,
         "name": PROVIDERS.get(conn.provider, conn.provider),
         "enabled": conn.enabled,
-        "configured": bool(config) or conn.provider in KEYLESS,
+        "configured": decrypt_error is None and (bool(config) or conn.provider in KEYLESS),
         "credential_key_ready": key_ready,
         "masked": masked,
         "base_url": config.get("base_url") or "",
@@ -151,7 +149,7 @@ def list_connections(db: Session = Depends(get_db)):
     items = []
     for provider in PROVIDERS:
         conn = _conn(db, provider)
-        items.append(connection_payload(conn, _effective_config(db, conn)))
+        items.append(connection_payload(db, conn))
     return {
         "credential_key_ready": bool(settings.encryption_key),
         "message": None
@@ -213,7 +211,7 @@ def save_connection(provider: str, payload: ConnectionIn, user=Depends(get_admin
         conn.enabled = payload.enabled
     conn.updated_at = utcnow()
     db.commit()
-    return connection_payload(conn, _effective_config(db, conn))
+    return connection_payload(db, conn)
 
 
 @router.delete("/translation-connections/{provider}")
@@ -225,7 +223,7 @@ def clear_connection(provider: str, user=Depends(get_admin_user), db: Session = 
     conn.last_test_ok = None
     conn.last_test_message = None
     db.commit()
-    return connection_payload(conn, _effective_config(db, conn))
+    return connection_payload(db, conn)
 
 
 @router.post("/translation-connections/{provider}/test")
