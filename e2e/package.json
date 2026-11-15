@@ -8,7 +8,11 @@
     "smoke:crud": "node react-smoke-crud.mjs",
     "full": "node react-full.mjs",
     "ui": "node react-ui-consistency.mjs",
-    "agent:direct": "node agent-direct.mjs"
+    "agent:direct": "node agent-direct.mjs",
+    "audit:sweep": "bash audit-run.sh audit-sweep.mjs",
+    "audit:deep": "bash audit-run.sh audit-deep.mjs",
+    "audit:flows": "bash audit-run.sh audit-flows.mjs",
+    "audit:cleanup": "bash audit-run.sh audit-cleanup.mjs"
   },
   "devDependencies": {
     "playwright": "^1.55.0"

@@ -68,7 +68,7 @@ try {
 
   const detail = page.getByRole('dialog', { name: /操作详情/ })
   await detail.waitFor()
-  assert.ok((await detail.textContent())?.includes('/todo-lists'), 'Detail should show the executed path')
+  await detail.getByText(/\/todo-lists/).first().waitFor()
   await detail.getByRole('button', { name: '撤销这次写入', exact: true }).click()
 
   const confirm = page.getByRole('dialog', { name: '撤销 Agent 操作', exact: true })

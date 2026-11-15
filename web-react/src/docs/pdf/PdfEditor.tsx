@@ -220,14 +220,17 @@ export default function PdfEditor() {
       setSelectedPageId(validPages[0].id); setTitle(detail.title); setHistory([]); setFuture([])
     } catch (reason) {
       for (const source of nextSources.values()) void destroySource(source)
-      setError(reason instanceof Error ? reason.message : '项目恢复失败')
+      throw new Error(`项目恢复失败：${apiError(reason).message}`, { cause: reason })
     } finally { setLoading(false) }
   }
 
   const buildSave = async () => {
     if (!sourcesMeta.length) throw new Error('还没有 PDF')
     const existing = current?.attachments || []
-    const reuse = existing.length === sourcesMeta.length && existing.every((file, index) => file.name === sourcesMeta[index].name)
+    const savedSources = current?.state.sources
+    const reuse = Array.isArray(savedSources) && existing.length === sourcesMeta.length && sourcesMeta.every(
+      (source, index) => savedSources[index]?.key === source.key && (savedSources[index].attachmentIndex ?? index) === index,
+    )
     const files = reuse ? [] : sourcesMeta.map((source) => new File([source.bytes], source.name, { type: 'application/pdf' }))
     return {
       state: {

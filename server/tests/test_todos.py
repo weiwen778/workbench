@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+import pytest
+
 from app.utils import today_local
 
 
@@ -54,6 +56,40 @@ def test_due_date_and_time_validation(auth):
 
     todo = add(auth, lst["id"], "有具体时间", due_date=today_local().isoformat(), due_time="09:30")
     assert todo["due_time"] == "09:30"
+
+
+@pytest.mark.parametrize("due", [
+    {"due_date": "not-a-date"},
+    {"due_date": "2026-11-15", "due_time": "25:00"},
+    {"due_date": "2026-11-15", "due_time": "09:30+02:00"},
+])
+def test_invalid_due_input_is_rejected_on_create_and_update(auth, due):
+    lst = make_list(auth)
+    todo = add(auth, lst["id"], "原任务")
+    create = auth.post("/api/v1/todos", json={"list_id": lst["id"], "title": "新任务", **due})
+    assert create.status_code == 422
+
+    update = auth.patch(f"/api/v1/todos/{todo['id']}", json=due)
+    assert update.status_code == 422
+    assert find(view(auth, lst["id"]), "原任务")["due_date"] is None
+
+
+def test_whitespace_only_todo_title_is_rejected(auth):
+    lst = make_list(auth)
+    todo = add(auth, lst["id"], "原标题")
+    assert auth.post("/api/v1/todos", json={"list_id": lst["id"], "title": "   "}).status_code == 422
+    assert auth.patch(f"/api/v1/todos/{todo['id']}", json={"title": "   "}).status_code == 422
+    assert find(view(auth, lst["id"]), "原标题")["id"] == todo["id"]
+
+
+def test_todo_update_can_clear_only_the_due_time(auth):
+    lst = make_list(auth)
+    due_date = today_local().isoformat()
+    todo = add(auth, lst["id"], "有日期和时间", due_date=due_date, due_time="09:30")
+    response = auth.patch(f"/api/v1/todos/{todo['id']}", json={"due_date": due_date, "due_time": None})
+    assert response.status_code == 200
+    assert response.json()["due_date"] == due_date
+    assert response.json()["due_time"] is None
 
 
 def test_overdue_rules(auth):

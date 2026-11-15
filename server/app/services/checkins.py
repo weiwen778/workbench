@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -10,27 +10,72 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from ..errors import ApiError
-from ..models import CheckinGroup, CheckinInstance, CheckinRule, WorkTarget, utcnow
-from ..utils import iso_z, now_local, today_local, utc_to_local
-from .periods import iter_periods, period_bounds
+from ..models import CheckinGroup, CheckinInstance, CheckinRule, CheckinRuleVersion, WorkTarget, utcnow
+from ..utils import iso_z, local_midnight_utc, now_local, today_local, utc_to_local
+from .periods import PERIODS, iter_periods, period_bounds
+
+PERIOD_ACTIVATED = "周期生效"
+
+
+def _period_start_on_or_after(period: str, day: date) -> date:
+    start, end = period_bounds(period, day)
+    return start if start == day else end
+
+
+def pending_period_start(rule: CheckinRule) -> date | None:
+    if rule.pending_period not in PERIODS or rule.pending_effective_from is None:
+        return None
+    return _period_start_on_or_after(rule.pending_period, rule.pending_effective_from)
 
 
 def effective_period(rule: CheckinRule, today: date | None = None) -> str:
     """周期修改采用“下一个对应周期生效”。"""
     today = today or today_local()
-    if rule.pending_period and rule.pending_effective_from and today >= rule.pending_effective_from:
+    starts_on = pending_period_start(rule)
+    if starts_on and today >= starts_on:
+        assert rule.pending_period is not None
         return rule.pending_period
     return rule.period
 
 
-def collapse_pending(db: Session, rule: CheckinRule, today: date | None = None) -> None:
+def _schedule_starts(db: Session, rule_ids: list[int]) -> dict[int, date]:
+    versions = db.execute(
+        select(CheckinRuleVersion.rule_id, func.max(CheckinRuleVersion.effective_from))
+        .where(CheckinRuleVersion.rule_id.in_(rule_ids), CheckinRuleVersion.change_summary == PERIOD_ACTIVATED)
+        .group_by(CheckinRuleVersion.rule_id)
+    )
+    return {rule_id: utc_to_local(start).date() for rule_id, start in versions}
+
+
+def collapse_pending(db: Session, rule: CheckinRule, target: WorkTarget, today: date | None = None) -> None:
     """到达生效日期后，把待生效周期转正并写一条修改记录。"""
     today = today or today_local()
-    if rule.pending_period and rule.pending_effective_from and today >= rule.pending_effective_from:
-        rule.period = rule.pending_period
-        rule.pending_period = None
-        rule.pending_effective_from = None
-        rule.version += 1
+    starts_on = pending_period_start(rule)
+    if starts_on is None or today < starts_on:
+        return
+    db.refresh(rule, with_for_update=True)
+    starts_on = pending_period_start(rule)
+    new_period = rule.pending_period
+    if starts_on is None or new_period is None or today < starts_on:
+        return
+
+    # Complete the previous schedule through its last day before switching.
+    previous_start = _schedule_starts(db, [rule.id]).get(rule.id)
+    ensure_rule_instances(
+        db, rule, target, period_type=rule.period,
+        today=starts_on - timedelta(days=1), schedule_start=previous_start,
+    )
+    rule.period = new_period
+    rule.pending_period = None
+    rule.pending_effective_from = None
+    rule.version += 1
+    group = db.get(CheckinGroup, rule.group_id)
+    db.add(CheckinRuleVersion(
+        rule_id=rule.id, title=rule.title, description=rule.description,
+        group_id=rule.group_id, group_name=group.name if group else "未分类",
+        period=new_period, change_summary=PERIOD_ACTIVATED, effective_from=local_midnight_utc(starts_on),
+    ))
+    db.flush()
 
 
 def _instance_values(
@@ -89,6 +134,8 @@ def ensure_rule_instances(
     backfill: bool = True,
     existing_starts: set[date] | None = None,
     group_cache: dict[int, CheckinGroup] | None = None,
+    today: date | None = None,
+    schedule_start: date | None = None,
 ) -> None:
     """幂等：同一事项同一周期只产生一个实例。
 
@@ -97,16 +144,17 @@ def ensure_rule_instances(
     """
     if not rule.active or target.status != "active":
         return
-    today = today_local()
+    today = today or today_local()
     period = period_type or effective_period(rule, today)
     group = group_cache.get(rule.group_id) if group_cache is not None else db.get(CheckinGroup, rule.group_id)
     if existing_starts is None:
         existing_starts = set(db.scalars(select(CheckinInstance.period_start).where(
             CheckinInstance.rule_id == rule.id, CheckinInstance.period_type == period)).all())
     pending = []
+    earliest = max((start for start in (target.generate_from, schedule_start) if start is not None), default=None)
 
     def allowed(start: date) -> bool:
-        return target.generate_from is None or start >= target.generate_from
+        return earliest is None or start >= earliest
 
     # 当前周期：读取即补齐
     start, end = period_bounds(period, today)
@@ -117,8 +165,8 @@ def ensure_rule_instances(
     # 停机遗漏的已结束周期：以未完成、只读形式补齐
     if backfill:
         created_local = utc_to_local(rule.created_at).date()
-        anchor = min([*existing_starts, created_local])
-        if not _history_complete(existing_starts, period, anchor, today, target.generate_from):
+        anchor = schedule_start or min([*existing_starts, created_local])
+        if not _history_complete(existing_starts, period, anchor, today, earliest):
             for p_start, p_end in iter_periods(period, anchor, today):
                 if p_start not in existing_starts and allowed(p_start) and p_end <= today:
                     pending.append(_instance_values(rule, target, group, period, p_start, p_end))
@@ -138,12 +186,13 @@ def ensure_target_period(db: Session, target: WorkTarget, period_type: str) -> N
         select(CheckinRule).where(CheckinRule.target_id == target.id, CheckinRule.active.is_(True))
     ).all()
     for rule in rules:
-        collapse_pending(db, rule)
+        collapse_pending(db, rule, target)
     rules = [rule for rule in rules if effective_period(rule) == period_type]
     if not rules:
         db.flush()
         return
     starts = {rule.id: set() for rule in rules}
+    schedule_starts = _schedule_starts(db, list(starts))
     for rule_id, start in db.execute(select(CheckinInstance.rule_id, CheckinInstance.period_start).where(
             CheckinInstance.rule_id.in_(starts), CheckinInstance.period_type == period_type)):
         starts[rule_id].add(start)
@@ -151,7 +200,8 @@ def ensure_target_period(db: Session, target: WorkTarget, period_type: str) -> N
         CheckinGroup.id.in_({rule.group_id for rule in rules})))}
     for rule in rules:
         ensure_rule_instances(db, rule, target, period_type=period_type, backfill=True,
-                              existing_starts=starts[rule.id], group_cache=groups)
+                              existing_starts=starts[rule.id], group_cache=groups,
+                              schedule_start=schedule_starts.get(rule.id))
     db.flush()
 
 
@@ -257,14 +307,18 @@ def statistics(db: Session, period_type: str, target_ids: list[int] | None = Non
     }
 
 
-def change_rule_period(db: Session, rule: CheckinRule, new_period: str, today: date | None = None) -> dict:
+def period_change_start(current_period: str, new_period: str, today: date) -> date:
+    return _period_start_on_or_after(new_period, period_bounds(current_period, today)[1])
+
+
+def change_rule_period(rule: CheckinRule, new_period: str, today: date | None = None) -> dict:
     """修改周期是特殊变更：保留旧规则当前实例，新周期从下一个对应周期生效。"""
     today = today or today_local()
-    if new_period == rule.period and not rule.pending_period:
+    if new_period == rule.period:
+        rule.pending_period = None
+        rule.pending_effective_from = None
         return {"pending": False, "effective_from": None}
-    current_end = period_bounds(rule.period, today)[1]
+    starts_on = period_change_start(rule.period, new_period, today)
     rule.pending_period = new_period
-    rule.pending_effective_from = current_end
-    rule.version += 1
-    db.flush()
-    return {"pending": True, "effective_from": current_end.isoformat()}
+    rule.pending_effective_from = starts_on
+    return {"pending": True, "effective_from": starts_on.isoformat()}

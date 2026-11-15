@@ -6,8 +6,35 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
 
 import pytest
+from sqlalchemy import select
 
 from app.config import settings
+from app.models import TranslationConnection
+
+
+def test_unreadable_translation_credentials_do_not_block_service_recovery(auth, db):
+    connection = db.scalar(select(TranslationConnection).where(TranslationConnection.provider == "baidu"))
+    assert connection is not None
+    connection.encrypted_config = "unreadable-test-ciphertext"
+    connection.enabled = True
+    db.commit()
+
+    listed = auth.get("/api/v1/translation-connections")
+    assert listed.status_code == 200, listed.text
+    items = {item["provider"]: item for item in listed.json()["items"]}
+    assert items["baidu"]["configured"] is False
+    assert items["baidu"]["decrypt_error"]
+    assert items["mymemory"]["configured"] is True
+    assert "unreadable-test-ciphertext" not in listed.text
+
+    path = "/api/v1/translation-connections/baidu"
+    disabled = auth.put(path, json={"enabled": False})
+    assert disabled.status_code == 200
+    assert disabled.json()["enabled"] is False
+    assert disabled.json()["decrypt_error"]
+    cleared = auth.delete(path)
+    assert cleared.status_code == 200
+    assert cleared.json()["decrypt_error"] is None
 
 
 class FakeUpstream(BaseHTTPRequestHandler):

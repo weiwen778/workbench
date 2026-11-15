@@ -94,10 +94,10 @@ export default function CodesPage() {
 
   useEffect(() => {
     if (tab !== 'generate') return
+    const sequence = ++generateSeq.current
+    setGenerating(true)
+    setError('')
     const timer = window.setTimeout(() => {
-      const sequence = ++generateSeq.current
-      setGenerating(true)
-      setError('')
       try {
         const next = resolvePayload()
         const canvas = canvasRef.current
@@ -132,7 +132,10 @@ export default function CodesPage() {
         setError(reason instanceof Error ? reason.message : '生成失败')
       }
     }, 180)
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+      generateSeq.current += 1
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, type, url, text, wifi, barcodeValue, showBarcodeText])
 
@@ -362,9 +365,9 @@ export default function CodesPage() {
                   <Stack spacing={1}>
                     <Stack direction="row" spacing={0.75} alignItems="center">
                       <Chip size="small" color="success" icon={<Check sx={{ fontSize: 14 }} />} label={recognizeResult.format} />
-                      <Button size="small" startIcon={<CopyDocument fontSize="small" />} onClick={() => void copy(recognizeResult.text, '识别内容')}>复制</Button>
+                      <Button size="small" startIcon={<CopyDocument fontSize="small" />} onClick={() => void copy(recognizeResult.text, '识别内容')}>{recognizeWifi ? '复制原始内容' : '复制'}</Button>
                     </Stack>
-                    <Box component="pre" sx={{ m: 0, p: 1, bgcolor: 'action.hover', borderRadius: 1, fontSize: 12.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 220, overflow: 'auto', fontFamily: 'monospace' }}>{recognizeResult.text}</Box>
+                    <Box component="pre" sx={{ m: 0, p: 1, bgcolor: 'action.hover', borderRadius: 1, fontSize: 12.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 220, overflow: 'auto', fontFamily: 'monospace' }}>{recognizeWifi ? maskedWifi(recognizeWifi) : recognizeResult.text}</Box>
                     {recognizedUrl ? (
                       <Stack direction="row" spacing={0.75} alignItems="center">
                         <Button size="small" variant="outlined" href={recognizedUrl} target="_blank" rel="noopener noreferrer">打开网址</Button>

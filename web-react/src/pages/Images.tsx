@@ -500,13 +500,21 @@ export default function ImagesPage() {
         } finally { canvas.width = canvas.height = 1 }
       }
       if (sliceMode === 'grid') {
-        const rows = Math.max(1, Math.min(20, sliceRows)), cols = Math.max(1, Math.min(20, sliceCols))
-        const tileW = Math.max(1, Math.floor(source.width / cols)), tileH = Math.max(1, Math.floor(source.height / rows))
+        const rows = Math.max(1, Math.min(20, Math.trunc(sliceRows)))
+        const cols = Math.max(1, Math.min(20, Math.trunc(sliceCols)))
+        if (rows > source.height || cols > source.width) {
+          source.width = source.height = 1
+          throw new Error('行列数不能超过图片宽高，请减少行数或列数')
+        }
         for (let row = 0; row < rows; row++) {
+          const y = Math.floor(row * source.height / rows)
+          const height = Math.floor((row + 1) * source.height / rows) - y
           for (let col = 0; col < cols; col++) {
+            const x = Math.floor(col * source.width / cols)
+            const width = Math.floor((col + 1) * source.width / cols) - x
             const tile = document.createElement('canvas')
-            tile.width = tileW; tile.height = tileH
-            tile.getContext('2d')?.drawImage(source, col * tileW, row * tileH, tileW, tileH, 0, 0, tileW, tileH)
+            tile.width = width; tile.height = height
+            tile.getContext('2d')?.drawImage(source, x, y, width, height, 0, 0, width, height)
             await pushTile(tile, `r${row + 1}c${col + 1}`)
           }
         }

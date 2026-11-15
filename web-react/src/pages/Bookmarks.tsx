@@ -39,6 +39,11 @@ export default function BookmarksPage() {
 
   const domain = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, '') } catch { return url } }
   const favicon = (url: string) => { try { return new URL('/favicon.ico', url).href } catch { return '' } }
+  // 站名首字：跳过「【」、引号、数字符号等装饰性前缀，避免回退图标显示成一个括号
+  const initial = (title: string) => {
+    const stripped = (title || '').replace(/^[^\p{L}\p{N}]+/u, '')
+    return (stripped.slice(0, 1) || (title || '').slice(0, 1)).toUpperCase()
+  }
   const shortResult = (value: string) => {
     const ms = value.match(/(\d+) ms/)
     return ms ? `${ms[1]} ms · 未确认` : value.includes('HTTP') ? value : value.includes('失败') ? '未确认' : value
@@ -212,7 +217,7 @@ export default function BookmarksPage() {
               <Box sx={{ width: 40, height: 40, borderRadius: '9px', bgcolor: 'action.selected', display: 'grid', placeItems: 'center', flexShrink: 0, fontSize: 18, fontWeight: 600 }}>
                 {!iconErrors[item.id] ? (
                   <Box component="img" src={item.icon_url || favicon(item.url)} alt="" referrerPolicy="no-referrer" onError={() => setIconErrors((prev) => ({ ...prev, [item.id]: true }))} sx={{ width: 26, height: 26, objectFit: 'contain' }} />
-                ) : item.title.slice(0, 1).toUpperCase()}
+                 ) : initial(item.title)}
               </Box>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.6, minWidth: 0 }}>
                 <Typography sx={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</Typography>

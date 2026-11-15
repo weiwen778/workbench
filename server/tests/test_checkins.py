@@ -42,6 +42,17 @@ def all_items(payload):
 # ---------------------------------------------------------------- 周期计算
 
 
+@pytest.mark.parametrize(("path", "parameter"), [
+    ("/checkin-instances", "period_start"),
+    ("/checkin-instances/history", "date_from"),
+    ("/checkin-instances/history", "date_to"),
+])
+def test_invalid_checkin_date_is_a_validation_error(auth, path, parameter):
+    response = auth.get(f"/api/v1{path}", params={parameter: "not-a-date"})
+    assert response.status_code == 422
+    assert response.json()["code"] == "INVALID_DATE"
+
+
 def test_period_bounds_are_calendar_based():
     assert period_bounds("daily", date(2026, 10, 25)) == (date(2026, 10, 25), date(2026, 10, 26))
     # 2026-10-25 是周日，本周从 10-19（周一）开始
@@ -275,10 +286,72 @@ def test_rule_change_period_is_pending(auth):
     assert body["period_change"]["pending"] is True
     effective = body["period_change"]["effective_from"]
     today = today_local()
-    expected = today + timedelta(days=1)  # 每日事项当前周期到明天 00:00 结束
+    weekly_start, weekly_end = period_bounds("weekly", today + timedelta(days=1))
+    expected = weekly_start if weekly_start > today else weekly_end
     assert effective == expected.isoformat()
     # 当前周期实例仍然是每日，且没有被删除
     assert len(all_items(list_today(auth))) == 1
+
+
+def test_rule_transition_waits_for_new_boundary_and_does_not_rewrite_history(auth, monkeypatch):
+    from app.routers import checkins as router
+    from app.routers import targets
+    from app.services import checkins as service
+
+    monday = date(2026, 11, 16)
+    today = monday
+    monkeypatch.setattr(router, "today_local", lambda: today)
+    monkeypatch.setattr(targets, "today_local", lambda: today)
+    monkeypatch.setattr(service, "today_local", lambda: today)
+    target = make_target(auth)
+    group = make_group(auth)
+    rule = make_rule(auth, target["id"], group["id"], period="daily")
+    assert rule["period_change_starts"]["weekly"] == "2026-11-23"
+    original = all_items(list_today(auth))[0]
+    assert auth.post(f"/api/v1/checkin-instances/{original['id']}/complete", json={"note": "原每日记录"}).status_code == 200
+
+    update = auth.patch(f"/api/v1/checkin-rules/{rule['id']}", json={"period": "weekly"})
+    assert update.status_code == 200
+    assert update.json()["period_change"]["effective_from"] == "2026-11-23"
+
+    today = monday + timedelta(days=1)
+    assert len(all_items(list_today(auth, period="daily"))) == 1
+    assert all_items(list_today(auth, period="weekly")) == []
+
+    today = monday + timedelta(days=14)
+    weekly = all_items(list_today(auth, period="weekly"))
+    assert [item["period_start"] for item in weekly] == ["2026-11-30"]
+    weekly_history = auth.get("/api/v1/checkin-instances/history", params={"period": "weekly"}).json()
+    assert [item["period_start"] for item in weekly_history["items"]] == ["2026-11-30", "2026-11-23"]
+    old_history = auth.get("/api/v1/checkin-instances/history", params={"period": "daily"}).json()["items"]
+    preserved = next(item for item in old_history if item["id"] == original["id"])
+    assert preserved["completed"] and preserved["note"] == "原每日记录"
+    assert all(item["period_start"] < "2026-11-23" for item in old_history)
+    assert any(item["period_start"] == "2026-11-22" and item["locked"] for item in old_history)
+
+
+def test_saving_unrelated_rule_fields_preserves_pending_schedule(auth, monkeypatch):
+    from app.routers import targets
+    from app.services import checkins as service
+
+    today = date(2026, 11, 16)
+    monkeypatch.setattr(targets, "today_local", lambda: today)
+    monkeypatch.setattr(service, "today_local", lambda: today)
+    target = make_target(auth)
+    group = make_group(auth)
+    rule = make_rule(auth, target["id"], group["id"], period="daily")
+    path = f"/api/v1/checkin-rules/{rule['id']}"
+    scheduled = auth.patch(path, json={"period": "weekly"}).json()
+    assert scheduled["pending_effective_from"] == "2026-11-23"
+
+    edited = auth.patch(path, json={"title": "更新标题", "period": "weekly"}).json()
+    assert edited["pending_period"] == "weekly"
+    assert edited["pending_effective_from"] == "2026-11-23"
+    assert edited["period_change_starts"]["weekly"] == "2026-11-23"
+
+    cancelled = auth.patch(path, json={"period": "daily"}).json()
+    assert cancelled["pending_period"] is None
+    assert cancelled["period_change"] == {"pending": False, "effective_from": None}
 
 
 def test_rule_versions_recorded(auth):

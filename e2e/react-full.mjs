@@ -4,9 +4,16 @@ import { base, password } from './react-env.mjs'
 const browser = await chromium.launch()
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
 const errors = []
+const conflicts = []
+let expectedDashboardConflict
 page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`))
+page.on('response', (response) => {
+  if (response.status() === 409) conflicts.push(response)
+})
 page.on('console', (message) => {
-  if (message.type() === 'error' && !message.text().includes('401')) errors.push(`console: ${message.text()}`)
+  if (message.type() !== 'error') return
+  if (message.text().includes('401') || message.text().startsWith('Failed to load resource: the server responded with a status of 409')) return
+  errors.push(`console: ${message.text()}`)
 })
 
 async function api(method, path, body) {
@@ -148,11 +155,20 @@ try {
   await page.waitForTimeout(700)
   await page.getByRole('button', { name: /AI 生成/ }).click()
   await page.getByLabel('你想看到什么数据？').fill('每天新增记录的趋势')
+  const suggestion = page.waitForResponse((response) => response.url().endsWith('/api/v1/dashboards/ai/suggest'))
   await page.getByRole('button', { name: '生成图表' }).click()
-  await page.getByRole('button', { name: /全部添加（/ }).waitFor({ timeout: 120000 })
-  expect((await page.locator('.MuiDialog-root').innerText()).includes('趋势'), '看板 AI 没有生成趋势图')
+  const response = await suggestion
+  if (response.status() === 409 && (await response.json()).code === 'AI_NOT_CONFIGURED') {
+    expectedDashboardConflict = response
+    await page.getByText('请先在设置 → AI 能力中配置 API Key', { exact: true }).first().waitFor()
+    console.log('dashboard ai: configuration prompt OK')
+  } else {
+    expect(response.ok(), `看板 AI 接口返回 ${response.status()}`)
+    await page.getByRole('button', { name: /全部添加（/ }).waitFor()
+    expect((await page.locator('.MuiDialog-root').innerText()).includes('趋势'), '看板 AI 没有生成趋势图')
+    console.log('dashboard ai: OK')
+  }
   await page.getByRole('button', { name: '取消' }).click()
-  console.log('dashboard ai: OK')
 } finally {
   if (temporaryBoard) await api('DELETE', `/dashboards/${temporaryBoard.id}?version=${temporaryBoard.version}`).catch(() => null)
 }
@@ -278,6 +294,9 @@ await page.keyboard.press('Escape')
 console.log('mobile dialogs: OK')
 
 console.log('\nERRORS:')
+for (const response of conflicts) {
+  if (response !== expectedDashboardConflict) errors.push(`unexpected HTTP 409: ${response.url()}`)
+}
 for (const error of errors) console.log(error)
 expect(errors.length === 0, `页面出现 ${errors.length} 个错误`)
 await browser.close()

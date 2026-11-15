@@ -31,6 +31,30 @@ def test_folder_and_tag_crud(auth):
     assert "选品" not in auth.get(f"/api/v1/notes/{note['id']}").json()["tags"]
 
 
+def test_create_note_rejects_missing_folder(auth):
+    response = auth.post("/api/v1/notes", json={"title": "失效文件夹中的笔记", "folder_id": 999})
+    assert response.status_code == 422
+    assert response.json()["code"] == "FOLDER_NOT_FOUND"
+
+
+def test_note_metadata_change_rejects_stale_editor_without_creating_revision(auth):
+    folder = auth.post("/api/v1/note-folders", json={"name": "运营"}).json()
+    note = new_note(auth, tags=["原标签"])
+    path = f"/api/v1/notes/{note['id']}"
+    moved = auth.put(path, json={"folder_id": folder["id"], "version": note["version"]}).json()
+    assert moved["version"] == note["version"] + 1
+
+    tagged = auth.put(path, json={"tags": ["新标签"], "version": moved["version"]}).json()
+    assert tagged["version"] == moved["version"] + 1
+    assert tagged["revision_count"] == note["revision_count"]
+    stale = auth.put(path, json={"content": "旧编辑", "tags": ["原标签"], "folder_id": None, "version": moved["version"]})
+    assert stale.status_code == 409
+    assert auth.get(path).json()["tags"] == ["新标签"]
+
+    unchanged = auth.put(path, json={"tags": [" 新标签 ", "新标签"], "version": tagged["version"]}).json()
+    assert unchanged["version"] == tagged["version"]
+
+
 def test_search_by_title_and_content_with_filters(auth):
     folder = auth.post("/api/v1/note-folders", json={"name": "客服"}).json()
     tag = auth.post("/api/v1/note-tags", json={"name": "话术"}).json()

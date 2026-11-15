@@ -101,6 +101,7 @@ export default function ColorPage() {
   }
 
   const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (locked) return
     const result = pointerColor(event)
     if (!result) { setHover(null); setHoverAt(null); return }
     setHover(result.color); setHoverAt({ x: result.x, y: result.y })

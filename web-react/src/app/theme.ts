@@ -1,4 +1,4 @@
-import { createTheme, type Theme } from '@mui/material/styles'
+import { createTheme, getContrastRatio, lighten, type Theme } from '@mui/material/styles'
 import { DEFAULT_THEME_COLOR } from '@/theme-color'
 
 export const fontSans = [
@@ -14,8 +14,15 @@ export const fontMono = [
 export function buildTheme(mode: 'light' | 'dark', themeColor: string): Theme {
   const valid = /^#[0-9a-fA-F]{6}$/.test(themeColor)
   const legacyDefaults = ['#2383e2', '#1976d2']
-  const primary = valid && !legacyDefaults.includes(themeColor.toLowerCase()) ? themeColor : DEFAULT_THEME_COLOR
+  const accent = valid && !legacyDefaults.includes(themeColor.toLowerCase()) ? themeColor : DEFAULT_THEME_COLOR
   const dark = mode === 'dark'
+  let primary = accent
+  if (dark) {
+    // The same accent appears on buttons, links and selected tabs over dark surfaces.
+    for (let amount = 0.1; getContrastRatio(primary, '#253137') < 4.6; amount += 0.1) {
+      primary = lighten(accent, amount)
+    }
+  }
   // 弹层阴影：默认的 MUI elevation 叠加三层黑阴影，在浅色纸面背景上显得过重
   const popoverShadow = dark
     ? '0 8px 24px rgba(0, 0, 0, 0.5)'
@@ -24,7 +31,10 @@ export function buildTheme(mode: 'light' | 'dark', themeColor: string): Theme {
   return createTheme({
     palette: {
       mode,
-      primary: { main: primary },
+      primary: {
+        main: primary,
+        ...(dark ? { contrastText: '#0F1517' } : {}),
+      },
       secondary: { main: dark ? '#C9A25B' : '#9A6B2F' },
       background: {
         default: dark ? '#0F1517' : '#F6F7F6',
@@ -34,7 +44,9 @@ export function buildTheme(mode: 'light' | 'dark', themeColor: string): Theme {
       text: {
         primary: dark ? '#E4EBE9' : '#1A2426',
         secondary: dark ? '#9FB0B3' : '#5A6A6E',
-        disabled: dark ? '#66777A' : '#93A2A5',
+        // 暗色下 #66777A 对 paper(#171F22) 只有 3.57:1，达不到 WCAG AA 4.5:1；
+        // 这个 token 实际被大量用于时间戳、计数、快捷键提示等真实信息，不只是禁用态。
+        disabled: dark ? '#7A8C90' : '#93A2A5',
       },
       success: { main: dark ? '#69B08D' : '#2F7D5B' },
       warning: { main: dark ? '#D6A54A' : '#A86E18' },

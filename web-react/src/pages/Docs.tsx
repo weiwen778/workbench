@@ -77,6 +77,8 @@ export default function DocsPage() {
         <Tabs
           value={module}
           onChange={(_, value: ModuleKey) => select(value)}
+          variant="scrollable"
+          allowScrollButtonsMobile
           sx={{ minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0, fontSize: 13 } }}
         >
           {TABS.map((item) => <Tab key={item.key} value={item.key} label={item.label} onMouseEnter={() => { void loaders[item.key]() }} onFocus={() => { void loaders[item.key]() }} />)}
@@ -85,7 +87,7 @@ export default function DocsPage() {
       </PageToolbar>
       <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>
         {panel('pdf', <PdfEditor />)}
-        {panel('sheet', <SheetEditor />)}
+        {panel('sheet', <SheetEditor active={module === 'sheet'} />)}
         {panel('doc', <DocEditor />)}
       </Box>
     </Page>

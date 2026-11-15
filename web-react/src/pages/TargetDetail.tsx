@@ -68,7 +68,7 @@ export default function TargetDetailPage() {
   const openRule = (rule?: any) => {
     if (!groups.length) { toast.warning('请先在打卡页添加分类'); return }
     setEditingRule(rule || null)
-    setRuleForm({ title: rule?.title || '', group_id: rule?.group_id || groups[0]?.id || '', period: rule?.effective_period || 'daily', description: rule?.description || '' })
+    setRuleForm({ title: rule?.title || '', group_id: rule?.group_id || groups[0]?.id || '', period: rule?.pending_period || rule?.effective_period || 'daily', description: rule?.description || '' })
     setRuleOpen(true)
   }
 
@@ -184,7 +184,11 @@ export default function TargetDetailPage() {
             </Box>
           </Stack>
           <FieldRow label="任务说明"><TextField fullWidth multiline minRows={3} value={ruleForm.description} inputProps={{ maxLength: 5000 }} onChange={(event) => setRuleForm({ ...ruleForm, description: event.target.value })} /></FieldRow>
-          {editingRule && ruleForm.period !== editingRule.effective_period ? <Alert severity="warning">改频率从下一轮生效。</Alert> : null}
+          {editingRule && ruleForm.period !== editingRule.effective_period ? (
+            <Alert severity="info">从 {editingRule.period_change_starts?.[ruleForm.period]} 起按{periodText(ruleForm.period)}频率执行。</Alert>
+          ) : editingRule?.pending_period ? (
+            <Alert severity="info">保存后取消待生效的频率修改。</Alert>
+          ) : null}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button size="small" onClick={() => setRuleOpen(false)}>取消</Button>

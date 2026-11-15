@@ -189,7 +189,7 @@ export default function DocEditor() {
       return
     }
     hasContentRef.current = true
-    if (!userId) return
+    if (!userId || !dirty) return
     const timer = window.setTimeout(() => {
       void saveDocumentDraft(userId, {
         title, markdown, format, savedAt: new Date().toISOString(),
@@ -198,7 +198,7 @@ export default function DocEditor() {
       })
     }, 700)
     return () => window.clearTimeout(timer)
-  }, [markdown, title, format, userId])
+  }, [dirty, markdown, title, format, userId])
 
   const restoreDraft = () => {
     if (!draft) return
