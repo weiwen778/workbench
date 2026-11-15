@@ -103,6 +103,17 @@ class Settings(BaseSettings):
     media_xhs_cookie: str | None = None
     media_kuaishou_cookie: str | None = None
 
+    # 视频解析（内嵌 media-parser，仅启用需要的平台）
+    media_enabled: bool = True
+    media_platforms: str = "douyin,xhs,kuaishou"
+    media_timeout_seconds: float = Field(default=60.0, gt=1, le=120)
+    media_max_concurrency: int = Field(default=2, ge=1, le=8)
+    media_max_download_bytes: int = Field(default=300_000_000, ge=1_000_000, le=2_000_000_000)
+    media_download_ttl_seconds: int = Field(default=7200, ge=60, le=86400)
+    media_douyin_cookie: str | None = None
+    media_xhs_cookie: str | None = None
+    media_kuaishou_cookie: str | None = None
+
     max_bytes_baidu: int = 6000
     max_chars_youdao: int = 5000
     max_chars_deepseek: int = 4000
