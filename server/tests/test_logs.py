@@ -50,17 +50,20 @@ def test_client_log_is_stored_scrubbed_and_searchable(auth, db):
 
 
 def test_request_logs_capture_status_and_request_id(auth):
-    auth.get("/api/v1/auth/me")
+    response = auth.get("/api/v1/auth/me")
+    request_id = response.headers["X-Request-ID"]
     _flush()
-    listed = auth.get("/api/v1/logs", params={"source": "request", "q": "/api/v1/auth/me"})
+    listed = auth.get("/api/v1/logs", params={"source": "request", "request_id": request_id})
     assert listed.status_code == 200
     items = listed.json()["items"]
-    assert items
+    assert len(items) == 1
     item = items[0]
+    assert item["path"] == "/api/v1/auth/me"
     assert item["method"] == "GET"
     assert item["status"] == 200
     assert item["duration_ms"] is not None
-    assert item["request_id"]
+    assert item["request_id"] == request_id
+    assert item["user_id"] is not None
 
 
 def test_log_filters_and_summary(auth, db):

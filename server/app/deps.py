@@ -20,6 +20,7 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
         if user is None:
             raise ApiError("UNAUTHENTICATED", "账号不存在", 401)
         request.state.user = user
+        request.state.user_id = user.id
         user_id_var.set(user.id)
         db.info.update(table_actor_id=user.id, table_actor=context.actor)
         return user
@@ -42,6 +43,7 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     request.state.audit_identity=(user.id,user.username)
     request.state.session = sess
     request.state.user = user
+    request.state.user_id = user.id
     user_id_var.set(user.id)
     db.info["table_actor_id"]=user.id
     db.info["table_actor"]=user.username

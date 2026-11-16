@@ -6,6 +6,8 @@ import {
 } from '@mui/material'
 import { ArrowLeft, ArrowRight, Delete, InfoFilled, Lock, Menu, Moon, Palette, Search, Sunny, Todo, Translate, Tune } from '@/icons'
 import BackupIcon from '@mui/icons-material/Backup'
+import BugReportIcon from '@mui/icons-material/BugReport'
+import ReceiptLongIcon from '@mui/icons-material/ReceiptLong'
 import SpeedIcon from '@mui/icons-material/Speed'
 import { apiError } from '@/api/client'
 import { setTheme, useSession } from '@/session'
@@ -13,6 +15,8 @@ import { MOTION_SPEED_OPTIONS, readMotionSpeed, writeMotionSpeed, type MotionSpe
 import { useReducedMotion } from 'framer-motion'
 import { Card, AgentsSection, AiSection, SystemSection, TranslationSection } from './SettingsSections'
 import ContentDisplaySection from './settings/ContentDisplaySection'
+import FeedbackSection from './settings/FeedbackSection'
+import LogsSection from './settings/LogsSection'
 import NavigationSection from './settings/NavigationSection'
 import SecuritySection from './settings/SecuritySection'
 import TrashView from './Trash'
@@ -32,6 +36,7 @@ const groups = [
       { key: 'ai', label: 'AI 能力', icon: InfoFilled, description: '配置智谱模型，用于 AI 填表和 AI 生成看板图表。', keywords: 'GLM OCR 视觉 文本 图片 识别 看板 图表 API Key 模型' },
       { key: 'translation', label: '翻译服务', icon: Translate, description: '配置、启用和测试翻译服务，密钥留空时保留原有值。', keywords: '百度 有道 DeepSeek 智谱 密钥 模型 翻译 字号 服务' },
       { key: 'agents', label: 'Agent 接入', icon: Todo, description: '让 Agent 直接接管工作台，记录每次操作并支持撤销。', keywords: '令牌 API token 自动化 权限 直接写入 撤销 暂存 审核 活动' },
+      { key: 'feedback', label: '问题反馈', icon: BugReportIcon, description: '连接 GitHub 仓库，把浏览器里提交的 Bug 和需求直接变成 Issue。', keywords: 'GitHub Issue 反馈 Bug 需求 令牌 仓库 标签' },
     ],
   },
   {
@@ -45,6 +50,7 @@ const groups = [
     name: '系统',
     items: [
       { key: 'runtime', label: '运行状态', icon: SpeedIcon, description: '查看服务器 CPU、内存、磁盘、网络和健康状态。', keywords: 'CPU 内存 磁盘 网络 负载 监控 健康 运行 状态' },
+      { key: 'logs', label: '运行日志', icon: ReceiptLongIcon, description: '检索后端、请求、后台任务和浏览器上报的运行日志。', keywords: '日志 报错 异常 错误 请求 堆栈 排查 运行 检索' },
       { key: 'security', label: '登录与安全', icon: Lock, description: '修改登录密码，退出当前设备。', keywords: '密码 登录 安全 退出 会话 设备' },
     ],
   },
@@ -197,6 +203,8 @@ export default function SettingsPage({ section: explicitSection }: { section?: s
         {canonical === 'agents' ? <AgentsSection /> : null}
         {canonical === 'ai' ? <AiSection notify={notify} /> : null}
         {canonical === 'translation' ? <TranslationSection /> : null}
+        {canonical === 'feedback' ? <FeedbackSection /> : null}
+        {canonical === 'logs' ? <LogsSection /> : null}
         {canonical === 'trash' ? <TrashView embedded /> : null}
         {canonical === 'backup' ? <SystemSection part="backup" /> : null}
         {canonical === 'runtime' ? <SystemSection part="runtime" /> : null}

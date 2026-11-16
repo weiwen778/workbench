@@ -83,7 +83,7 @@ def _entry(
         "logger": (logger or "")[:120],
         "message": scrub(message, _MESSAGE_LIMIT) or "",
         "stack": scrub(stack, _STACK_LIMIT),
-        "path": (path or None) and str(path)[:500],
+        "path": (path or None) and scrub(str(path), 500),
         "method": (method or None) and str(method)[:10],
         "status": status,
         "duration_ms": duration_ms,

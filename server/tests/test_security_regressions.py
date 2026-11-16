@@ -128,7 +128,7 @@ def test_zip_inspection_uses_actual_decompressed_size():
 
 
 def test_production_password_rejects_repository_placeholders():
-    for password in ("", "admin12345", "请改成至少 12 位的强密码", "changeme", "short"):
+    for password in ("", "admin12345", "请改成至少 12 位的强密码", "changeme", "short", "12345678"):
         with pytest.raises(RuntimeError):
             _validate_production_password(password)
     _validate_production_password("this-is-a-long-random-password")

@@ -166,6 +166,23 @@ def create_app() -> FastAPI:
         started = time.perf_counter()
         try:
             response = await call_next(request)
+            duration = int((time.perf_counter() - started) * 1000)
+            response.headers['X-Request-ID'] = request_id
+            skip = path in {'/api/v1/health', '/api/v1/logs/client'} or (
+                path.startswith('/api/v1/logs') and request.method == 'GET'
+            )
+            if not skip:
+                status = response.status_code
+                level = logging.ERROR if status >= 500 else logging.WARNING if status >= 400 else logging.INFO
+                logger.log(
+                    level, '%s %s -> %s', request.method, path, status,
+                    extra={
+                        'log_source': 'request', 'path': path, 'method': request.method,
+                        'status': status, 'duration_ms': duration, 'request_id': request_id,
+                        'user_id': getattr(request.state, 'user_id', None),
+                    },
+                )
+            return response
         except Exception:
             duration = int((time.perf_counter() - started) * 1000)
             logger.exception(
@@ -173,29 +190,12 @@ def create_app() -> FastAPI:
                 extra={
                     'log_source': 'request', 'path': path, 'method': request.method,
                     'status': 500, 'duration_ms': duration, 'request_id': request_id,
-                    'user_id': log_store.user_id_var.get(None),
+                    'user_id': getattr(request.state, 'user_id', None),
                 },
             )
             raise
         finally:
             log_store.request_id_var.reset(token)
-        duration = int((time.perf_counter() - started) * 1000)
-        response.headers['X-Request-ID'] = request_id
-        skip = path in {'/api/v1/health', '/api/v1/logs/client'} or (
-            path.startswith('/api/v1/logs') and request.method == 'GET'
-        )
-        if not skip:
-            status = response.status_code
-            level = logging.ERROR if status >= 500 else logging.WARNING if status >= 400 else logging.INFO
-            logger.log(
-                level, '%s %s -> %s', request.method, path, status,
-                extra={
-                    'log_source': 'request', 'path': path, 'method': request.method,
-                    'status': status, 'duration_ms': duration, 'request_id': request_id,
-                    'user_id': log_store.user_id_var.get(None),
-                },
-            )
-        return response
 
     from .request_limits import RequestConcurrencyLimit
     app.add_middleware(RequestConcurrencyLimit, limit=settings.request_concurrency, timeout=settings.request_queue_timeout)
@@ -271,18 +271,19 @@ def create_app() -> FastAPI:
 def _validate_production_password(password: str) -> None:
     value = (password or "").strip()
     weak = {
-        "admin12345", "password", "password123", "123456789012", "adminadmin",
-        "请改成至少12位的强密码", "请改成至少 12 位的强密码", "changeme",
+        "admin12345", "password", "password123", "12345678", "123456789012",
+        "adminadmin", "qwertyui", "admin123", "changeme",
+        "请改成至少12位的强密码", "请改成至少 12 位的强密码",
     }
     if (
-        len(value) < 12
+        len(value) < 8
         or value.lower() in weak
         or "请改成" in value
         or "changeme" in value.lower()
     ):
         raise RuntimeError(
-            "Production requires an administrator password of at least 12 characters "
-            "that is not a documented placeholder or common weak password"
+            "Production requires a non-placeholder administrator password of at least "
+            "8 characters (12+ recommended) that is not a common weak password"
         )
 
 

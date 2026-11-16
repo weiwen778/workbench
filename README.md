@@ -211,7 +211,7 @@ alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --p
 生产启动校验（`server/app/main.py`）：
 
 - 必须设置 `WB_ENCRYPTION_KEY`。
-- 管理员密码至少 12 位，不能是 `admin12345`、`请改成…`、`changeme` 等仓库/常见弱口令。
+- 管理员密码至少 8 位（强烈建议 12 位以上），不能是 `admin12345`、`请改成…`、`changeme` 等仓库/常见弱口令。
 - 生产必须使用 PostgreSQL，不能是 SQLite。
 - `WB_DB_PASSWORD`、`WB_ADMIN_PASSWORD`、`WB_ENCRYPTION_KEY` 在 compose 中用 `${...:?}` 强制，空值会直接拒绝启动。
 
@@ -256,7 +256,7 @@ curl -fsS http://127.0.0.1:${WB_HTTP_PORT:-18743}/api/v1/health
 | `WB_DATABASE_URL` | `sqlite:///./data/workbench.db` | SQLAlchemy 连接串；生产必须 PostgreSQL |
 | `WB_DB_HOST` / `WB_DB_PORT` | — | Compose 内使用 `db` / `5432` |
 | `WB_DB_NAME` / `WB_DB_USER` / `WB_DB_PASSWORD` | — | 生产必填；密码不要写进仓库 |
-| `WB_ADMIN_USERNAME` / `WB_ADMIN_PASSWORD` | `admin` / `admin12345` | 首次启动创建唯一管理员；生产密码≥12 位且非弱口令 |
+| `WB_ADMIN_USERNAME` / `WB_ADMIN_PASSWORD` | `admin` / `admin12345` | 首次启动创建唯一管理员；生产密码≥8 位（建议 12+）且非弱口令 |
 | `WB_ENCRYPTION_KEY` | — | Fernet 主密钥，加密翻译/AI 凭据；丢失后旧凭据不可解 |
 | `WB_STORAGE_DIR` | `./data/storage` | 附件、导出、白板资源、Agent 暂存目录 |
 | `WB_BACKUP_DIR` | `../.backups` | 应用内加密备份目录，必须与附件目录分离 |
@@ -408,7 +408,7 @@ bash deploy/restore.sh /path/to/workbench-YYYYmmdd-HHMMSS
 | 3 | 高 | 表格白名单可用 `{{x}}` 查询参数绕过 | 策略不再因路径含 `{{` 跳过；合并/直写 resolve 后仍有 `{{` 直接 422 |
 | 4 | 高 | Excel 只信任 ZIP 声明大小，可解压炸弹 OOM | 新增 `archive_safety.py`，流式统计实际解压字节，并校验声明大小与实际一致 |
 | 5 | 高 | 导出文件绑定为附件后，清理任务删除导出 job 会导致备份永久 `BACKUP_ATTACHMENT_MISSING` | 备份快照按 `storage_key` 的 `export_` 前缀映射 `exports/`，不再依赖 job 行 |
-| 6 | 高 | `.env.example` 的占位管理员密码长度足够，可通过生产校验 | 示例留空；生产校验拒绝占位符/常见弱口令且要求 ≥12 位 |
+| 6 | 高 | `.env.example` 的占位管理员密码长度足够，可通过生产校验 | 示例留空；生产校验拒绝占位符/常见弱口令且要求 ≥8 位（建议 12+） |
 | 7 | 高 | 审核模式预览会真实调用看板 AI；直写模式可绕过 `allow_external` | `/dashboards/ai` 归入 deferred 与 external，必须显式允许外部服务 |
 | 8 | 高 | 导入流程绕过字段类型/选项/公式/必填校验，可造畸形 schema 或 500 | 复用 `FieldIn`/`_check_field_payload`/`configure`/`validate_record`；mapping 索引做范围校验 |
 | 9 | 高 | 笔记历史恢复无并发版本校验，覆盖他端修改 | 恢复接口要求 `version`，`with_for_update` + 409；前端传当前版本 |
@@ -505,7 +505,7 @@ bash deploy/restore.sh /path/to/workbench-YYYYmmdd-HHMMSS
 ## 14. 常见问题
 
 **启动报 `Production requires an administrator password...`**
-生产密码必须 ≥12 位，且不能是 `.env.example` 占位符、`admin12345`、`changeme` 等。修改 `WB_ADMIN_PASSWORD` 后重启。
+生产密码必须 ≥8 位（建议 12+），且不能是 `.env.example` 占位符、`admin12345`、`changeme` 等。修改 `WB_ADMIN_PASSWORD` 后重启。
 
 **启动报数据库连不上**
 检查 `WB_DB_HOST`/`WB_DB_PASSWORD`；Compose 内主机名是 `db`，不是 `127.0.0.1`。先 `docker compose logs db`。

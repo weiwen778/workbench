@@ -6,7 +6,7 @@ import {
 } from '@mui/material'
 import {
   ChecklistRtl, DarkModeOutlined, EventAvailable, LightModeOutlined, List as ListIcon, MoreHoriz,
-  Search, Settings, TableChart, TaskAlt,
+  Search, Settings, TableChart, TaskAlt, BugReportOutlined,
 } from '@mui/icons-material'
 import AppRail from './AppRail'
 import ModuleTabs from './ModuleTabs'
@@ -14,6 +14,7 @@ import { ManageNavDialog, NavAllDrawer } from './NavPanels'
 import { APP_NAV_KEYS, DEFAULT_PINNED_KEYS } from './app-nav'
 import { readPinnedKeys, readSidebarMode, writePinnedKeys, writeSidebarMode, SIDEBAR_MODE_EVENT, SIDEBAR_ORDER_EVENT, type SidebarMode } from './sidebar-order'
 import GlobalSearchDialog from '@/components/GlobalSearchDialog'
+import FeedbackDialog from '@/components/FeedbackDialog'
 import WorkspaceToolsDialog from '@/components/WorkspaceToolsDialog'
 import PageTransition from '@/motion/components/PageTransition'
 import SkeletonPulse from '@/motion/components/SkeletonPulse'
@@ -57,6 +58,7 @@ export default function AppLayout() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [toolsOpen, setToolsOpen] = useState(false)
   const [toolsView, setToolsView] = useState<'tasks' | 'activity'>('tasks')
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [taskCount, setTaskCount] = useState(0)
   const [data, setData] = useState<SidebarData>(EMPTY_DATA)
   const groups = useMemo(() => buildGroups(data), [data])
@@ -330,6 +332,16 @@ export default function AppLayout() {
                 <Badge badgeContent={taskCount} max={99} color="error" invisible={!taskCount}><TaskAlt sx={{ fontSize: 19 }} /></Badge>
               </IconButton>
             </Tooltip>
+            <Tooltip title="反馈问题或提需求">
+              <IconButton
+                size="small"
+                aria-label="反馈问题或提需求"
+                color={feedbackOpen ? 'primary' : 'default'}
+                onClick={() => setFeedbackOpen(true)}
+              >
+                <BugReportOutlined sx={{ fontSize: 19 }} />
+              </IconButton>
+            </Tooltip>
             <Tooltip title="切换浅色／深色主题">
               <span>
                 <IconButton
@@ -407,6 +419,7 @@ export default function AppLayout() {
 
       <GlobalSearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} />
       <WorkspaceToolsDialog open={toolsOpen} initialView={toolsView} onClose={() => setToolsOpen(false)} />
+      <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </Box>
   )
 }
