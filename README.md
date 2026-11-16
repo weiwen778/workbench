@@ -44,7 +44,7 @@
 | 图片 / 格式 / 取色 / 二维码 | 纯前端 Canvas 处理、格式转换、对比度检查、二维码/条码 |
 | 白板 | Excalidraw 场景、图片资源、自动保存、本地草稿、版本冲突、PNG 导出 |
 | Agent 接入 | 令牌（只显示一次）、直接写入/先暂存两种模式、细粒度权限策略、操作日志与一键撤销 |
-| 运行日志 / 反馈 | 后端日志入库、级别/来源/关键字检索、导出与清理；GitHub Issue 反馈后端（前端入口按设计文档接入） |
+| 运行日志 / 反馈 | 后端日志入库、级别/来源/关键字检索、导出与清理；GitHub Issue 反馈；设置页与顶栏反馈入口 |
 | 系统 | 任务中心、回收站（30 天）、操作记录、服务器监控、加密备份与恢复 |
 
 「信息聚合 / 视频解析 / 宠物」三个旧模块及其归档代码已于 2026-11-16 移除；数据库历史迁移保留，并新增删表迁移清理相关表。
@@ -469,7 +469,7 @@ bash deploy/restore.sh /path/to/workbench-YYYYmmdd-HHMMSS
 - 反馈配置与提交：`GET/PUT /api/v1/feedback/config`、`POST /api/v1/feedback/config/test`、`POST /api/v1/feedback`、`GET /api/v1/feedback`、`POST /api/v1/feedback/{id}/retry`。
 - GitHub PAT 使用现有 Fernet 主密钥加密，接口只返回掩码；仓库名正则校验，禁止路径穿越。
 - 迁移：`20261116_d4e5f6a7b8c9_add_logs_and_feedback.py`（`down_revision = c3d4e5f6a7b8`）。
-- 当前状态：后端与测试已完成；设置页「运行日志」、顶栏反馈弹窗等前端入口尚未接入，接入时按设计文档实现，不要绕过后端脱敏与管理员鉴权。
+- 当前状态：前后端均已接入。设置页提供「运行日志」和「问题反馈」配置，顶栏提供反馈弹窗；新增入口必须继续走管理员鉴权与后端脱敏。
 
 ---
 
@@ -497,7 +497,6 @@ bash deploy/restore.sh /path/to/workbench-YYYYmmdd-HHMMSS
 - 容器默认 root、`host-metrics` 挂载宿主机 `/`、默认 HTTP 等部署加固项未强制，需按第 6.1 节配置。
 - 未设置 CSP；若后续引入新的 HTML 注入路径，必须重新评估。
 - `web-react/src/pages/Dashboard.tsx`、`AppRail.tsx` 等仍有少量硬编码动效/颜色，未全部收敛到 tokens。
-- 运行日志/问题反馈只有后端与测试，设置页和顶栏入口尚未接入。
 - e2e 中旧 `.univer-host` 脚本尚未重写。
 
 ---
