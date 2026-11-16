@@ -22,7 +22,7 @@ from .encryption import decrypt_config
 ROOTS = {
  'search','tasks','activity','todo-lists','todos','tables','fields','records','table-views','table-changes','note-folders','note-tags','notes','memos','bookmarks',
  'dashboards','work-targets','checkin-groups','checkin-rules','checkin-instances','checkin-imports','checkin-statistics',
- 'preferences','files','imports','data-transfer-jobs','trash','translations','translation-connections',
+ 'preferences','files','imports','data-transfer-jobs','trash','translations',
  'translation-history','translation-favorites','translation-languages','health',
 }
 MODULES = {
@@ -113,7 +113,7 @@ def normalize(operation):
 def deferred(op):
     path=urlsplit(op['path']).path
     root=path.split('/')[1]
-    return root=='tasks' or path.endswith('/export-tasks') or root in {'files','imports','data-transfer-jobs','trash','translations','translation-connections','checkin-imports'} or any(part in path.split('/') for part in ['exports','export','import']) or path.endswith('/metadata')
+    return root=='tasks' or path.startswith('/dashboards/ai') or path.endswith('/export-tasks') or root in {'files','imports','data-transfer-jobs','trash','translations','translation-connections','checkin-imports'} or any(part in path.split('/') for part in ['exports','export','import']) or path.endswith('/metadata')
 
 
 def involved(operations):

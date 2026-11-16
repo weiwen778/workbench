@@ -117,6 +117,8 @@ async def execute(request: Request, token: AgentToken, db: Session, title: str, 
 
         for i, original in enumerate(operations):
             op = staging.normalize(staging.resolve(original, results))
+            if '{{' in op['path']:
+                raise ApiError('UNRESOLVED_REFERENCE', '操作路径包含未解析的结果引用，本次未执行', 422)
             staging.authorize(proxy, op['path'], True, op['method'], work)
             if staging.deferred(op) and not policy['allow_irreversible']:
                 raise ApiError(

@@ -12,6 +12,7 @@ from ..db import get_db
 from ..deps import get_current_user
 from ..errors import ApiError
 from ..config import settings
+from ..services.archive_safety import ensure_zip_within_limits
 from .tables import _get_table
 
 router=APIRouter(tags=['Workbook files'],dependencies=[Depends(get_current_user)])
@@ -23,10 +24,10 @@ def rgb(color):
 def import_xlsx(content:bytes,name:str):
     from openpyxl import load_workbook
     from openpyxl.utils.datetime import to_excel
+    ensure_zip_within_limits(content, max_total=32_000_000, max_entry=16_000_000, label='Excel 文件', max_entries=5000)
     try:
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
             entries=archive.infolist()
-            if len(entries)>5000 or sum(e.file_size for e in entries)>32_000_000 or any(e.file_size>16_000_000 for e in entries):fail('Excel 展开后超过大小限制')
             for e in entries:
                 if e.filename.endswith('styles.xml') and e.file_size>2_000_000:fail('Excel 样式数量过多')
             cell_count=0;merge_cells=0

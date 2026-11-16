@@ -22,6 +22,9 @@ if test "$RUNNING" = true; then
 fi
 docker compose exec -T db sh -c 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$TARGET/database.dump"
 docker compose run --rm -T --no-deps --entrypoint tar -v "$VOLUME:/data:ro" web czf - -C /data . > "$TARGET/storage.tar.gz"
-cp .env "$TARGET/env.backup"
-printf 'Restore with: bash deploy/restore.sh "%s"\nRetain the original WB_ENCRYPTION_KEY from env.backup. Never publish this directory.\n' "$TARGET" > "$TARGET/README.txt"
+# Never put .env (DB password, admin password, Fernet master key) next to the
+# database dump. Keep those in a password manager / separate secret store.
+grep -E '^(WB_(DB_PASSWORD|ADMIN_PASSWORD|ENCRYPTION_KEY|COOKIE_SECURE|PUBLIC_BASE_URL))=' .env \
+  | sed 's/=.*/=<keep separately>/' > "$TARGET/env.keys" || true
+printf 'Restore with: bash deploy/restore.sh "%s"\nThis directory does NOT contain .env secrets. Restore WB_DB_PASSWORD, WB_ADMIN_PASSWORD and WB_ENCRYPTION_KEY from your password manager before starting the API. Never publish this directory.\n' "$TARGET" > "$TARGET/README.txt"
 printf 'Backup complete: %s\n' "$TARGET"

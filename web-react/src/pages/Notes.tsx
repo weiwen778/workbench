@@ -349,7 +349,7 @@ export default function NotesPage() {
     const ok = await confirmDialog({ title: '恢复历史版本', danger: true, confirmText: '恢复', message: '恢复后会用这个旧版本盖掉现在的标题和正文（现在的内容会先存成一个历史版本）。' })
     if (!ok) return
     try {
-      const { data } = await http.post(`/notes/${current.id}/revisions/${rev.id}/restore`)
+      const { data } = await http.post(`/notes/${current.id}/revisions/${rev.id}/restore`, { version: current.version })
       setPreviewOpen(false); setRevisionsOpen(false)
       suppress.current = true
       setTitle(data.raw_title ?? data.title); setContent(data.content); setVersion(data.version); setCurrent(data)

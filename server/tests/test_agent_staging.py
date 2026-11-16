@@ -6,7 +6,11 @@ from sqlalchemy import select,func
 
 
 def agent(auth):
-    token=auth.post('/api/v1/agent-tokens',json={'name':'全业务 Agent','scopes':['all:stage']})
+    token=auth.post('/api/v1/agent-tokens',json={'name':'全业务 Agent','scopes':['all:stage'],'policy':{
+        'modules':[],'tables':[],'operations':['create','update','delete'],
+        'allow_schema':True,'allow_files':True,'allow_external':True,'allow_irreversible':True,
+        'max_operations':100,'daily_runs':1000,
+    }})
     assert token.status_code==201,token.text
     client=TestClient(app)
     client.headers['Authorization']='Bearer '+token.json()['token']
@@ -152,8 +156,9 @@ def test_delete_is_pending_until_merge_and_secrets_are_encrypted(auth,db):
     assert merged.status_code==200,merged.text
     assert auth.get(f"/api/v1/notes/{note['id']}").status_code==404
     response=client.put('/api/v1/agent/translation-connections/deepseek',json={'config':{'api_key':'highly-sensitive-test-secret'}})
+    assert response.status_code in (403,404),response.text
+    response=client.post('/api/v1/agent/notes',json={'title':'密钥测试','content':'highly-sensitive-test-secret'})
     assert response.status_code==202,response.text
-    assert 'highly-sensitive-test-secret' not in response.text
     draft=db.get(AgentChange,response.json()['id'])
     assert 'highly-sensitive-test-secret' not in draft.operations_cipher
 

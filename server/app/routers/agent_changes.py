@@ -16,7 +16,8 @@ from ..errors import ApiError
 from ..config import settings
 
 def review_user(request:Request,user:User=Depends(get_current_user)):
-    if request.headers.get('authorization'):
+    from ..agent_runtime import execution
+    if execution.get() is not None or request.headers.get('authorization'):
         raise ApiError('AGENT_REVIEW_RESERVED','审批只接受用户网页登录，不接受 Agent 令牌',403)
     return user
 
@@ -98,6 +99,10 @@ async def merge(change_id:int,payload:ReviewIn,request:Request,user:User=Depends
         if row.status=='applied':return staging.change_payload(row)
         check_pending(row,payload.version)
         token=work.get(AgentToken,row.token_id)
+        if token is None or token.revoked_at is not None:
+            raise ApiError('TOKEN_REVOKED','令牌已撤销，不能合并此前暂存的变更',409)
+        if token.expires_at <= utcnow():
+            raise ApiError('TOKEN_EXPIRED','令牌已过期，不能合并此前暂存的变更',409)
         operations=staging.decode_operations(row)
         try:
             current=await asyncio.to_thread(staging.fingerprint,work,row.fingerprints,True)
@@ -106,6 +111,8 @@ async def merge(change_id:int,payload:ReviewIn,request:Request,user:User=Depends
             refs={};results=[]
             for index,original in enumerate(operations):
                 op=staging.normalize(staging.resolve(original,refs))
+                if '{{' in op['path']:
+                    raise ApiError('UNRESOLVED_REFERENCE','操作路径包含未解析的结果引用，本次未合并',422)
                 staging.authorize(token,op['path'],True,op['method'],work)
                 response=await staging.dispatch(request.app,work,user.id,f'Agent 合并: {token.name}；审核: {user.username}',op)
                 try:result=response.json()

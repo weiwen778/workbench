@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import asyncio
+import time
+import uuid
 from contextlib import suppress
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -15,8 +17,9 @@ from sqlalchemy import select
 from .config import settings
 from .db import SessionLocal, init_db
 from .errors import ApiError, api_error_handler, error_payload
-from .models import TranslationConnection, User
+from .models import FeedbackIntegration, TranslationConnection, User
 from .security import hash_password, new_csrf_token
+from .services import log_store
 from .utils import now_local
 
 logger = logging.getLogger("workbench")
@@ -26,6 +29,8 @@ CSRF_EXEMPT = {"/api/v1/auth/login"}
 
 
 def create_app() -> FastAPI:
+    log_store.install()
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         # 生产只走 alembic：create_all 只建表不加列，会掩盖迁移并造成结构漂移。
@@ -54,6 +59,8 @@ def create_app() -> FastAPI:
                 task.cancel()
                 with suppress(asyncio.CancelledError):
                     await task
+            with suppress(Exception):
+                await asyncio.to_thread(log_store.flush_now)
 
     app = FastAPI(
         title=settings.app_name,
@@ -75,6 +82,26 @@ def create_app() -> FastAPI:
             status_code=422,
             content=error_payload("VALIDATION_ERROR", "提交的内容不合法", {"fields": fields}),
         )
+
+    @app.middleware("http")
+    async def _reject_oversized_body(request: Request, call_next):
+        # Reject declared oversized bodies before Starlette buffers the multipart
+        # payload to disk. Chunked bodies are still bounded by the reverse proxy.
+        raw_length = request.headers.get("content-length")
+        if raw_length:
+            try:
+                length = int(raw_length)
+            except ValueError:
+                length = -1
+            if length > settings.max_upload_bytes + 1_000_000:
+                return JSONResponse(
+                    status_code=413,
+                    content=error_payload(
+                        "REQUEST_TOO_LARGE",
+                        f"请求体不能超过 {settings.max_upload_bytes // 1_000_000} MB",
+                    ),
+                )
+        return await call_next(request)
 
     @app.middleware("http")
     async def _csrf_and_cookie(request: Request, call_next):
@@ -126,6 +153,48 @@ def create_app() -> FastAPI:
             background=BackgroundTasks()
             if response.background:background.add_task(response.background)
             background.add_task(save_audit);response.background=background
+        return response
+
+    @app.middleware('http')
+    async def _log_requests(request: Request, call_next):
+        path = request.url.path
+        if not path.startswith('/api/'):
+            return await call_next(request)
+        request_id = (request.headers.get('X-Request-ID') or uuid.uuid4().hex[:16])[:64]
+        token = log_store.request_id_var.set(request_id)
+        request.state.request_id = request_id
+        started = time.perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception:
+            duration = int((time.perf_counter() - started) * 1000)
+            logger.exception(
+                '请求处理失败 %s %s', request.method, path,
+                extra={
+                    'log_source': 'request', 'path': path, 'method': request.method,
+                    'status': 500, 'duration_ms': duration, 'request_id': request_id,
+                    'user_id': log_store.user_id_var.get(None),
+                },
+            )
+            raise
+        finally:
+            log_store.request_id_var.reset(token)
+        duration = int((time.perf_counter() - started) * 1000)
+        response.headers['X-Request-ID'] = request_id
+        skip = path in {'/api/v1/health', '/api/v1/logs/client'} or (
+            path.startswith('/api/v1/logs') and request.method == 'GET'
+        )
+        if not skip:
+            status = response.status_code
+            level = logging.ERROR if status >= 500 else logging.WARNING if status >= 400 else logging.INFO
+            logger.log(
+                level, '%s %s -> %s', request.method, path, status,
+                extra={
+                    'log_source': 'request', 'path': path, 'method': request.method,
+                    'status': status, 'duration_ms': duration, 'request_id': request_id,
+                    'user_id': log_store.user_id_var.get(None),
+                },
+            )
         return response
 
     from .request_limits import RequestConcurrencyLimit
@@ -190,16 +259,39 @@ def create_app() -> FastAPI:
 
     from .routers import workspace_tools
     app.include_router(workspace_tools.router,prefix=api)
+    from .routers import logs as logs_router
+    app.include_router(logs_router.router, prefix=api)
+    from .routers import feedback as feedback_router
+    app.include_router(feedback_router.router, prefix=api)
 
     _mount_spa(app)
     return app
 
 
+def _validate_production_password(password: str) -> None:
+    value = (password or "").strip()
+    weak = {
+        "admin12345", "password", "password123", "123456789012", "adminadmin",
+        "请改成至少12位的强密码", "请改成至少 12 位的强密码", "changeme",
+    }
+    if (
+        len(value) < 12
+        or value.lower() in weak
+        or "请改成" in value
+        or "changeme" in value.lower()
+    ):
+        raise RuntimeError(
+            "Production requires an administrator password of at least 12 characters "
+            "that is not a documented placeholder or common weak password"
+        )
+
+
 def bootstrap() -> None:
     """初始化管理员、翻译服务占位、存储目录。"""
     if settings.env == "production":
-        if not settings.encryption_key or settings.admin_password == "admin12345" or len(settings.admin_password) < 8:
-            raise RuntimeError("Production requires an encryption key and a non-default administrator password")
+        if not settings.encryption_key:
+            raise RuntimeError("Production requires WB_ENCRYPTION_KEY")
+        _validate_production_password(settings.admin_password)
         if settings.is_sqlite:
             raise RuntimeError("Production must use the configured PostgreSQL database")
     settings.storage_dir.mkdir(parents=True, exist_ok=True)
@@ -218,6 +310,8 @@ def bootstrap() -> None:
         for provider in ("baidu", "youdao", "deepseek"):
             if provider not in existing:
                 db.add(TranslationConnection(provider=provider, enabled=False))
+        if db.scalar(select(FeedbackIntegration).limit(1)) is None:
+            db.add(FeedbackIntegration(id=1, labels=[]))
         db.commit()
 
 

@@ -6,6 +6,7 @@ from sqlalchemy import delete, select
 from .config import settings
 from .db import SessionLocal
 from .models import DataTransferJob, FileObject, FileRef, LoginAttempt, Whiteboard, WhiteboardAsset, utcnow
+from .services import log_store
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ def run_cleanup():
                 if isinstance(element, dict) and element.get("type") == "image" and element.get("fileId") and not element.get("isDeleted"):
                     referenced_assets.add((board.user_id, str(element["fileId"])))
         whiteboard_assets = 0
+        logs = log_store.cleanup(db, settings.log_retention_days)
         storage = settings.storage_dir.resolve()
         for asset in orphan_assets:
             if (asset.user_id, asset.id) in referenced_assets:
@@ -59,7 +61,7 @@ def run_cleanup():
                 db.delete(obj)
                 removed += 1
         db.commit()
-        return {"purged": result["purged"], "files": removed, "jobs": len(jobs), "login_attempts": login_attempts, "whiteboard_assets": whiteboard_assets}
+        return {"purged": result["purged"], "files": removed, "jobs": len(jobs), "login_attempts": login_attempts, "whiteboard_assets": whiteboard_assets, "logs": logs}
 
 async def maintenance_loop():
     while True:

@@ -152,20 +152,21 @@ def ensure_rule_instances(
             CheckinInstance.rule_id == rule.id, CheckinInstance.period_type == period)).all())
     pending = []
     earliest = max((start for start in (target.generate_from, schedule_start) if start is not None), default=None)
+    created_date = utc_to_local(rule.created_at).date()
 
     def allowed(start: date) -> bool:
         return earliest is None or start >= earliest
 
-    # 当前周期：读取即补齐
+    # 当前周期：读取即补齐。即使账号刚从归档恢复（generate_from 指向未来），
+    # 在当前周期内新建的事项也必须立即进入当前清单。
     start, end = period_bounds(period, today)
-    if start not in existing_starts and allowed(start):
+    if start not in existing_starts and (allowed(start) or created_date >= start):
         pending.append(_instance_values(rule, target, group, period, start, end))
         existing_starts.add(start)
 
     # 停机遗漏的已结束周期：以未完成、只读形式补齐
     if backfill:
-        created_local = utc_to_local(rule.created_at).date()
-        anchor = schedule_start or min([*existing_starts, created_local])
+        anchor = schedule_start or min([*existing_starts, created_date])
         if not _history_complete(existing_starts, period, anchor, today, earliest):
             for p_start, p_end in iter_periods(period, anchor, today):
                 if p_start not in existing_starts and allowed(p_start) and p_end <= today:

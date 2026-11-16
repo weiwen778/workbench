@@ -99,7 +99,7 @@ def test_logout_revokes_copied_cookie(auth):
     assert auth.get("/api/v1/auth/me").status_code == 401
 
 
-def test_login_lockout_applies_across_proxy_addresses(auth):
+def test_distributed_failures_do_not_lock_the_only_admin(auth):
     from app.db import SessionLocal
     from app.models import LoginAttempt
 
@@ -108,7 +108,7 @@ def test_login_lockout_applies_across_proxy_addresses(auth):
             session.add(LoginAttempt(username='admin', ip=f'198.51.{index // 250}.{index % 250}', success=False))
         session.commit()
     response = auth.post('/api/v1/auth/login', json={'username': 'admin', 'password': 'admin12345'})
-    assert response.status_code == 429, response.text
+    assert response.status_code == 200, response.text
 
 
 def test_five_failures_from_one_address_still_lock(auth):

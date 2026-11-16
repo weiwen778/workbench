@@ -28,6 +28,39 @@ class PublicHttpError(Exception):
         self.retry_after = retry_after
 
 
+_NAT64_PREFIXES = (
+    ipaddress.ip_network("64:ff9b::/96"),
+    ipaddress.ip_network("64:ff9b:1::/48"),
+)
+
+
+def is_public_ip(address: str) -> bool:
+    """Return True only for a globally routable unicast address.
+
+    ``ipaddress.is_global`` considers the NAT64 well-known prefix global even
+    when it embeds 127.0.0.1 or 169.254.169.254.  Every transition/translation
+    form that can smuggle a private IPv4 address is rejected outright here.
+    """
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    if isinstance(ip, ipaddress.IPv6Address):
+        if ip.ipv4_mapped is not None or ip.sixtofour is not None or ip.teredo is not None:
+            return False
+        if any(ip in network for network in _NAT64_PREFIXES):
+            return False
+    return bool(
+        ip.is_global
+        and not ip.is_private
+        and not ip.is_loopback
+        and not ip.is_link_local
+        and not ip.is_multicast
+        and not ip.is_reserved
+        and not ip.is_unspecified
+    )
+
+
 @dataclass
 class PublicResponse:
     status: int
@@ -71,9 +104,7 @@ def public_target(url: str, *, allow_loopback: bool = False) -> tuple[object, in
         raise PublicHttpError("DNS_FAILED", "无法解析来源域名")
     addresses = [info[4][0] for info in infos]
     only_loopback = all(ipaddress.ip_address(address).is_loopback for address in addresses)
-    if not (allow_loopback and only_loopback) and any(
-        not ipaddress.ip_address(address).is_global for address in addresses
-    ):
+    if not (allow_loopback and only_loopback) and any(not is_public_ip(address) for address in addresses):
         raise PublicHttpError("PRIVATE_ADDRESS", "来源地址指向非公开网络")
     addresses.sort(key=lambda value: ipaddress.ip_address(value).version != 4)
     return parts, port, addresses[0]

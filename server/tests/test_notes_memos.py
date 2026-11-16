@@ -124,14 +124,17 @@ def test_interval_revision_after_five_minutes(auth, db):
 
 def test_restore_revision_keeps_current_as_backup(auth):
     note = new_note(auth)
-    auth.put(
+    updated = auth.put(
         f"/api/v1/notes/{note['id']}",
         json={"content": "第二版", "version": note["version"], "mode": "manual"},
-    )
+    ).json()
     revisions = auth.get(f"/api/v1/notes/{note['id']}/revisions").json()
     first_rev = revisions[-1]
 
-    restored = auth.post(f"/api/v1/notes/{note['id']}/revisions/{first_rev['id']}/restore")
+    restored = auth.post(
+        f"/api/v1/notes/{note['id']}/revisions/{first_rev['id']}/restore",
+        json={"version": updated["version"]},
+    )
     assert restored.status_code == 200
     assert restored.json()["content"] == "# 标题\n\n内容"
 
@@ -140,6 +143,22 @@ def test_restore_revision_keeps_current_as_backup(auth):
     # 恢复前的第二版仍保留在历史里
     detail = auth.get(f"/api/v1/notes/{note['id']}/revisions/{after[0]['id']}").json()
     assert detail["content"] == "第二版"
+
+
+def test_restore_revision_rejects_stale_version(auth):
+    note = new_note(auth)
+    updated = auth.put(
+        f"/api/v1/notes/{note['id']}",
+        json={"content": "第二版", "version": note["version"], "mode": "manual"},
+    ).json()
+    first_rev = auth.get(f"/api/v1/notes/{note['id']}/revisions").json()[-1]
+    stale = auth.post(
+        f"/api/v1/notes/{note['id']}/revisions/{first_rev['id']}/restore",
+        json={"version": note["version"]},
+    )
+    assert stale.status_code == 409
+    assert stale.json()["code"] == "VERSION_CONFLICT"
+    assert auth.get(f"/api/v1/notes/{note['id']}").json()["version"] == updated["version"]
 
 
 def test_revision_cap_is_100(auth, db):

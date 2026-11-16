@@ -11,7 +11,7 @@ from ..config import settings
 from ..db import get_db
 from ..deps import get_current_user
 from ..errors import ApiError
-from ..models import LoginAttempt, User, UserSession, utcnow
+from ..models import AgentToken, LoginAttempt, User, UserSession, utcnow
 from ..security import (
     hash_password,
     hash_token,
@@ -63,11 +63,9 @@ def login(payload: LoginIn, request: Request, response: Response, db: Session = 
     ip = (request.client.host if request.client else "")[:64] or None
     username = payload.username.strip()
     ip_failures = _recent_failures(db, username, ip)
-    account_failures = _recent_failures(db, username)
-    # Per-address lock stops normal brute force; the wider account ceiling
-    # still slows a botnet without letting five anonymous requests lock out
-    # the only administrator.
-    if ip_failures >= settings.login_max_failures or account_failures >= max(20, settings.login_max_failures * 4):
+    # Only the per-address lock is enforced. A global account lock would let an
+    # unauthenticated attacker permanently lock the single administrator out.
+    if ip_failures >= settings.login_max_failures:
         raise ApiError(
             "LOGIN_RATE_LIMITED",
             f"连续登录失败次数过多，请 {settings.login_lock_seconds // 60} 分钟后再试",
@@ -154,5 +152,11 @@ def change_password(
     else:
         stmt = stmt.where(UserSession.id == -1)
     db.execute(stmt.values(revoked_at=utcnow()))
+    # Password rotation must also cut off long-lived Agent tokens.
+    db.execute(
+        update(AgentToken)
+        .where(AgentToken.user_id == user.id, AgentToken.revoked_at.is_(None))
+        .values(revoked_at=utcnow())
+    )
     db.commit()
     return {"ok": True}

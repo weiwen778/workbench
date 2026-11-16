@@ -58,10 +58,11 @@ def operation_kind(method: str, path: str) -> str:
         return 'update'
     if method == 'POST':
         action = clean.rstrip('/').split('/')[-1]
+        if action in {'purge', 'purge-expired', 'clear'}:
+            return 'delete'
         if action in {
             'complete', 'cancel', 'move', 'reorder', 'undo', 'restore', 'refresh',
-            'merge', 'reject', 'confirm', 'preview', 'suggest', 'metadata',
-            'purge-expired', 'rotate',
+            'merge', 'reject', 'confirm', 'preview', 'suggest', 'metadata', 'rotate',
         }:
             return 'update'
     return 'create'
@@ -100,7 +101,12 @@ def is_files(path: str) -> bool:
 def is_external(path: str) -> bool:
     clean = urlsplit(path).path
     root = clean.strip('/').split('/')[0]
-    return root.startswith('translation') or clean.endswith('/metadata')
+    return (
+        root.startswith('translation')
+        or clean.endswith('/metadata')
+        or clean.startswith('/dashboards/ai')
+        or '/ai/' in clean
+    )
 
 
 def table_id_for_path(db: Session | None, path: str) -> int | None:
@@ -146,15 +152,32 @@ def check_policy(token, path: str, write: bool, method: str, db: Session | None 
     if kind not in policy['operations']:
         label = {'create': '新增', 'update': '修改', 'delete': '删除'}[kind]
         raise ApiError('AGENT_POLICY_OPERATION', f'此 Agent 不允许{label}内容', 403)
-    if is_schema(path, method) and not policy['allow_schema']:
-        raise ApiError('AGENT_POLICY_SCHEMA', '此 Agent 不允许修改表格结构（建表、改列、改视图）', 403)
+    clean = urlsplit(path).path.rstrip('/')
+    schema_change = is_schema(path, method)
+    if not schema_change and db is not None:
+        parts = clean.strip('/').split('/')
+        if len(parts) == 3 and parts[0] == 'imports' and parts[2] == 'confirm' and parts[1].isdigit():
+            from .models import DataTransferJob
+            job = db.get(DataTransferJob, int(parts[1]))
+            payload = (job.payload or {}) if job is not None else {}
+            schema_change = payload.get('mode') == 'new_table' or bool(payload.get('new_fields'))
+    if schema_change and not policy['allow_schema']:
+        raise ApiError('AGENT_POLICY_SCHEMA', '此 Agent 不允许修改表格结构（建表、改列、改视图、导入新列）', 403)
     if is_files(path) and not policy['allow_files']:
         raise ApiError('AGENT_POLICY_FILES', '此 Agent 不允许上传、导入或导出文件', 403)
     if is_external(path) and not policy['allow_external']:
         raise ApiError('AGENT_POLICY_EXTERNAL', '此 Agent 不允许调用外部服务或读取网址元数据', 403)
+    if not policy['allow_irreversible'] and (clean.endswith('/purge-expired') or clean.endswith('/purge') or clean.endswith('/clear')):
+        raise ApiError('AGENT_POLICY_IRREVERSIBLE', '此 Agent 不允许永久清除等不可撤销操作', 403)
 
     allowed_tables = policy['tables']
-    if allowed_tables and group == 'tables' and '{{' not in path:
+    if allowed_tables and group == 'tables':
         table_id = table_id_for_path(db, path)
-        if table_id is None or table_id not in allowed_tables:
+        if table_id is None:
+            # A fully templated id is allowed at staging time; merge re-checks the
+            # resolved path. Anything else must resolve to an allowed table.
+            import re
+            if not re.search(r'\{\{[A-Za-z][A-Za-z0-9_]*\.[A-Za-z0-9_.]+\}\}', path):
+                raise ApiError('AGENT_POLICY_TABLE', '此 Agent 只能操作指定的表格', 403)
+        elif table_id not in allowed_tables:
             raise ApiError('AGENT_POLICY_TABLE', '此 Agent 只能操作指定的表格', 403)

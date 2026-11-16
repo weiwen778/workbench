@@ -5,7 +5,6 @@ import io
 import json
 import re
 import uuid
-import zipfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -23,9 +22,11 @@ from ..db import get_db
 from ..deps import get_current_user
 from ..errors import ApiError
 from ..models import DataField, DataRecord, DataTable, DataTransferJob, FileObject, utcnow
+from ..services.archive_safety import ensure_zip_within_limits
 from ..services.fields import validate_record
 from ..services.query import paginate, parse_filters
 from ..utils import iso_z, stringify_decimal
+from .tables import FieldIn, _check_field_payload, _new_option_id
 
 router = APIRouter(tags=["transfer"], dependencies=[Depends(get_current_user)])
 
@@ -75,10 +76,7 @@ def job_payload(job: DataTransferJob) -> dict:
 
 
 def _read_sheets(raw: bytes) -> tuple[dict[str, list[list]], str]:
-    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
-        entries = archive.infolist()
-        if len(entries) > 5000 or sum(entry.file_size for entry in entries) > 64 * 1024 * 1024:
-            raise ApiError('WORKBOOK_TOO_LARGE', 'Excel 解压后内容过大，请拆分文件后导入', 413)
+    ensure_zip_within_limits(raw, max_total=64 * 1024 * 1024, max_entry=64 * 1024 * 1024, max_entries=5000)
     wb = load_workbook(io.BytesIO(raw), data_only=True, read_only=True, keep_links=False)
     sheets, total_cells = {}, 0
     try:
@@ -457,6 +455,61 @@ def _to_field_value(field: dict, text: str) -> tuple[bool, object, str | None]:
     return True, text, None
 
 
+def _normalize_field_defs(fields_def: list[dict], existing_names: set[str], *, label: str = "新字段") -> list[dict]:
+    """Validate client-supplied import field definitions with the same rules as /tables."""
+    normalized: list[dict] = []
+    keys: set[str] = set()
+    names = set(existing_names)
+    for index, raw in enumerate(fields_def):
+        if not isinstance(raw, dict):
+            raise ApiError("INVALID_FIELD", f"{label}定义不合法", 422)
+        key = str(raw.get("key") or "").strip()
+        if not key:
+            raise ApiError("FIELD_KEY_REQUIRED", f"{label}缺少内部标识，请重新解析文件", 422)
+        if key in keys:
+            raise ApiError("FIELD_KEY_DUPLICATED", f"{label}内部标识重复", 409)
+        keys.add(key)
+        name = str(raw.get("name") or "").strip()[:50]
+        if not name:
+            raise ApiError("FIELD_NAME_REQUIRED", f"{label}名不能为空", 422)
+        ftype = str(raw.get("type") or "").strip()
+        options = None
+        if ftype in {"select", "multiselect"}:
+            options = []
+            for option_index, option in enumerate(raw.get("options") or []):
+                if isinstance(option, str):
+                    option_id, option_name = None, option.strip()
+                elif isinstance(option, dict):
+                    option_id = option.get("id")
+                    option_name = str(option.get("name") or "").strip()
+                else:
+                    raise ApiError("INVALID_OPTIONS", f"{label}「{name}」的选项不合法", 422)
+                if not option_name:
+                    raise ApiError("INVALID_OPTIONS", f"{label}「{name}」有空选项", 422)
+                options.append({
+                    "id": str(option_id) if option_id else _new_option_id(index * 1000 + option_index),
+                    "name": option_name[:100],
+                })
+        payload = FieldIn(
+            name=name,
+            type=ftype,
+            required=bool(raw.get("required")),
+            options=options,
+            config=raw.get("config") if isinstance(raw.get("config"), dict) else None,
+        )
+        _check_field_payload(payload, names)
+        names.add(name)
+        normalized.append({
+            "key": key,
+            "name": name,
+            "type": ftype,
+            "required": bool(raw.get("required")),
+            "options": options or [],
+            "config": payload.config,
+        })
+    return normalized
+
+
 def _validate_rows(job: DataTransferJob, fields: list[dict]) -> list[dict]:
     payload = job.payload or {}
     mapping = payload.get("mapping") or {}
@@ -470,7 +523,14 @@ def _validate_rows(job: DataTransferJob, fields: list[dict]) -> list[dict]:
         for col_str, field_key in mapping.items():
             if not field_key:
                 continue
-            col = int(col_str)
+            try:
+                col = int(col_str)
+            except (TypeError, ValueError):
+                errors.append({"row": excel_row, "column": "-", "message": "列映射不合法"})
+                continue
+            if col < 0 or col >= len(headers):
+                errors.append({"row": excel_row, "column": "-", "message": "列映射超出表格范围"})
+                continue
             field = by_key.get(field_key)
             if not field:
                 errors.append({"row": excel_row, "column": headers[col], "message": "列不存在"})
@@ -493,19 +553,29 @@ def update_draft(job_id: int, payload: MappingIn, db: Session = Depends(get_db))
     data = dict(job.payload or {})
     if payload.sheet and payload.sheet != data.get("sheet"):
         raise ApiError("SHEET_CHANGED", "切换工作表需要重新上传预览", 409)
+    existing_table = db.get(DataTable, job.table_id) if job.table_id else None
+    existing_rows = (
+        list(db.scalars(select(DataField).where(DataField.table_id == job.table_id)).all())
+        if existing_table else []
+    )
+    existing_names = {f.name for f in existing_rows}
     if payload.mapping is not None:
-        data["mapping"] = payload.mapping
+        if len(payload.mapping) > MAX_FIELDS:
+            raise ApiError("TOO_MANY_COLUMNS", f"最多支持 {MAX_COLS} 列", 422)
+        data["mapping"] = {str(k): (str(v) if v else None) for k, v in payload.mapping.items()}
     if payload.fields is not None:
-        data["fields"] = payload.fields
+        data["fields"] = _normalize_field_defs(payload.fields, set())
     if payload.new_fields is not None:
-        data["new_fields"] = payload.new_fields
+        data["new_fields"] = _normalize_field_defs(payload.new_fields, existing_names)
     if payload.table_name:
-        data["table_name"] = payload.table_name
+        data["table_name"] = payload.table_name.strip()[:100]
     job.payload = data
 
     if data.get("mode") == "new_table":
         fields = data.get("fields") or []
     else:
+        if not existing_table or existing_table.deleted_at is not None:
+            raise ApiError("TABLE_NOT_FOUND", "表格不存在", 404)
         fields = [
             {
                 "key": f.key,
@@ -514,18 +584,9 @@ def update_draft(job_id: int, payload: MappingIn, db: Session = Depends(get_db))
                 "required": f.required,
                 "options": f.options or [],
             }
-            for f in db.scalars(select(DataField).where(DataField.table_id == job.table_id)).all()
+            for f in existing_rows
         ]
-        new_def = list(data.get("new_fields") or [])
-        used_names = {f["name"] for f in fields}
-        for fd in new_def:
-            name = str(fd.get("name") or "").strip()[:50]
-            if not name:
-                raise ApiError("FIELD_NAME_REQUIRED", "新字段名不能为空", 422)
-            if name in used_names:
-                raise ApiError("FIELD_NAME_DUPLICATED", f"已有同名字段「{name}」，请换个名字", 409)
-            used_names.add(name)
-        fields += new_def
+        fields += list(data.get("new_fields") or [])
     if len(fields) > MAX_FIELDS:
         raise ApiError("TOO_MANY_FIELDS", f"每张表格最多 {MAX_FIELDS} 列", 422)
     job.errors = _validate_rows(job, fields)
@@ -545,12 +606,13 @@ def confirm_import(job_id: int, db: Session = Depends(get_db)):
     data = dict(job.payload or {})
 
     if data.get("mode") == "new_table":
-        fields_def = data.get("fields") or []
+        fields_def = _normalize_field_defs(data.get("fields") or [], set())
         if not fields_def:
             raise ApiError("NO_FIELDS", "请先确认每一列对应到哪里", 422)
         name = (data.get("table_name") or "导入数据").strip()[:100]
         if db.scalar(select(DataTable).where(DataTable.name == name, DataTable.deleted_at.is_(None))):
             raise ApiError("NAME_DUPLICATED", "已有同名表格，请换个表名", 409)
+        new_def: list[dict] = []
     else:
         table = db.get(DataTable, job.table_id) if job.table_id else None
         if not table or table.deleted_at is not None:
@@ -561,15 +623,10 @@ def confirm_import(job_id: int, db: Session = Depends(get_db)):
             {"key": f.key, "name": f.name, "type": f.type, "required": f.required, "options": f.options or []}
             for f in db.scalars(select(DataField).where(DataField.table_id == table.id)).all()
         ]
-        new_def = list(data.get("new_fields") or [])
-        used_names = {f["name"] for f in existing_def}
-        for fd in new_def:
-            name = str(fd.get("name") or "").strip()[:50]
-            if not name:
-                raise ApiError("FIELD_NAME_REQUIRED", "新字段名不能为空", 422)
-            if name in used_names:
-                raise ApiError("FIELD_NAME_DUPLICATED", f"已有同名字段「{name}」，请换个名字", 409)
-            used_names.add(name)
+        new_def = _normalize_field_defs(
+            list(data.get("new_fields") or []),
+            {f["name"] for f in existing_def},
+        )
         fields_def = existing_def + new_def
 
     if len(fields_def) > MAX_FIELDS:
@@ -585,27 +642,39 @@ def confirm_import(job_id: int, db: Session = Depends(get_db)):
     mapping = data.get("mapping") or {}
     headers = data.get("headers") or []
     rows = data.get("rows") or []
+    row_numbers = data.get("row_numbers") or []
 
     prepared: list[dict] = []
-    for row_index,row in enumerate(rows,1):
-        if row_index%500==0 and db.info.get("job_progress"):db.info["job_progress"](row_index)
+    for row_index,row in enumerate(rows):
+        if (row_index + 1)%500==0 and db.info.get("job_progress"):db.info["job_progress"](row_index + 1)
         record: dict = {}
         for col_str, field_key in mapping.items():
             if not field_key:
                 continue
-            col = int(col_str)
+            try:
+                col = int(col_str)
+            except (TypeError, ValueError):
+                raise ApiError("INVALID_MAPPING", "列映射不合法，请重新预览文件", 422)
+            if col < 0 or col >= len(headers):
+                raise ApiError("INVALID_MAPPING", "列映射超出表格范围，请重新预览文件", 422)
             field = next((f for f in fields_def if f["key"] == field_key), None)
             if not field:
-                continue
-            ok, value, _msg = _to_field_value(field, row[col] if col < len(row) else "")
+                raise ApiError("INVALID_MAPPING", "列映射指向不存在的列，请重新预览文件", 422)
+            ok, value, message = _to_field_value(field, row[col] if col < len(row) else "")
+            if not ok:
+                raise ApiError("IMPORT_VALIDATION_FAILED", "这批数据有错误，本次不会导入任何一行", 422,
+                               {"errors": [{"row": row_numbers[row_index] if row_index < len(row_numbers) else row_index + 2,
+                                            "column": headers[col], "message": message}]})
             record[field_key] = value
         prepared.append(record)
 
     try:
+        from ..services.table_expressions import configure
         if data.get("mode") == "new_table":
             table = DataTable(name=(data.get("table_name") or "导入数据")[:100])
             db.add(table)
             db.flush()
+            job.table_id = table.id
             key_map: dict[str, str] = {}
             for index, fd in enumerate(fields_def):
                 field = DataField(
@@ -614,18 +683,20 @@ def confirm_import(job_id: int, db: Session = Depends(get_db)):
                     type=fd["type"],
                     required=bool(fd.get("required")),
                     options=fd.get("options") or None,
+                    config=fd.get("config"),
                     sort_order=index,
                 )
                 db.add(field)
                 db.flush()
                 key_map[fd["key"]] = field.key
-            for row_index,record in enumerate(prepared,1):
-                if row_index%500==0 and db.bind.dialect.name!="sqlite" and db.info.get("job_progress"):db.info["job_progress"](len(prepared)+row_index)
-                db.add(DataRecord(table_id=table.id, data={key_map[k]: v for k, v in record.items()}))
-            job.table_id = table.id
+            field_objs = list(db.scalars(
+                select(DataField).where(DataField.table_id == table.id).order_by(DataField.sort_order, DataField.id)
+            ).all())
+            for field in field_objs:
+                configure(db, field, field_objs)
+            mapped_rows = [{key_map[k]: v for k, v in record.items()} for record in prepared]
         else:
             table = db.get(DataTable, job.table_id)
-            new_def = list(data.get("new_fields") or [])
             created: dict[str, str] = {}
             last_order = db.scalar(
                 select(func.max(DataField.sort_order)).where(DataField.table_id == table.id)
@@ -638,24 +709,65 @@ def confirm_import(job_id: int, db: Session = Depends(get_db)):
                     type=fd["type"],
                     required=bool(fd.get("required")),
                     options=fd.get("options") or None,
+                    config=fd.get("config"),
                     sort_order=index,
                 )
                 db.add(field)
                 db.flush()
                 created[fd["key"]] = field.key
-            for row_index,record in enumerate(prepared,1):
-                if row_index%500==0 and db.bind.dialect.name!="sqlite" and db.info.get("job_progress"):db.info["job_progress"](len(prepared)+row_index)
-                mapped = {created.get(key, key): value for key, value in record.items()}
-                db.add(DataRecord(table_id=table.id, data=mapped))
+            field_objs = list(db.scalars(
+                select(DataField).where(DataField.table_id == table.id).order_by(DataField.sort_order, DataField.id)
+            ).all())
+            for field in field_objs:
+                configure(db, field, field_objs)
+            mapped_rows = [
+                {created.get(key, key): value for key, value in record.items()}
+                for record in prepared
+            ]
             if new_def:
                 table.schema_version += 1
+
+        invalid: list[dict] = []
+        for index, record in enumerate(mapped_rows):
+            if (index + 1)%500==0 and db.bind.dialect.name!="sqlite" and db.info.get("job_progress"):
+                db.info["job_progress"](len(mapped_rows)+index + 1)
+            try:
+                validated = validate_record(db, field_objs, record, table_id=table.id)
+            except ApiError as exc:
+                invalid.append({
+                    "row": row_numbers[index] if index < len(row_numbers) else index + 2,
+                    "column": "-",
+                    "message": exc.message,
+                })
+                if len(invalid) >= 200:
+                    break
+                continue
+            db.add(DataRecord(table_id=table.id, data=validated))
+        if invalid:
+            db.rollback()
+            job = _job(db, job_id)
+            job.status = "needs_fix"
+            job.errors = invalid
+            job.updated_at = utcnow()
+            db.commit()
+            raise ApiError("IMPORT_VALIDATION_FAILED", "这批数据没有通过字段校验，本次不会导入任何一行", 422,
+                           {"errors": invalid, "error_count": len(invalid)})
         db.flush()
         if db.info.get("job_cancel_check"):db.info["job_cancel_check"]()
         job.status = "success"
         job.errors = []
-        job.result = {"imported": len(prepared), "table_id": table.id, "table_name": table.name}
+        job.result = {"imported": len(mapped_rows), "table_id": table.id, "table_name": table.name}
         job.updated_at = utcnow()
         db.commit()
+    except ApiError as exc:
+        db.rollback()
+        failed = _job(db, job_id)
+        if failed.status != "needs_fix":
+            failed.status = "needs_fix"
+            failed.errors = [{"row": 0, "column": "-", "message": exc.message}]
+            failed.updated_at = utcnow()
+            db.commit()
+        raise
     except Exception as error:
         from ..services.jobs import Cancelled
         if isinstance(error,Cancelled):db.rollback();raise

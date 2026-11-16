@@ -15,9 +15,7 @@ logger = logging.getLogger(__name__)
 NAME=re.compile(r'^backup-[0-9TZ-]+-[a-f0-9]{8}$')
 BLOCK=1024*1024
 _SNAPSHOT_ATTACHMENTS = """
-    SELECT CASE WHEN EXISTS (
-        SELECT 1 FROM data_transfer_jobs WHERE file_id = files.id AND kind = 'export'
-    ) THEN 'exports/' ELSE 'files/' END || storage_key
+    SELECT CASE WHEN substr(storage_key, 1, 7) = 'export_' THEN 'exports/' ELSE 'files/' END || storage_key
     FROM files
     UNION ALL
     SELECT storage_key FROM whiteboard_assets

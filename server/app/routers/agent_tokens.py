@@ -4,7 +4,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from ..agent_access import SCOPES
@@ -12,7 +12,7 @@ from ..agent_guide import GUIDE
 from ..db import get_db
 from ..deps import get_current_user
 from ..errors import ApiError
-from ..models import AgentActivity, AgentToken, User, utcnow
+from ..models import AgentActivity, AgentChange, AgentToken, User, utcnow
 from ..security import hash_token
 from ..utils import iso_z
 
@@ -94,10 +94,13 @@ def create_token(payload: TokenIn, user: User = Depends(get_current_user), db: S
         if f'{module}:write' in scopes:
             scopes.add(f'{module}:read')
     plaintext = 'wb_agent_' + secrets.token_urlsafe(32)
+    # Every new token gets an explicit policy. Only legacy rows without one keep
+    # the old unrestricted compatibility behaviour.
+    policy = payload.policy.model_dump() if payload.policy else PolicyIn().model_dump()
     token = AgentToken(user_id=user.id, name=payload.name, token_hash=hash_token(plaintext),
                        prefix=plaintext[:16], scopes=sorted(scopes),
                        write_mode=payload.write_mode,
-                       policy=payload.policy.model_dump() if payload.policy else None,
+                       policy=policy,
                        expires_at=utcnow() + timedelta(days=payload.expires_in_days))
     db.add(token)
     db.commit()
@@ -127,9 +130,17 @@ def revoke_token(token_id: int, user: User = Depends(get_current_user), db: Sess
     token = db.get(AgentToken, token_id)
     if token is None or token.user_id != user.id:
         raise ApiError('NOT_FOUND', '令牌不存在', 404)
+    now = utcnow()
     if token.revoked_at is None:
-        token.revoked_at = utcnow()
-        db.commit()
+        token.revoked_at = now
+    # A revoked token must not leave executable proposals behind.
+    db.execute(
+        update(AgentChange)
+        .where(AgentChange.token_id == token.id, AgentChange.status == 'pending')
+        .values(status='rejected', reviewed_at=now, reviewed_by=user.id,
+                error='令牌已撤销，暂存变更未执行', version=AgentChange.version + 1)
+    )
+    db.commit()
     return {'ok': True}
 
 

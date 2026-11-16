@@ -165,7 +165,6 @@ export function AgentsSection() {
     setCreating(true)
     try {
       const payload: any = { ...form }
-      if (form.write_mode !== 'direct') delete payload.policy
       const { data } = await http.post('/agent-tokens', payload)
       setSecret(data)
       setCreateOpen(false)

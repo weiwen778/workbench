@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { reportClientError } from '@/logging/client-errors'
 
 export const http = axios.create({
   baseURL: '/api/v1',
@@ -28,7 +29,22 @@ export function onUnauthorized(handler: () => void) {
 http.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error?.response?.status === 401) unauthorizedHandler?.()
+    const status = Number(error?.response?.status) || 0
+    if (status === 401) unauthorizedHandler?.()
+    const url = String(error?.config?.url || '')
+    const isLogRequest = url.includes('/logs')
+    if (!isLogRequest && status !== 401 && (status >= 500 || status === 0)) {
+      reportClientError({
+        message: status >= 500 ? `接口返回 ${status}：${url}` : `接口请求失败：${url}`,
+        stack: error?.stack,
+        context: {
+          url,
+          method: String(error?.config?.method || 'get').toUpperCase(),
+          status,
+          code: error?.code || '',
+        },
+      })
+    }
     return Promise.reject(error)
   },
 )

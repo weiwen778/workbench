@@ -53,7 +53,7 @@ def get_db() -> Iterator[Session]:
 
 
 def init_db() -> None:
-    """建表（幂等）。生产由容器启动时执行，等价于迁移入口。"""
+    """建表（幂等）。仅用于开发/测试；生产必须在启动前执行 Alembic 迁移。"""
     from . import models  # noqa: F401  确保模型已注册
 
     Base.metadata.create_all(bind=engine)

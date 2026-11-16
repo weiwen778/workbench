@@ -10,9 +10,12 @@ def direct(auth, policy=None, scopes=None):
         'name': '接管 Agent',
         'scopes': scopes or ['all:read', 'all:stage'],
         'write_mode': 'direct',
+        'policy': policy if policy is not None else {
+            'modules': [], 'tables': [], 'operations': ['create', 'update', 'delete'],
+            'allow_schema': True, 'allow_files': True, 'allow_external': True,
+            'allow_irreversible': True, 'max_operations': 100, 'daily_runs': 1000,
+        },
     }
-    if policy is not None:
-        payload['policy'] = policy
     response = auth.post('/api/v1/agent-tokens', json=payload)
     assert response.status_code == 201, response.text
     client = TestClient(app)

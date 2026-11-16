@@ -4,9 +4,13 @@
 **/__pycache__
 **/.pytest_cache
 web/node_modules
-web/dist
 web/public/pdfjs
+web-react/node_modules
+web-react/dist
+web-react/*.tsbuildinfo
 server/data
+server/storage
+storage
 e2e/node_modules
 docs/screenshots
 *.log
@@ -17,3 +21,6 @@ docs/screenshots
 .run
 backups
 outputs
+.backups
+.restore-drill
+.playwright-mcp

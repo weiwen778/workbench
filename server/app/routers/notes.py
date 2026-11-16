@@ -50,6 +50,10 @@ class NoteSave(BaseModel):
     mode: str = "auto"
 
 
+class RevisionRestoreIn(BaseModel):
+    version: int = Field(ge=1)
+
+
 def _tags_of(db: Session, note_id: int) -> list[NoteTag]:
     return list(
         db.scalars(
@@ -347,13 +351,15 @@ def revision_detail(note_id: int, revision_id: int, db: Session = Depends(get_db
 
 
 @router.post("/notes/{note_id}/revisions/{revision_id}/restore")
-def restore_revision(note_id: int, revision_id: int, db: Session = Depends(get_db)):
-    note = db.get(Note, note_id)
+def restore_revision(note_id: int, revision_id: int, payload: RevisionRestoreIn, db: Session = Depends(get_db)):
+    note = db.scalar(select(Note).where(Note.id == note_id).with_for_update())
     rev = db.get(NoteRevision, revision_id)
     if not note or note.deleted_at is not None:
         raise ApiError("NOT_FOUND", "笔记不存在", 404)
     if not rev or rev.note_id != note_id:
         raise ApiError("NOT_FOUND", "历史版本不存在", 404)
+    if note.version != payload.version:
+        raise ApiError("VERSION_CONFLICT", "笔记已被其他窗口修改，请刷新后再恢复", 409)
     # 恢复前先保留当前内容
     db.add(
         NoteRevision(note_id=note.id, title=note.title, content=note.content, reason="restore")

@@ -654,6 +654,69 @@ class AiConnection(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
+class AppLog(Base):
+    """应用运行日志。写入走有界队列，允许丢弃，不能影响业务请求。"""
+
+    __tablename__ = 'app_logs'
+    __table_args__ = (
+        Index('ix_app_logs_created', 'created_at'),
+        Index('ix_app_logs_level_created', 'level', 'created_at'),
+        Index('ix_app_logs_source_created', 'source', 'created_at'),
+        Index('ix_app_logs_request_id', 'request_id'),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    level: Mapped[str] = mapped_column(String(10), default='INFO', nullable=False)
+    source: Mapped[str] = mapped_column(String(16), default='backend', nullable=False)
+    logger: Mapped[str] = mapped_column(String(120), default='', nullable=False)
+    message: Mapped[str] = mapped_column(Text, default='', nullable=False)
+    stack: Mapped[str | None] = mapped_column(Text)
+    path: Mapped[str | None] = mapped_column(String(500))
+    method: Mapped[str | None] = mapped_column(String(10))
+    status: Mapped[int | None] = mapped_column(Integer)
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    request_id: Mapped[str | None] = mapped_column(String(64))
+    user_id: Mapped[int | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
+    context: Mapped[dict | None] = mapped_column(JSON)
+
+
+class FeedbackIntegration(Base):
+    """GitHub Issue 集成配置，只会有一行（id=1）。"""
+
+    __tablename__ = 'feedback_integrations'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    repo: Mapped[str | None] = mapped_column(String(200))
+    encrypted_token: Mapped[str | None] = mapped_column(Text)
+    labels: Mapped[list] = mapped_column(JSON, default=list)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    last_test_ok: Mapped[bool | None] = mapped_column(Boolean)
+    last_test_message: Mapped[str | None] = mapped_column(String(500))
+    last_tested_at: Mapped[datetime | None] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+
+class FeedbackSubmission(Base, TimestampMixin):
+    """反馈先落库再发送，失败可重试。"""
+
+    __tablename__ = 'feedback_submissions'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    kind: Mapped[str] = mapped_column(String(16), default='bug', nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[str] = mapped_column(Text, default='', nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default='pending', index=True)
+    issue_number: Mapped[int | None] = mapped_column(Integer)
+    issue_url: Mapped[str | None] = mapped_column(String(500))
+    error: Mapped[str | None] = mapped_column(String(1000))
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    log_snapshot: Mapped[str | None] = mapped_column(Text)
+    environment: Mapped[dict] = mapped_column(JSON, default=dict)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
 class AiExtraction(Base):
     __tablename__ = 'ai_extractions'
     id: Mapped[str] = mapped_column(String(32), primary_key=True)

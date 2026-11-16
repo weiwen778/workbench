@@ -61,6 +61,16 @@ class Settings(BaseSettings):
     trash_days: int = 30
     maintenance_interval_seconds: int = 3600
 
+    # 运行日志中心。写库是尽力而为，队列满时丢弃并计数。
+    log_level: str = "INFO"
+    log_retention_days: int = Field(default=30, ge=1, le=3650)
+    log_queue_size: int = Field(default=5000, ge=100, le=100_000)
+    log_client_per_minute: int = Field(default=30, ge=1, le=600)
+    log_export_limit: int = Field(default=20_000, ge=100, le=200_000)
+
+    # GitHub Issue 反馈。超时同时覆盖连接与读取。
+    feedback_timeout_seconds: float = Field(default=10, gt=0, le=60)
+
     login_max_failures: int = 5
     login_lock_seconds: int = 300
     login_attempt_retention_days: int = Field(default=7, ge=1, le=90)

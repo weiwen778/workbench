@@ -4,7 +4,6 @@ import { CssBaseline, ThemeProvider } from '@mui/material'
 import { MotionConfig } from 'framer-motion'
 import { MotionSpeedProvider, defaultTransition, useMotionSpeed } from '@/motion'
 import { buildTheme } from '@/app/theme'
-import { queryClient } from '@/query/client'
 import { loadSession, useSession } from '@/session'
 import { DialogHost, Toaster } from '@/ui/feedback'
 import AppLayout from '@/layout/AppLayout'
@@ -47,11 +46,6 @@ function Root() {
   const theme = useMemo(() => buildTheme(session.theme, session.themeColor), [session.theme, session.themeColor])
 
   useEffect(() => { void loadSession() }, [])
-
-  // Drop cached responses when the session ends; a fresh login starts empty.
-  useEffect(() => {
-    if (session.loaded && !session.user) queryClient.clear()
-  }, [session.loaded, session.user?.id])
 
   return (
     <MotionConfig reducedMotion="user" transition={defaultTransition()}>
