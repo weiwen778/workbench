@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Consistent database/files/config backup, using the existing application image.
+set -euo pipefail
+umask 077
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+BASE="${1:-$ROOT/backups}"
+mkdir -p "$BASE"
+BASE="$(cd "$BASE" && pwd)"
+TARGET="$BASE/workbench-$(date +%Y%m%d-%H%M%S)"
+test ! -e "$TARGET"
+mkdir "$TARGET"
+test -f .env
+API_ID="$(docker compose ps -aq api)"
+test -n "$API_ID"
+VOLUME="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/data/storage"}}{{.Name}}{{end}}{{end}}' "$API_ID")"
+test -n "$VOLUME"
+RUNNING="$(docker inspect --format '{{.State.Running}}' "$API_ID")"
+if test "$RUNNING" = true; then
+  docker compose stop api
+  trap 'docker compose start api >/dev/null 2>&1' EXIT
+fi
+docker compose exec -T db sh -c 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$TARGET/database.dump"
+docker compose run --rm -T --no-deps --entrypoint tar -v "$VOLUME:/data:ro" web czf - -C /data . > "$TARGET/storage.tar.gz"
+cp .env "$TARGET/env.backup"
+printf 'Restore with: bash deploy/restore.sh "%s"\nRetain the original WB_ENCRYPTION_KEY from env.backup. Never publish this directory.\n' "$TARGET" > "$TARGET/README.txt"
+printf 'Backup complete: %s\n' "$TARGET"

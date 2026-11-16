@@ -1,0 +1,3 @@
+*.sh text eol=lf
+# Vendored Excalidraw locale bundles keep their upstream formatting.
+web/public/excalidraw-assets/** -whitespace

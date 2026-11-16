@@ -1,0 +1,19 @@
+.git
+.venv
+**/.venv
+**/__pycache__
+**/.pytest_cache
+web/node_modules
+web/dist
+web/public/pdfjs
+server/data
+e2e/node_modules
+docs/screenshots
+*.log
+.env
+**/.env
+
+# Private local state must never enter a build context.
+.run
+backups
+outputs

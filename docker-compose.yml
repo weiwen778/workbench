@@ -1,0 +1,118 @@
+name: workbench-element
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${WB_DB_NAME:-workbench}
+      POSTGRES_USER: ${WB_DB_USER:-workbench}
+      POSTGRES_PASSWORD: ${WB_DB_PASSWORD:?请在 .env 中设置 WB_DB_PASSWORD}
+      TZ: Asia/Shanghai
+    volumes:
+      - wb_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${WB_DB_USER:-workbench} -d ${WB_DB_NAME:-workbench}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 384m
+    ports:
+      # 仅绑定本机回环地址，不直接对公网开放
+      - "127.0.0.1:${WB_DB_PORT:-5433}:5432"
+
+  api:
+    build: ./server
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      WB_ENV: production
+      # 只信任反代容器（web）的固定地址，其余来源的 X-Forwarded-* 一律忽略
+      FORWARDED_ALLOW_IPS: ${WB_NGINX_IP:-172.28.0.10}
+      WB_DB_HOST: db
+      WB_DB_USER: ${WB_DB_USER:-workbench}
+      WB_DB_NAME: ${WB_DB_NAME:-workbench}
+      WB_DB_PASSWORD: ${WB_DB_PASSWORD:?请在 .env 中设置 WB_DB_PASSWORD}
+      WB_STORAGE_DIR: /data/storage
+      WB_BACKUP_DIR: /data/backups
+      WB_HOST_METRICS_FILE: /metrics/current.json
+      WB_BACKUP_ENABLED: ${WB_BACKUP_ENABLED:-true}
+      WB_BACKUP_INTERVAL_HOURS: ${WB_BACKUP_INTERVAL_HOURS:-24}
+      WB_BACKUP_KEEP: ${WB_BACKUP_KEEP:-7}
+      WB_ADMIN_USERNAME: ${WB_ADMIN_USERNAME:-admin}
+      WB_ADMIN_PASSWORD: ${WB_ADMIN_PASSWORD:?请在 .env 中设置 WB_ADMIN_PASSWORD}
+      WB_ENCRYPTION_KEY: ${WB_ENCRYPTION_KEY:?请在 .env 中设置 WB_ENCRYPTION_KEY}
+      WB_PUBLIC_BASE_URL: ${WB_PUBLIC_BASE_URL:-http://127.0.0.1:18743}
+      WB_COOKIE_SECURE: ${WB_COOKIE_SECURE:-false}
+      WB_DB_POOL_SIZE: ${WB_DB_POOL_SIZE:-5}
+      WB_DB_MAX_OVERFLOW: ${WB_DB_MAX_OVERFLOW:-10}
+      WB_DB_POOL_TIMEOUT: ${WB_DB_POOL_TIMEOUT:-5}
+      WB_REQUEST_QUEUE_TIMEOUT: ${WB_REQUEST_QUEUE_TIMEOUT:-10}
+      WB_MAX_UPLOAD_BYTES: ${WB_MAX_UPLOAD_BYTES:-20000000}
+      WB_LOGIN_ATTEMPT_RETENTION_DAYS: ${WB_LOGIN_ATTEMPT_RETENTION_DAYS:-7}
+      WB_WHITEBOARD_ASSET_GRACE_HOURS: ${WB_WHITEBOARD_ASSET_GRACE_HOURS:-24}
+      TZ: Asia/Shanghai
+    volumes:
+      - wb_storage:/data/storage
+      - wb_backups:/data/backups
+      - wb_metrics:/metrics:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=4).read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    mem_limit: 640m
+    ports:
+      - "127.0.0.1:${WB_API_PORT:-8000}:8000"
+    networks:
+      - default
+      - proxy
+
+  host-metrics:
+    build: ./server
+    restart: unless-stopped
+    command: ["python", "-m", "app.services.server_metrics", "--output-dir", "/metrics", "--host-root", "/host"]
+    network_mode: host
+    pid: host
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
+    cpus: 0.1
+    volumes:
+      - /:/host:ro,rslave
+      - wb_metrics:/metrics
+    environment:
+      TZ: Asia/Shanghai
+
+  web:
+    build:
+      context: .
+      dockerfile: web-react/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "${WB_BIND_ADDRESS:-0.0.0.0}:${WB_HTTP_PORT:-18743}:80"
+    mem_limit: 128m
+    # 固定 IP：API 只信任这个地址发来的 X-Forwarded-*
+    networks:
+      proxy:
+        ipv4_address: ${WB_NGINX_IP:-172.28.0.10}
+
+networks:
+  proxy:
+    ipam:
+      config:
+        - subnet: ${WB_PROXY_SUBNET:-172.28.0.0/16}
+
+volumes:
+  wb_pgdata:
+  wb_storage:
+  wb_backups:
+  wb_metrics:

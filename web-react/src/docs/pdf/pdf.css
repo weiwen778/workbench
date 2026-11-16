@@ -1,0 +1,44 @@
+.pdf-page-shell {
+  position: relative;
+  margin: 0 auto;
+  background: #fff;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+}
+.pdf-page-canvas {
+  display: block;
+  position: relative;
+  z-index: 0;
+}
+.pdf-text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 1;
+}
+.pdf-text-layer span,
+.pdf-text-layer br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+.pdf-text-layer ::selection {
+  background: rgba(35, 131, 226, 0.28);
+}
+.pdf-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  touch-action: none;
+}
+.pdf-thumb-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #fff;
+}

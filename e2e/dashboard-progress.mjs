@@ -1,0 +1,28 @@
+// Run against the isolated progress test server only; creates table and board fixtures.
+import {chromium} from './node_modules/playwright/index.mjs';
+import assert from 'node:assert/strict';
+const base='http://127.0.0.1:18186',browser=await chromium.launch({headless:true,executablePath:'/home/weiwen/.cache/ms-playwright/chromium-1194/chrome-linux/chrome'});
+try{
+ const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(base+'/visualizations');await page.getByLabel('用户名',{exact:true}).fill('admin');await page.getByLabel('密码',{exact:true}).fill('admin12345');await page.getByRole('button',{name:'登录',exact:true}).click();await page.waitForFunction(()=>location.pathname==='/visualizations'&&!document.querySelector('input[autocomplete=current-password]'));
+ async function api(path,body,method='POST'){return page.evaluate(async({path,body,method})=>{const csrf=decodeURIComponent(document.cookie.match(/(?:^|; )wb_csrf=([^;]*)/)?.[1]||'');const r=await fetch('/api/v1'+path,{method,headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},...(body===undefined?{}:{body:JSON.stringify(body)})});if(!r.ok)throw Error(await r.text());return r.json()},{path,body,method})}
+ const t=await api('/tables',{name:'任务进度演示',fields:[{name:'任务',type:'short_text'},{name:'状态',type:'select',options:[{id:'done',name:'已完成'},{id:'doing',name:'进行中'}]},{name:'负责人',type:'short_text'},{name:'完成量',type:'number'},{name:'目标量',type:'number'},{name:'日期',type:'date'}]});const k=Object.fromEntries(t.fields.map(f=>[f.name,f.key]));
+ for(const [i,owner,state,actual,target,day] of [[1,'张三','done','30','40','2026-11-01'],[2,'张三','doing','20','40','2026-11-02'],[3,'李四','done','40','40','2026-11-02'],[4,'李四','doing','0','80','2026-10-01']])await api(`/tables/${t.id}/records`,{data:{[k['任务']]:'任务'+i,[k['负责人']]:owner,[k['状态']]:state,[k['完成量']]:actual,[k['目标量']]:target,[k['日期']]:day}});
+ const board=await api('/dashboards',{name:'任务完成与数量目标'});await page.goto(base+'/visualizations/'+board.id);await page.getByRole('button',{name:'添加图表',exact:true}).click();const editor=page.getByRole('dialog',{name:'添加图表',exact:true});
+ await editor.getByText('任务进度',{exact:true}).click();
+ async function choose(label,option){await editor.getByRole('combobox',{name:label,exact:true}).locator('xpath=ancestor::div[contains(@class,"el-select__wrapper")][1]').click();await page.getByRole('listbox',{name:label,exact:true}).getByRole('option',{name:option,exact:true}).click()}
+ await choose('来源表格','任务进度演示');await editor.getByPlaceholder('例如：本月销售额、各店铺销售对比').fill('团队任务完成率');
+ await choose('横轴','负责人');
+ await editor.getByRole('button',{name:'预览数据',exact:true}).click();const preview=editor.locator('.task-progress');await preview.waitFor();assert((await preview.textContent()).includes('50%'));
+ await editor.getByRole('button',{name:'保存图表',exact:true}).click();await editor.waitFor({state:'hidden'});const task=page.locator('.widget-card').filter({hasText:'团队任务完成率'});await task.locator('.task-progress').waitFor();
+ await page.getByRole('button',{name:'添加图表',exact:true}).click();await editor.getByText('任务进度',{exact:true}).click();await choose('来源表格','任务进度演示');await editor.getByText('按数值累计',{exact:true}).click();await choose('完成量列','完成量');await choose('目标量列','目标量');await editor.getByText('圆环',{exact:true}).click();await editor.getByPlaceholder('例如：本月销售额、各店铺销售对比').fill('交付数量进度');
+ await editor.getByRole('button',{name:'预览数据',exact:true}).click();await editor.locator('.task-progress').waitFor();assert((await editor.locator('.task-progress').textContent()).includes('45%'));await editor.getByRole('button',{name:'保存图表',exact:true}).click();await editor.waitFor({state:'hidden'});
+ const quantity=page.locator('.widget-card').filter({hasText:'交付数量进度'});await quantity.locator('.el-progress--circle').waitFor();assert((await quantity.textContent()).includes('90'));assert((await quantity.textContent()).includes('200'));
+ await page.screenshot({path:'.run/progress-dashboard.png',fullPage:true});
+ const recordsResponse=page.waitForResponse(r=>r.url().includes('/records?')&&r.status()===200);await task.getByRole('button').filter({hasText:'张三'}).click();await page.waitForURL(u=>u.pathname==='/data/'+t.id&&u.searchParams.has('filters'));await recordsResponse;assert((await page.locator('.el-pagination').textContent()).includes('2'));
+ await page.goto(base+'/visualizations/'+board.id);await page.waitForSelector('.task-progress');await page.reload();await page.waitForSelector('.task-progress');assert.equal(await page.locator('.widget-card .task-progress').count(),2);
+ const config=await api('/dashboards',undefined,'GET');const saved=config.find(b=>b.id===board.id);assert.equal(saved.widgets[0].progress.mode,'tasks');assert.equal(saved.widgets[1].progress.mode,'quantity');
+ await page.setViewportSize({width:390,height:844});await page.screenshot({path:'.run/progress-mobile.png',fullPage:true});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ await page.setViewportSize({width:1440,height:1000});await api('/preferences',{theme:'dark'},'PUT');await page.reload();await page.waitForSelector('.el-progress--circle');await page.screenshot({path:'.run/progress-dark.png',fullPage:true});assert.equal(await page.locator('html').evaluate(el=>el.classList.contains('dark')),true);
+ assert.deepEqual(errors,[]);console.log('PASS real progress editor/preview/save, task counts/groups, numeric ring, source drilldown, persistence and mobile; isolated fixtures only');
+}finally{await browser.close()}

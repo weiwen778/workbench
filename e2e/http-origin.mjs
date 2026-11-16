@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs/promises'
+import {chromium} from 'playwright'
+const base='http://workbench-http.test:18747',out=process.env.WB_OUTPUT||'../.run/http-origin-fix';await fs.mkdir(out,{recursive:true})
+const b=await chromium.launch({executablePath:process.env.CHROME_PATH||undefined,headless:true,args:['--host-resolver-rules=MAP workbench-http.test 127.0.0.1','--no-proxy-server']}),ctx=await b.newContext({viewport:{width:1600,height:1000}}),p=await ctx.newPage(),errors=[],checks=[];p.on('pageerror',e=>errors.push(e.message));p.setDefaultTimeout(20000)
+async function api(path){const r=await ctx.request.get(base+'/api/v1'+path);assert.ok(r.ok(),await r.text());return r.json()}
+try{await p.goto(base+'/login');const env=await p.evaluate(()=>({secure:isSecureContext,uuid:typeof crypto.randomUUID,random:typeof crypto.getRandomValues}));assert.equal(env.secure,false);assert.equal(env.uuid,'undefined');assert.equal(env.random,'function');checks.push({nonsecure_environment:env})
+await p.getByPlaceholder('请输入用户名').fill('admin');await p.getByPlaceholder('请输入密码').fill('admin12345');await p.getByRole('button',{name:'登录',exact:true}).click();await p.waitForURL('**/checkins/shops');await p.goto(base+'/data/2');await p.locator('.canvas-grid canvas').first().waitFor();const box=await p.locator('.canvas-grid').boundingBox();await p.mouse.dblclick(box.x+48+160+70,box.y+38+18);await p.keyboard.press('Control+A');await p.keyboard.type('6');const saved=p.waitForResponse(r=>r.url().endsWith('/transactions')&&r.request().method()==='POST');await p.keyboard.press('Enter');assert.equal((await saved).status(),200);checks.push('HTTP record edit saved')
+await p.locator('.workbench-head').getByRole('button',{name:'撤销',exact:true}).click();await p.waitForResponse(r=>r.url().endsWith('/undo')&&r.status()===200);checks.push('HTTP undo saved')
+await p.getByText('自由工作簿',{exact:true}).click();await p.locator('.univer-host.ready').waitFor({timeout:60000});await p.waitForFunction(()=>document.querySelector('.univer-host canvas'));let workbook
+for(let i=0;i<60;i++){// Browser fetch keeps this custom-origin test independent of Node DNS.
+ workbook=await p.evaluate(async()=>await(await fetch('/api/v1/tables/2/workbook')).json());if(workbook.snapshot)break;await p.waitForTimeout(100)}
+assert.ok(workbook.snapshot);assert.ok(Object.values(workbook.snapshot.sheets).some(s=>s.cellData?.['1']?.['0']?.v==='记录001'));assert.equal(await p.locator('.workbook-toolbar .error').count(),0);checks.push('HTTP workbook seeded with original records and saved')
+await p.reload();await p.locator('.univer-host.ready').waitFor({timeout:60000});checks.push('HTTP workbook reload')
+await p.goto(base+'/data/virtual/new?source=2');await p.getByLabel('虚拟表名称',{exact:true}).waitFor();await p.waitForTimeout(300);assert.equal(await p.locator('.el-alert--error').count(),0);checks.push('HTTP virtual source identifier generated');assert.deepEqual(errors,[]);await p.screenshot({path:out+'/passed.png'});console.log('PASS',checks)
+}catch(e){console.log(e.message,errors);await p.screenshot({path:out+'/failure.png'});throw e}finally{await fs.writeFile(out+'/checks.json',JSON.stringify({checks,errors},null,2));await b.close()}

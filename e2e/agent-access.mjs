@@ -1,0 +1,72 @@
+// LEGACY: UI labels/selectors predate direct mode. Use agent-direct.mjs for current acceptance.
+// Run against a disposable development database, never production.
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+import { chromium, request } from 'playwright'
+
+const base = process.env.WB_BASE || 'http://127.0.0.1:18746'
+const shots = path.resolve(process.env.WB_SCREENSHOT_DIR || '../docs/screenshots')
+fs.mkdirSync(shots, { recursive: true })
+const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined })
+const context = await browser.newContext({ viewport: { width: 1440, height: 1100 }, permissions: ['clipboard-read', 'clipboard-write'] })
+const page = await context.newPage()
+const errors = []
+page.on('pageerror', e => errors.push(e.message))
+let agent
+try {
+  await page.goto(base + '/login')
+  await page.getByPlaceholder('请输入用户名').fill(process.env.WB_USER || 'admin')
+  await page.getByPlaceholder('请输入密码').fill(process.env.WB_PASS || 'admin12345')
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+  await page.waitForURL('**/checkins/shops')
+  await page.goto(base + '/settings/agents')
+  await page.getByRole('button', { name: '创建令牌', exact: true }).click()
+  const form = page.getByRole('dialog', { name: '创建 Agent 令牌', exact: true })
+  await form.getByPlaceholder('例如：运营助手、报表 Agent').fill('浏览器测试 Agent')
+  await form.getByText('添加和修改待办', { exact: true }).click()
+  const createdResponse = page.waitForResponse(r => r.url().endsWith('/api/v1/agent-tokens') && r.request().method() === 'POST')
+  await form.getByRole('button', { name: '创建', exact: true }).click()
+  const created = await (await createdResponse).json()
+  assert.ok(created.token.startsWith('wb_agent_'))
+  const secret = page.getByRole('dialog', { name: '保存 Agent 令牌', exact: true })
+  await secret.waitFor()
+  assert.equal(await secret.getByRole('textbox').inputValue(), created.token)
+  await secret.getByRole('button', { name: '复制接入说明', exact: true }).click()
+  await page.getByText('接入说明已复制，请另行通过机密配置提供令牌', { exact: true }).waitFor()
+  const guide = await page.evaluate(() => navigator.clipboard.readText())
+  assert.ok(guide.includes(base + '/api/v1/agent'))
+  assert.ok(!guide.includes(created.token))
+  await secret.locator('.el-dialog__headerbtn').click()
+  agent = await request.newContext({ baseURL: base, extraHTTPHeaders: { Authorization: 'Bearer ' + created.token } })
+  const listResponse = await agent.post('/api/v1/agent/todo-lists', { data: { name: 'Agent E2E 临时清单 ' + Date.now() } })
+  assert.equal(listResponse.status(), 201)
+  const list = await listResponse.json()
+  const todoResponse = await agent.post('/api/v1/agent/todos', { data: { list_id: list.id, title: '自动分析完成', note: '浏览器接入验证' } })
+  assert.equal(todoResponse.status(), 201)
+  const todo = await todoResponse.json()
+  const complete = await agent.put(`/api/v1/agent/todos/${todo.id}/completion`, { data: { completed: true } })
+  assert.equal((await complete.json()).completed, true)
+  assert.equal((await agent.get('/api/v1/agent/tables')).status(), 200)
+  assert.equal((await agent.post('/api/v1/agent/tables/1/records', { data: { data: {} } })).status(), 403)
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await page.getByText('设置待办完成状态', { exact: true }).waitFor()
+  const card = page.locator('.agent-access-card')
+  await card.scrollIntoViewIfNeeded()
+  await page.screenshot({ path: path.join(shots, 'agent-access-desktop.png') })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await card.scrollIntoViewIfNeeded()
+  assert.ok((await card.boundingBox()).height > 300, 'Agent settings card must remain expanded on mobile')
+  await page.screenshot({ path: path.join(shots, 'agent-access-mobile.png') })
+  await page.setViewportSize({ width: 1440, height: 1100 })
+  const row = page.locator('.el-table__row').filter({ hasText: '浏览器测试 Agent' }).filter({ has: page.getByRole('button', { name: '撤销', exact: true }) })
+  await row.getByRole('button', { name: '撤销', exact: true }).click()
+  await page.getByRole('dialog', { name: '撤销令牌' }).getByRole('button', { name: '撤销', exact: true }).click()
+  await page.getByText('令牌已撤销', { exact: true }).waitFor()
+  assert.equal((await agent.get('/api/v1/agent/me')).status(), 401)
+  assert.deepEqual(errors, [])
+  console.log('Agent UI flow passed: create, copy guide, scoped writeback, activity, mobile layout, revoke.')
+} finally {
+  await agent?.dispose()
+  await browser.close()
+}
