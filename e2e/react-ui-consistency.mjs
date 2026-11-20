@@ -23,6 +23,14 @@ async function login() {
   await page.waitForTimeout(600)
 }
 
+async function ensureWideRail() {
+  const expand = page.getByRole('button', { name: '展开侧栏', exact: true })
+  if (await expand.count()) {
+    await expand.click()
+    await page.waitForTimeout(250)
+  }
+}
+
 await login()
 
 const rail = page.locator('nav[aria-label="主导航"]')
@@ -52,10 +60,17 @@ expect(await page.getByLabel('打卡二级导航').count() === 0, '点击一级�
 await page.getByRole('button', { name: '打卡', exact: true }).click()
 await page.getByLabel('打卡二级导航').waitFor()
 
-// 管理导航：拖动排序、取消固定、重新固定、恢复默认
-await page.getByRole('button', { name: '全部功能' }).click()
-await page.getByRole('button', { name: '管理导航' }).click()
-await page.getByRole('dialog').waitFor()
+// 设置 → 导航：搜索、打开、拖动排序、取消固定、重新固定、恢复默认
+await page.goto(`${base}/settings/navigation`, { waitUntil: 'networkidle' })
+await page.getByLabel('搜索功能').fill('白板')
+expect(await page.getByRole('button', { name: '打开白板' }).count() === 1, '设置页全部功能搜索失效')
+await page.getByLabel('搜索功能').fill('不存在的模块')
+await page.getByText('没有匹配的功能').waitFor()
+await page.getByLabel('搜索功能').fill('')
+await page.getByRole('button', { name: '打开白板' }).click()
+await page.waitForURL('**/whiteboards')
+await page.goBack()
+await page.getByLabel('搜索功能').waitFor()
 await page.waitForTimeout(300)
 const dragFrom = await page.getByRole('button', { name: '拖动打卡排序', exact: true }).boundingBox()
 const dragTo = await page.getByRole('button', { name: '拖动表格排序', exact: true }).boundingBox()
@@ -71,17 +86,22 @@ const orderAfterDrag = await page.getByRole('button', { name: '拖动打卡排�
 expect(orderAfterDrag && orderAfterDrag.y > dragFrom.y + 4, '拖动后侧栏顺序没有变化')
 await page.getByRole('button', { name: '取消固定文档工作台', exact: true }).click()
 await page.getByRole('button', { name: '固定白板', exact: true }).click()
-await page.getByRole('button', { name: '完成' }).click()
 await page.waitForTimeout(300)
 const changedRail = await rail.innerText()
 expect(changedRail.includes('白板'), '固定白板后侧栏没有出现白板')
 expect(!changedRail.includes('文档工作台'), '取消固定文档工作台后侧栏仍然显示')
-await page.getByRole('button', { name: '全部功能' }).click()
-await page.getByRole('button', { name: '管理导航' }).click()
 await page.getByRole('button', { name: '恢复默认' }).click()
-await page.getByRole('button', { name: '完成' }).click()
 await page.waitForTimeout(300)
+await ensureWideRail()
 expect((await rail.innerText()).includes('文档工作台'), '恢复默认后文档工作台未回到侧栏')
+
+// 固定项清空后显示空状态，恢复默认不会丢失全部功能列表
+const orderKey = await page.evaluate(() => Object.keys(localStorage).find((key) => key.startsWith('wb_sidebar_order_')))
+await page.evaluate((key) => localStorage.setItem(key, '[]'), orderKey)
+await page.reload({ waitUntil: 'networkidle' })
+await page.getByText('还没有固定项').waitFor()
+await page.getByRole('button', { name: '恢复默认' }).click()
+await ensureWideRail()
 
 // 其他分类模块也应显示二级导航
 await page.goto(`${base}/todos`, { waitUntil: 'networkidle' })
@@ -91,13 +111,11 @@ await page.goto(`${base}/notes`, { waitUntil: 'networkidle' })
 await page.waitForTimeout(400)
 await page.getByLabel('笔记二级导航').waitFor()
 
-// 全部功能面板
-await page.getByRole('button', { name: '全部功能' }).click()
+// 全部功能面板（设置 → 导航）
+await page.goto(`${base}/settings/navigation`, { waitUntil: 'networkidle' })
 await page.getByText('全部功能', { exact: true }).first().waitFor()
 await page.waitForTimeout(250)
-await page.screenshot({ path: '../.run/ui-consistency-all-nav.png' })
-await page.keyboard.press('Escape')
-await page.waitForTimeout(200)
+await page.screenshot({ path: '../.run/ui-consistency-settings-navigation.png' })
 
 // 表格列表：卡片本身是唯一打开入口，不再有打开按钮
 await page.goto(`${base}/data`, { waitUntil: 'networkidle' })
@@ -161,7 +179,7 @@ await page.waitForTimeout(400)
 const settingsRail = page.locator('nav[aria-label="主导航"]')
 await page.getByRole('button', { name: '窄版' }).click()
 await page.waitForTimeout(300)
-expect((await settingsRail.evaluate((element) => element.clientWidth)) < 100, '设置里的窄版没有同步到侧栏')
+expect((await settingsRail.evaluate((element) => element.clientWidth)) < 130, '设置里的窄版没有同步到侧栏')
 await page.getByRole('button', { name: '宽版' }).click()
 await page.waitForTimeout(300)
 expect((await settingsRail.evaluate((element) => element.clientWidth)) >= 200, '设置里的宽版没有同步到侧栏')

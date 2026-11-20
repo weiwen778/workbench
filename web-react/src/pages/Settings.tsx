@@ -27,7 +27,7 @@ const groups = [
     items: [
       { key: 'appearance', label: '外观', icon: Palette, description: '调整工作台的明暗主题。', keywords: '主题 深色 浅色 颜色 外观' },
       { key: 'content', label: '内容显示', icon: Tune, description: '设置表格、便利贴、笔记和看板的默认显示方式。', keywords: '表格 行高 斑马纹 居中 每页 便利贴 列数 笔记 宽度 看板 卡片 列表 视图 默认' },
-      { key: 'navigation', label: '导航', icon: Menu, description: '设置侧栏宽窄，管理固定项和顺序。', keywords: '侧栏 导航 宽窄 固定 排序 顺序 菜单 全部功能' },
+      { key: 'navigation', label: '导航', icon: Menu, description: '设置侧栏宽窄，浏览全部功能，管理固定项和顺序。', keywords: '侧栏 导航 宽窄 固定 排序 顺序 菜单 全部功能' },
     ],
   },
   {
@@ -89,6 +89,12 @@ export default function SettingsPage({ section: explicitSection }: { section?: s
       localStorage.setItem(navKey, next ? '1' : '0')
       return next
     })
+  }
+
+  const goBack = () => {
+    const index = Number(window.history.state?.idx)
+    if (Number.isFinite(index) && index > 0) navigate(-1)
+    else navigate('/')
   }
 
   const filtered = useMemo(() => allItems.filter((item) => (item.label + item.keywords).toLowerCase().includes(search.trim().toLowerCase())), [search])
@@ -187,10 +193,15 @@ export default function SettingsPage({ section: explicitSection }: { section?: s
 
       <Box component="main" sx={{ p: { xs: 2, md: '24px 28px' }, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={2}>
-          <Box>
-            <Typography variant="h5" sx={{ mb: 0.75 }}>{current.label}</Typography>
-            <Typography variant="body2" color="text.secondary">{current.description}</Typography>
-          </Box>
+          <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ minWidth: 0 }}>
+            <Button size="small" startIcon={<ArrowLeft />} aria-label="返回上一页" onClick={goBack} sx={{ flexShrink: 0, mt: 0.25 }}>
+              返回
+            </Button>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="h5" sx={{ mb: 0.75 }}>{current.label}</Typography>
+              <Typography variant="body2" color="text.secondary">{current.description}</Typography>
+            </Box>
+          </Stack>
           <Button size="small" startIcon={<Menu />} aria-label="打开设置目录" onClick={() => setMobileNavOpen(true)} sx={{ display: mobile ? 'inline-flex' : 'none', flexShrink: 0 }}>
             目录
           </Button>

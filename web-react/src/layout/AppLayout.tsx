@@ -10,7 +10,7 @@ import {
 } from '@mui/icons-material'
 import AppRail from './AppRail'
 import ModuleTabs from './ModuleTabs'
-import { ManageNavDialog, NavAllDrawer } from './NavPanels'
+import { NavAllDrawer } from './NavPanels'
 import { APP_NAV_KEYS, DEFAULT_PINNED_KEYS } from './app-nav'
 import { readPinnedKeys, readSidebarMode, writePinnedKeys, writeSidebarMode, SIDEBAR_MODE_EVENT, SIDEBAR_ORDER_EVENT, type SidebarMode } from './sidebar-order'
 import GlobalSearchDialog from '@/components/GlobalSearchDialog'
@@ -54,7 +54,6 @@ export default function AppLayout() {
   const [narrow, setNarrow] = useState(() => window.innerWidth < 900)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [allNavOpen, setAllNavOpen] = useState(false)
-  const [manageNavOpen, setManageNavOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [toolsOpen, setToolsOpen] = useState(false)
   const [toolsView, setToolsView] = useState<'tasks' | 'activity'>('tasks')
@@ -300,7 +299,7 @@ export default function AppLayout() {
             ) : null}
             <Stack direction="row" alignItems="baseline" spacing={1} sx={{ minWidth: 0 }}>
               {moduleLabel && !narrow && moduleLabel !== pageTitle ? (
-                <Typography sx={{ fontSize: 10.5, color: 'text.disabled', fontFamily: '"IBM Plex Mono", monospace' }}>{moduleLabel}</Typography>
+                <Typography sx={{ fontSize: 11.5, color: 'text.disabled', fontFamily: '"IBM Plex Mono", monospace' }}>{moduleLabel}</Typography>
               ) : null}
               <Typography sx={{ fontSize: 13.5, fontWeight: 600 }} title={pageTitle} noWrap>{pageTitle}</Typography>
             </Stack>
@@ -315,7 +314,7 @@ export default function AppLayout() {
               }}
             >
               搜索或跳转
-              <Box component="kbd" sx={{ ml: 'auto', fontFamily: '"IBM Plex Mono", monospace', fontSize: 11, color: 'text.disabled' }}>Ctrl K</Box>
+              <Box component="kbd" sx={{ ml: 'auto', fontFamily: '"IBM Plex Mono", monospace', fontSize: 11.5, color: 'text.disabled' }}>Ctrl K</Box>
             </Button>
             <Tooltip title="搜索">
               <IconButton size="small" aria-label="搜索" sx={{ display: { xs: 'inline-flex', sm: 'none' } }} onClick={() => setSearchOpen(true)}>
@@ -378,15 +377,8 @@ export default function AppLayout() {
         onClose={() => { setDrawerOpen(false); setAllNavOpen(false) }}
         pinned={pinned}
         onTogglePin={togglePin}
-        onManage={() => { setDrawerOpen(false); setAllNavOpen(false); setManageNavOpen(true) }}
       />
 
-      <ManageNavDialog
-        open={manageNavOpen}
-        onClose={() => setManageNavOpen(false)}
-        pinned={pinned}
-        onChange={updatePinned}
-      />
 
       {narrow ? (
         <Paper
