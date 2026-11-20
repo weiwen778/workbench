@@ -8,7 +8,7 @@ import LiftCard from '@/motion/components/LiftCard'
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { DragIndicator, Edit, MoreFilled, Plus, Search, Brush, Tune } from '@/icons'
+import { CopyDocument, Delete, DragIndicator, Edit, MoreFilled, Plus, Search, Brush, Tune } from '@/icons'
 import GridView from '@mui/icons-material/GridView'
 import ViewList from '@mui/icons-material/ViewList'
 import { apiError, copyText, http } from '@/api/client'
@@ -123,7 +123,6 @@ export default function MemosPage() {
   const [saving, setSaving] = useState(false)
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   const [viewAnchor, setViewAnchor] = useState<HTMLElement | null>(null)
-  const [cardMenu, setCardMenu] = useState<{ el: HTMLElement; memo: any } | null>(null)
   const [form, setForm] = useState({ title: '', content: '', category: '', color: 'default' })
   const searchTimer = useRef<number | null>(null)
   const memoRequest = useRef(0)
@@ -261,6 +260,15 @@ export default function MemosPage() {
     setWbOpen(true)
   }
 
+  const renderMemoActions = (memo: any) => (
+    <Stack direction="row" spacing={0.25} sx={{ flexShrink: 0 }}>
+      <Tooltip title="复制正文"><IconButton size="small" aria-label="复制正文" sx={{ p: 0.5 }} onClick={() => void copyContent(memo)}><CopyDocument sx={{ fontSize: 17 }} /></IconButton></Tooltip>
+      <Tooltip title="添加到白板"><IconButton size="small" aria-label="添加到白板" sx={{ p: 0.5 }} onClick={() => sendToBoard(memo)}><Brush sx={{ fontSize: 17 }} /></IconButton></Tooltip>
+      <Tooltip title="编辑"><IconButton size="small" aria-label="编辑便利贴" sx={{ p: 0.5 }} onClick={() => openEdit(memo)}><Edit sx={{ fontSize: 17 }} /></IconButton></Tooltip>
+      <Tooltip title="删除"><IconButton size="small" aria-label="删除便利贴" sx={{ p: 0.5 }} onClick={() => void remove(memo)}><Delete sx={{ fontSize: 17 }} /></IconButton></Tooltip>
+    </Stack>
+  )
+
   return (
     <Page variant="dense">
       <ModuleToolbar
@@ -309,7 +317,8 @@ export default function MemosPage() {
       />
 
       <PageBody>
-        <Box className="scroll-area memo-board" sx={{ bgcolor: 'background.default', p: 0 }}>
+        {/* 顶部留出上浮空间：卡片 hover 会向上位移 2px，若紧贴滚动容器上沿，上边框会被 overflow 裁掉。 */}
+        <Box className="scroll-area memo-board" sx={{ bgcolor: 'background.default', p: 0, pt: 1 }}>
           {!memos.length && !loading ? (
             view === 'cards' ? (
               <EmptyHint action={<Button size="small" variant="contained" onClick={openCreate}>写一张便利贴</Button>}>
@@ -367,10 +376,7 @@ export default function MemosPage() {
                             <Typography component="time" variant="caption" color="text.secondary" sx={{ display: 'block' }}>更新于 {formatDate(memo.updated_at)}</Typography>
                             <Typography variant="caption" color="text.secondary" noWrap>{memo.display_category}</Typography>
                           </Box>
-                          <Stack direction="row" spacing={0.25}>
-                            <Tooltip title="编辑"><IconButton size="small" aria-label="编辑便利贴" onClick={() => openEdit(memo)}><Edit fontSize="small" /></IconButton></Tooltip>
-                            <Tooltip title="更多"><IconButton size="small" aria-label="更多便利贴操作" onClick={(event) => setCardMenu({ el: event.currentTarget, memo })}><MoreFilled fontSize="small" /></IconButton></Tooltip>
-                          </Stack>
+                          {renderMemoActions(memo)}
                         </Stack>
                       </LiftCard>
                       </SortableMemo>
@@ -399,10 +405,9 @@ export default function MemosPage() {
                             <Typography component="span" sx={{ fontSize: 12, color: 'text.secondary' }}>{memo.display_category}</Typography>
                             <Typography component="span" sx={{ fontSize: 12, color: 'text.disabled' }}>{formatDate(memo.updated_at)}</Typography>
                           </Stack>
-                          <Stack direction="row" spacing={0.25} sx={{ flexShrink: 0 }} onClick={(event) => event.stopPropagation()}>
-                            <Tooltip title="编辑"><IconButton size="small" aria-label="编辑便利贴" onClick={() => openEdit(memo)}><Edit fontSize="small" /></IconButton></Tooltip>
-                            <Tooltip title="更多"><IconButton size="small" aria-label="更多便利贴操作" onClick={(event) => setCardMenu({ el: event.currentTarget, memo })}><MoreFilled fontSize="small" /></IconButton></Tooltip>
-                          </Stack>
+                          <Box sx={{ flexShrink: 0 }} onClick={(event) => event.stopPropagation()}>
+                            {renderMemoActions(memo)}
+                          </Box>
                         </ListItemButton>
                       </ListItem>
                     </SortableMemo>
@@ -413,12 +418,6 @@ export default function MemosPage() {
           )}
         </Box>
       </PageBody>
-
-      <Menu anchorEl={cardMenu?.el || null} open={Boolean(cardMenu)} onClose={() => setCardMenu(null)}>
-        <MenuItem onClick={() => { const memo = cardMenu?.memo; setCardMenu(null); if (memo) sendToBoard(memo) }}>添加到白板</MenuItem>
-        <MenuItem onClick={() => { const memo = cardMenu?.memo; setCardMenu(null); if (memo) void copyContent(memo) }}>复制正文</MenuItem>
-        <MenuItem divider sx={{ color: 'error.main' }} onClick={() => { const memo = cardMenu?.memo; setCardMenu(null); if (memo) void remove(memo) }}>删除便利贴</MenuItem>
-      </Menu>
 
       <Dialog open={Boolean(viewing)} onClose={() => setViewing(null)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>{viewing?.display_title}</DialogTitle>

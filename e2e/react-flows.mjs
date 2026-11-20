@@ -118,8 +118,7 @@ try {
 
     const card = page.locator('.MuiPaper-root', { has: page.getByRole('button', { name: '回收站流程验证', exact: true }) }).last()
     await card.waitFor({ timeout: 10000 })
-    await card.getByRole('button', { name: '更多便利贴操作' }).click()
-    await page.getByRole('menuitem', { name: '删除便利贴' }).click()
+    await card.getByRole('button', { name: '删除便利贴' }).click()
     await page.getByRole('button', { name: '删除', exact: true }).click()
     await page.waitForTimeout(1200)
 
@@ -144,8 +143,7 @@ try {
 
     // 清理：把测试便利贴再删一次并彻底删除，保持库内原状
     const cleanupCard = page.locator('.MuiPaper-root', { has: page.getByRole('button', { name: '回收站流程验证', exact: true }) }).last()
-    await cleanupCard.getByRole('button', { name: '更多便利贴操作' }).click()
-    await page.getByRole('menuitem', { name: '删除便利贴' }).click()
+    await cleanupCard.getByRole('button', { name: '删除便利贴' }).click()
     await page.getByRole('button', { name: '删除', exact: true }).click()
     await page.waitForTimeout(1200)
     await page.evaluate(async () => {

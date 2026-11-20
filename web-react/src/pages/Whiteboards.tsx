@@ -162,7 +162,7 @@ export default function WhiteboardsPage() {
             {boards.length ? '没有匹配的白板' : '还没有白板。新建一个，开始画流程图、圈画截图或自由书写。'}
           </EmptyHint>
         ) : (
-          <StaggerList className="scroll-area" sx={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gridAutoRows: 'max-content', gap: 1.5, alignContent: 'start', pb: 1 }}>
+          <StaggerList className="scroll-area" sx={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gridAutoRows: 'max-content', gap: 1.5, alignContent: 'start', pt: 1, pb: 1 }}>
             {filtered.map((board) => (
               <StaggerItem key={board.id} sx={{ display: 'flex', minWidth: 0 }}>
               <LiftCard

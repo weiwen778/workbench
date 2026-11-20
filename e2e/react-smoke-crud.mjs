@@ -60,10 +60,9 @@ try {
   await page.waitForTimeout(1000)
   console.log('memo added:', (await page.locator('body').innerText()).includes('验证便利贴'))
   await page.screenshot({ path: `${out}/memos.png` })
-  // 工具栏与卡片都有「更多便利贴操作」，限定到目标卡片，避免点到工具栏的更多菜单
+  // 卡片脚注直接提供编辑/删除等操作，限定到目标卡片，避免点到工具栏的更多菜单
   const card = page.locator('.MuiPaper-root', { has: page.getByRole('button', { name: '验证便利贴', exact: true }) }).last()
-  await card.getByRole('button', { name: '更多便利贴操作' }).click()
-  await page.getByRole('menuitem', { name: '删除便利贴' }).click()
+  await card.getByRole('button', { name: '删除便利贴' }).click()
   await page.getByRole('button', { name: '删除', exact: true }).click()
   await page.waitForTimeout(1000)
 } finally {

@@ -55,6 +55,8 @@ export default function TableView({ tableId }: { tableId: number }) {
   const [centerY, setCenterY] = useState(() => localStorage.getItem('wb_table_center_y') !== '0')
   const toggleCenterX = (value: boolean) => { setCenterX(value); localStorage.setItem('wb_table_center_x', value ? '1' : '0') }
   const toggleCenterY = (value: boolean) => { setCenterY(value); localStorage.setItem('wb_table_center_y', value ? '1' : '0') }
+  const [pinColumns, setPinColumns] = useState(() => localStorage.getItem('wb_table_pin_columns') === '1')
+  const togglePinColumns = (value: boolean) => { setPinColumns(value); localStorage.setItem('wb_table_pin_columns', value ? '1' : '0') }
   const readColumnWidths = () => {
     try {
       const parsed = JSON.parse(localStorage.getItem(`wb_table_widths:${tableId}`) || '{}')
@@ -267,15 +269,25 @@ export default function TableView({ tableId }: { tableId: number }) {
   }, [sorts])
 
   // 默认固定「日期 + 店铺/门店」两列，横向滚动到金额、备注时仍能读出这一行属于哪一天、哪家店。
+  // MUI 社区版只支持固定排在最前面的连续列：表头取 visibleColumns 的前 N 列，表体却按 pinnedColumns
+  // 的定义渲染。若把中间列（例如名字里带「店」的「全店曝光」）塞进去，就会出现无表头的重复列并压住
+  // 相邻列。因此这里只固定可见列中从头开始连续命中的列，其余列保持普通展示。
   const pinnedLeft = useMemo(() => {
-    if (!fields.length) return []
+    if (!pinColumns || !fields.length) return []
     const date = fields.find((field) => field.type === 'date')
-    const store = fields.find((field) => field.type !== 'date' && /店铺|门店|店/.test(field.name))
-    const keys = [date?.key, store?.key]
-      .filter((key): key is string => typeof key === 'string')
-      .filter((key) => columnVisibility[key] !== false)
+    // 只认真正的店铺/门店列，避免「全店曝光」「本店访客」这类指标被误判。
+    const store = fields.find((field) => field.type !== 'date' && /店铺|门店/.test(field.name))
+    const desired = new Set(
+      [date?.key, store?.key].filter((key): key is string => typeof key === 'string'),
+    )
+    const keys: string[] = []
+    for (const field of fields) {
+      if (columnVisibility[field.key] === false) continue
+      if (!desired.has(field.key)) break
+      keys.push(field.key)
+    }
     return keys
-  }, [fields, columnVisibility])
+  }, [fields, columnVisibility, pinColumns])
 
   const fieldHeader = useCallback((field: Field) => {
     const align = valueAlign(field)
@@ -339,6 +351,7 @@ export default function TableView({ tableId }: { tableId: number }) {
                   <ToggleButton value="comfortable" aria-label="宽行高" sx={{ flex: 1, fontSize: 11.5 }}>宽行高</ToggleButton>
                 </ToggleButtonGroup>
                 {[
+                  { label: '固定日期/店铺列', checked: pinColumns, change: togglePinColumns },
                   { label: '斑马纹', checked: striped, change: toggleStriped },
                   { label: '水平居中', checked: centerX, change: toggleCenterX },
                   { label: '垂直居中', checked: centerY, change: toggleCenterY },

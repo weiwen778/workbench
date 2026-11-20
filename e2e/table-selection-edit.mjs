@@ -106,8 +106,14 @@ try {
   await rowCheckbox(1).click()
   await page.getByRole('button', { name: '删除选中的 3 行', exact: true }).waitFor()
 
-  // 固定列：左侧日期/店铺（加选择列），右侧操作列
-  assert.ok(await page.locator('.MuiDataGrid-cell--pinnedLeft').count() >= 2, '左侧固定列丢失')
+  // 固定列默认关闭：只有选择列固定；打开「视图 → 固定日期/店铺列」后才固定日期/店铺。
+  const pinnedHeaderFields = () => page.locator('.MuiDataGrid-columnHeader--pinnedLeft').evaluateAll((headers) => headers.map((header) => header.getAttribute('data-field')))
+  assert.deepEqual(await pinnedHeaderFields(), ['__check__'], '固定列默认应为关闭')
+  await page.getByRole('button', { name: '视图', exact: true }).click()
+  await page.getByText('固定日期/店铺列', { exact: true }).locator('..').locator('input[type="checkbox"]').click()
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(300)
+  assert.ok((await pinnedHeaderFields()).length >= 3, '打开固定列开关后日期/店铺列没有固定')
   assert.ok(await page.locator('.MuiDataGrid-cell--pinnedRight').count() >= 1, '右侧操作列未固定')
 
   // Enter 保存，只允许一次 PUT
