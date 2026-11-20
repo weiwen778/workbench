@@ -21,7 +21,11 @@ if test "$RUNNING" = true; then
   trap 'docker compose start api >/dev/null 2>&1' EXIT
 fi
 docker compose exec -T db sh -c 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$TARGET/database.dump"
-docker compose run --rm -T --no-deps --entrypoint tar -v "$VOLUME:/data:ro" web czf - -C /data . > "$TARGET/storage.tar.gz"
+# Use the existing API image for a one-off container: `compose run web` can fail
+# because the web service reserves a fixed proxy IP / published port.
+API_IMAGE="$(docker inspect --format '{{.Config.Image}}' "$API_ID")"
+test -n "$API_IMAGE"
+docker run --rm --entrypoint tar -v "$VOLUME:/data:ro" "$API_IMAGE" -czf - -C /data . > "$TARGET/storage.tar.gz"
 # Never put .env (DB password, admin password, Fernet master key) next to the
 # database dump. Keep those in a password manager / separate secret store.
 grep -E '^(WB_(DB_PASSWORD|ADMIN_PASSWORD|ENCRYPTION_KEY|COOKIE_SECURE|PUBLIC_BASE_URL))=' .env \
