@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
   FormControlLabel, IconButton, LinearProgress, Menu, MenuItem, Paper, Select, Slider,
@@ -15,7 +15,7 @@ import {
   Close, Collection, Delete, Document, Download, DragIndicator, Folder,
   Picture, Play, Plus, Refresh, Tune, Upload,
 } from '@/icons'
-import { EmptyHint, Page, PageBody, PageToolbar } from '@/ui/common'
+import { EmptyHint, ModuleToolbar, Page, PageBody } from '@/ui/common'
 import { confirmDialog, promptDialog, toast } from '@/ui/feedback'
 import { convertImage } from '@/convert/image'
 import { composePdf, parsePageRange, pdfPageCount, pdfPagesToImages, renderPdfPreview } from '@/convert/pdf'
@@ -26,7 +26,7 @@ import {
 import { loadLimits, loadPresets, mergeSettings, saveLimits, savePresets } from '@/convert/presets'
 import {
   DEFAULT_LIMITS, DEFAULT_SETTINGS, KIND_LABELS, TARGET_LABELS,
-  type ConvertItem, type ConvertLimits, type ConvertOutput, type ConvertPreset, type ConvertSettings,
+  type ConvertItem, type ConvertLimits, type ConvertPreset, type ConvertSettings,
   type ConvertTarget,
 } from '@/convert/types'
 
@@ -527,36 +527,37 @@ export default function ConvertPage() {
 
   return (
     <Page variant="dense">
-      <PageToolbar sx={{ rowGap: 1 }}>
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => openPicker({})}>添加文件</Button>
-          <Button size="small" startIcon={<Play fontSize="small" />} disabled={!waiting} onClick={() => void runAll()}>转换全部{waiting ? ` (${waiting})` : ''}</Button>
-          <Button size="small" startIcon={<Download fontSize="small" />} disabled={!successItems.length || packing} onClick={(event) => setPackAnchor(event.currentTarget)}>打包下载</Button>
-          <Menu anchorEl={packAnchor} open={Boolean(packAnchor)} onClose={() => setPackAnchor(null)}>
-            <MenuItem onClick={() => void pack('image')}>图片结果</MenuItem>
-            <MenuItem onClick={() => void pack('pdf')}>PDF 结果</MenuItem>
-            <MenuItem onClick={() => void pack('table')}>表格结果</MenuItem>
-            <MenuItem onClick={() => void pack('all')}>全部成功结果</MenuItem>
-          </Menu>
-          <Button size="small" startIcon={<Folder fontSize="small" />} onClick={(event) => setPresetAnchor(event.currentTarget)}>预设</Button>
-          <Menu anchorEl={presetAnchor} open={Boolean(presetAnchor)} onClose={() => setPresetAnchor(null)}>
-            {presets.length ? presets.map((preset) => (
-              <MenuItem key={preset.id} onClick={() => applyPreset(preset)} sx={{ gap: 1 }}>
-                <Box sx={{ flex: 1 }}>
-                  <Typography sx={{ fontSize: 12.5 }}>{preset.name}</Typography>
-                  <Typography sx={{ fontSize: 10.5, color: 'text.secondary' }}>{KIND_LABELS[preset.kind]} → {TARGET_LABELS[preset.target]}</Typography>
-                </Box>
-                <IconButton size="small" aria-label={`删除预设 ${preset.name}`} onClick={(event) => { event.stopPropagation(); void deletePreset(preset) }}><Delete fontSize="small" /></IconButton>
-              </MenuItem>
-            )) : <MenuItem disabled>还没有保存的预设</MenuItem>}
-          </Menu>
-          <Tooltip title="转换限制"><IconButton size="small" aria-label="转换限制" onClick={() => { setLimitsDraft({ ...limits }); setLimitsOpen(true) }}><Tune fontSize="small" /></IconButton></Tooltip>
-          {items.some((item) => item.status === 'success' || item.status === 'cancelled') ? <Button size="small" onClick={clearFinished}>清空已完成</Button> : null}
-        </Stack>
-        <div className="spacer" />
-        {selectedImages.length ? <Button size="small" variant="outlined" disabled={selectedImages.length < 2} onClick={createComposeFromSelection}>合成 PDF ({selectedImages.length})</Button> : null}
-        <Chip size="small" label={`${items.length} 项 · 本地处理`} variant="outlined" />
-      </PageToolbar>
+      <ModuleToolbar
+        info={<Chip size="small" label={`${items.length} 项 · 本地处理`} variant="outlined" />}
+        filters={(
+          <>
+            <Button size="small" startIcon={<Play fontSize="small" />} disabled={!waiting} onClick={() => void runAll()}>转换全部{waiting ? ` (${waiting})` : ''}</Button>
+            <Button size="small" startIcon={<Download fontSize="small" />} disabled={!successItems.length || packing} onClick={(event) => setPackAnchor(event.currentTarget)}>打包下载</Button>
+            <Menu anchorEl={packAnchor} open={Boolean(packAnchor)} onClose={() => setPackAnchor(null)}>
+              <MenuItem onClick={() => void pack('image')}>图片结果</MenuItem>
+              <MenuItem onClick={() => void pack('pdf')}>PDF 结果</MenuItem>
+              <MenuItem onClick={() => void pack('table')}>表格结果</MenuItem>
+              <MenuItem onClick={() => void pack('all')}>全部成功结果</MenuItem>
+            </Menu>
+            {selectedImages.length ? <Button size="small" variant="outlined" disabled={selectedImages.length < 2} onClick={createComposeFromSelection}>合成 PDF ({selectedImages.length})</Button> : null}
+            <Button size="small" startIcon={<Folder fontSize="small" />} onClick={(event) => setPresetAnchor(event.currentTarget)}>预设</Button>
+            <Menu anchorEl={presetAnchor} open={Boolean(presetAnchor)} onClose={() => setPresetAnchor(null)}>
+              {presets.length ? presets.map((preset) => (
+                <MenuItem key={preset.id} onClick={() => applyPreset(preset)} sx={{ gap: 1 }}>
+                  <Box sx={{ flex: 1 }}>
+                    <Typography sx={{ fontSize: 12.5 }}>{preset.name}</Typography>
+                    <Typography sx={{ fontSize: 10.5, color: 'text.secondary' }}>{KIND_LABELS[preset.kind]} → {TARGET_LABELS[preset.target]}</Typography>
+                  </Box>
+                  <IconButton size="small" aria-label={`删除预设 ${preset.name}`} onClick={(event) => { event.stopPropagation(); void deletePreset(preset) }}><Delete fontSize="small" /></IconButton>
+                </MenuItem>
+              )) : <MenuItem disabled>还没有保存的预设</MenuItem>}
+            </Menu>
+            <Tooltip title="转换限制"><IconButton size="small" aria-label="转换限制" onClick={() => { setLimitsDraft({ ...limits }); setLimitsOpen(true) }}><Tune fontSize="small" /></IconButton></Tooltip>
+            {items.some((item) => item.status === 'success' || item.status === 'cancelled') ? <Button size="small" onClick={clearFinished}>清空已完成</Button> : null}
+          </>
+        )}
+        primary={<Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => openPicker({})}>添加文件</Button>}
+      />
 
       <PageBody>
         <Box className="scroll-area" sx={{ flex: 1, minHeight: 0, overflow: 'auto', pr: 0.5 }}>

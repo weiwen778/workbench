@@ -1,6 +1,7 @@
-"""Add a clearly labelled, removable year of synthetic e-commerce activity.
+"""Add a removable year of synthetic e-commerce activity.
 
 Run locally from the project's server directory. Never calls external APIs.
+Pass --unlabeled for realistic data without visible mock prefixes or marker columns.
 """
 from __future__ import annotations
 import argparse, calendar, hashlib, json, math, os, random, secrets, sys
@@ -17,6 +18,7 @@ parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('action',choices=['seed','status','remove'],nargs='?',default='seed')
 parser.add_argument('--as-of',type=date.fromisoformat,default=date(2026,10,31))
 parser.add_argument('--preview',action='store_true',help='Use a separate disposable SQLite database')
+parser.add_argument('--unlabeled',action='store_true',help='Generate realistic data without visible mock prefixes or marker columns')
 parser.add_argument('--confirm',default='')
 args=parser.parse_args()
 HOME=ROOT/'.run'/('demo-year-preview' if args.preview else 'demo-year')
@@ -38,12 +40,13 @@ from app.services.periods import iter_periods
 LOCAL_DB = settings.is_sqlite or '127.0.0.1' in settings.database_url or 'localhost' in settings.database_url
 assert LOCAL_DB, 'This utility is only for the local workspace database'
 if settings.env == 'production':
-    print('WARNING: local workspace is marked production; seeding clearly labelled, removable data.')
+    print('WARNING: local workspace is marked production; seeding removable demo data.')
 ASOF=args.as_of
 END=ASOF-timedelta(days=1)
 START=END-timedelta(days=364)
 MARK=f'DEMO-YEAR-{ASOF:%Y%m%d}'
-PREFIX='【模拟】'
+LABELED=not args.unlabeled
+PREFIX='【模拟】' if LABELED else ''
 MANIFEST=HOME/'manifest.json'
 TZ=ZoneInfo('Asia/Shanghai')
 NOW=datetime.now(timezone.utc).replace(tzinfo=None)
@@ -51,6 +54,7 @@ RNG=random.Random(20261031)
 def stamp(day,hour=10,minute=0):
     return min(datetime.combine(day,time(hour,minute),TZ).astimezone(timezone.utc).replace(tzinfo=None),NOW)
 def money(value): return f'{Decimal(str(value)).quantize(Decimal("0.01")):.2f}'
+def tag(text): return f'{MARK}｜{text}' if LABELED else text
 def save_manifest(data):
     temp=MANIFEST.with_suffix('.tmp'); temp.write_text(json.dumps(data,ensure_ascii=False,indent=2)); temp.replace(MANIFEST)
 def field_key(code,name): return hashlib.md5((MARK+code+name).encode()).hexdigest()
@@ -63,7 +67,7 @@ PROFILES=[
     ('taobao','淘宝精选店','淘宝',38,119,.18,.065,.46,.15,.025,6,.055),
     ('weixin','视频号小店','视频号',25,99,.95,.085,.44,.19,.03,6.8,.06),
 ]
-OWNERS=['小林（模拟）','小周（模拟）','小何（模拟）','小陈（模拟）']
+OWNERS=[name+('（模拟）' if LABELED else '') for name in ['小林','小周','小何','小陈']]
 CATEGORIES=['收纳整理','厨房用品','家居清洁','生活配件']
 
 class Seeder:
@@ -72,18 +76,21 @@ class Seeder:
     def add(self,obj):
         self.db.add(obj); self.entities[obj.__tablename__].append(obj); return obj
     def table(self,code,name,definitions):
-        table=self.add(DataTable(name=PREFIX+name,note=f'{MARK}｜纯模拟数据，非实际经营结果。统计范围：{START} 至 {END}。',sort_order=100+len(self.tables),created_at=stamp(START),updated_at=stamp(END,23)))
+        note=tag(f'纯模拟数据，非实际经营结果。统计范围：{START} 至 {END}。') if LABELED else f'统计范围：{START} 至 {END}。'
+        table=self.add(DataTable(name=PREFIX+name,note=note,sort_order=100+len(self.tables),created_at=stamp(START),updated_at=stamp(END,23)))
         self.db.flush()
         fields=[]; keys={}
-        for i,definition in enumerate([*definitions,('数据标识','short_text')]):
+        specs=[*definitions,('数据标识','short_text')] if LABELED else list(definitions)
+        for i,definition in enumerate(specs):
             name,kind,*options=definition
-            field=self.add(DataField(table_id=table.id,key=field_key(code,name),name=name,type=kind,sort_order=i,required=name=='数据标识',options=[{'id':str(v),'name':str(v)} for v in options[0]] if options else None,created_at=stamp(START)))
+            field=self.add(DataField(table_id=table.id,key=field_key(code,name),name=name,type=kind,sort_order=i,required=LABELED and name=='数据标识',options=[{'id':str(v),'name':str(v)} for v in options[0]] if options else None,created_at=stamp(START)))
             fields.append(field); keys[name]=field.key
         self.db.flush(); self.tables[code]=(table,fields,keys)
         return code
     def record(self,code,values,day):
         table,fields,keys=self.tables[code]
-        data={keys[k]:v for k,v in {**values,'数据标识':MARK}.items()}
+        payload={**values,**({'数据标识':MARK} if LABELED else {})}
+        data={keys[k]:v for k,v in payload.items()}
         data=validate_record(self.db,fields,data,table_id=table.id)
         return self.add(DataRecord(table_id=table.id,data=data,created_at=stamp(day,18),updated_at=stamp(day,19),version=RNG.choice([1,1,1,2,3])))
     def widget(self,code,title,kind='metric',aggregation='sum',value='净销售额',group=None,**extra):
@@ -182,23 +189,24 @@ class Seeder:
         self.db.flush()
         specs=[('shop',p[1],p[2]) for p in PROFILES]+[('social','小红书·生活研究所','小红书'),('social','抖音·收纳实验室','抖音'),('social','视频号·好物日记','视频号')]
         for index,(kind,name,platform) in enumerate(specs):
-            target=self.add(WorkTarget(kind=kind,name=PREFIX+name,platform=platform,note=f'{MARK}｜模拟运营对象，不关联真实店铺账号。',sort_order=100+index,status='active',generate_from=START,created_at=stamp(START,8),updated_at=stamp(END)))
-            self.db.flush(); self.add(ActivityInterval(target_id=target.id,start_at=stamp(START,8),reason=MARK))
+            target=self.add(WorkTarget(kind=kind,name=PREFIX+name,platform=platform,note=tag('模拟运营对象，不关联真实店铺账号。') if LABELED else '运营对象：用于聚合日、周、月例行检查。',sort_order=100+index,status='active',generate_from=START,created_at=stamp(START,8),updated_at=stamp(END)))
+            self.db.flush(); self.add(ActivityInterval(target_id=target.id,start_at=stamp(START,8),reason=MARK if LABELED else '开始运营'))
             rules=[('昨日经营数据核对','daily','经营数据'),('推广消耗与预算检查','daily','投放与商品'),('库存及售后异常巡检','daily','投放与商品'),('周度经营复盘','weekly','经营复盘'),('下周活动与备货排期','weekly','经营复盘'),('月度利润与目标复盘','monthly','经营复盘')] if kind=='shop' else [('评论与私信巡检','daily','内容运营'),('当日内容排期确认','daily','内容运营'),('内容表现与选题复盘','weekly','内容运营'),('月度内容转化复盘','monthly','经营复盘')]
             for j,(title,period,groupname) in enumerate(rules):
                 group=groups[groupname]; changed=j==1 and kind=='shop'; switch=START+timedelta(days=180)
                 current_title=title+'（含素材复核）' if changed else title
-                rule=self.add(CheckinRule(target_id=target.id,group_id=group.id,title=current_title,description=f'{MARK}｜检查指标、记录异常、明确负责人并跟进到结果。',period=period,sort_order=j,version=2 if changed else 1,created_at=stamp(START,8),updated_at=stamp(switch if changed else START,9)))
+                rule=self.add(CheckinRule(target_id=target.id,group_id=group.id,title=current_title,description=tag('检查指标、记录异常、明确负责人并跟进到结果。'),period=period,sort_order=j,version=2 if changed else 1,created_at=stamp(START,8),updated_at=stamp(switch if changed else START,9)))
                 self.db.flush()
-                self.add(CheckinRuleVersion(rule_id=rule.id,title=title,description=rule.description,group_id=group.id,group_name=group.name,period=period,change_summary='模拟：创建周期事项',effective_from=stamp(START,8),effective_to=stamp(switch,9) if changed else None))
-                if changed:self.add(CheckinRuleVersion(rule_id=rule.id,title=current_title,description=rule.description,group_id=group.id,group_name=group.name,period=period,change_summary='模拟：半年复盘后增加素材复核',effective_from=stamp(switch,9)))
+                self.add(CheckinRuleVersion(rule_id=rule.id,title=title,description=rule.description,group_id=group.id,group_name=group.name,period=period,change_summary='模拟：创建周期事项' if LABELED else '创建周期事项',effective_from=stamp(START,8),effective_to=stamp(switch,9) if changed else None))
+                if changed:self.add(CheckinRuleVersion(rule_id=rule.id,title=current_title,description=rule.description,group_id=group.id,group_name=group.name,period=period,change_summary='模拟：半年复盘后增加素材复核' if LABELED else '半年复盘后增加素材复核',effective_from=stamp(switch,9)))
                 for first,last in iter_periods(period,START,ASOF):
                     if first<START: continue
                     historical=last<=ASOF
                     chance=.80+.14*min(1,(first-START).days/364)
                     done=RNG.random()<chance if historical else (j==0 and index%2==0)
                     completed=stamp(min(last-timedelta(days=1),END),17,RNG.randrange(60)) if historical and done else NOW-timedelta(minutes=2) if done else None
-                    self.add(CheckinInstance(rule_id=rule.id,target_id=target.id,target_name=target.name,group_id=group.id,group_name=group.name,period_type=period,period_start=first,period_end=last,title=title if changed and first<switch else current_title,description=rule.description,completed_at=completed,note=f'{MARK}｜'+('已完成核对；异常已转入跟进清单。' if done else '历史漏打卡：用于模拟真实执行缺口。' if historical else '当前周期待执行。'),locked=historical,lock_reason='周期已结束' if historical else None,version=RNG.choice([1,2,3]),created_at=stamp(first,8),updated_at=completed or stamp(min(first,END),18)))
+                    progress=('已完成核对；异常已转入跟进清单。' if done else (('历史漏打卡：用于模拟真实执行缺口。' if LABELED else '历史漏打卡。') if historical else '当前周期待执行。'))
+                    self.add(CheckinInstance(rule_id=rule.id,target_id=target.id,target_name=target.name,group_id=group.id,group_name=group.name,period_type=period,period_start=first,period_end=last,title=title if changed and first<switch else current_title,description=rule.description,completed_at=completed,note=tag(progress),locked=historical,lock_reason='周期已结束' if historical else None,version=RNG.choice([1,2,3]),created_at=stamp(first,8),updated_at=completed or stamp(min(first,END),18)))
             self.db.flush()
     def todos(self):
         lists=[self.add(TodoList(name=PREFIX+name,sort_order=100+i,sort_mode='auto',created_at=stamp(START),updated_at=stamp(END))) for i,name in enumerate(['年度经营项目','活动与上新','异常跟进','本周行动'])]
@@ -208,22 +216,22 @@ class Seeder:
         for mi,(year,month) in enumerate(months):
             for j in range(14):
                 day=date(year,month,min(27,2+j*2)); due=min(day+timedelta(days=2),END)
-                self.add(Todo(list_id=lists[j%3].id,title=f'{PREFIX}{PROFILES[j%6][1]} · {actions[j%8]}',note=f'{MARK}\n执行结果：已形成结论、完成调整并同步到经营复盘。\n验收：观察7天，效果符合预期。',due_date=due,completed_at=stamp(due,16),sort_index=mi*20+j,version=RNG.choice([2,3,4]),created_at=stamp(day-timedelta(days=1),10),updated_at=stamp(due,16)))
+                self.add(Todo(list_id=lists[j%3].id,title=f'{PREFIX}{PROFILES[j%6][1]} · {actions[j%8]}',note=tag('执行结果：已形成结论、完成调整并同步到经营复盘。\n验收：观察7天，效果符合预期。'),due_date=due,completed_at=stamp(due,16),sort_index=mi*20+j,version=RNG.choice([2,3,4]),created_at=stamp(day-timedelta(days=1),10),updated_at=stamp(due,16)))
             current=mi==11; day=date(year,month,20)
-            parent=self.add(Todo(list_id=lists[1].id,title=f'{PREFIX}{year}-{month:02d} 活动上线验收',note=f'{MARK}\n验收标准：页面、库存、预算与排期均完成核对。',due_date=ASOF+timedelta(days=5) if current else day+timedelta(days=3),completed_at=None if current else stamp(day+timedelta(days=3),17),sort_index=mi*20+15,created_at=stamp(day),updated_at=stamp(min(day+timedelta(days=3),END))))
+            parent=self.add(Todo(list_id=lists[1].id,title=f'{PREFIX}{year}-{month:02d} 活动上线验收',note=tag('验收标准：页面、库存、预算与排期均完成核对。'),due_date=ASOF+timedelta(days=5) if current else day+timedelta(days=3),completed_at=None if current else stamp(day+timedelta(days=3),17),sort_index=mi*20+15,created_at=stamp(day),updated_at=stamp(min(day+timedelta(days=3),END))))
             self.db.flush()
             for k,title in enumerate(['确认活动规则与利益点','验收素材与落地页','核对库存和推广预算']):
                 completed=not current or k==0
-                self.add(Todo(list_id=parent.list_id,parent_id=parent.id,title=PREFIX+title,note=MARK,sort_index=k,due_date=ASOF+timedelta(days=k+1) if current else day+timedelta(days=k+1),completed_at=stamp(END,15) if current and completed else stamp(day+timedelta(days=k+1),15) if completed else None,created_at=stamp(day),updated_at=stamp(END if current else day+timedelta(days=k+1))))
+                self.add(Todo(list_id=parent.list_id,parent_id=parent.id,title=PREFIX+title,note=MARK if LABELED else None,sort_index=k,due_date=ASOF+timedelta(days=k+1) if current else day+timedelta(days=k+1),completed_at=stamp(END,15) if current and completed else stamp(day+timedelta(days=k+1),15) if completed else None,created_at=stamp(day),updated_at=stamp(END if current else day+timedelta(days=k+1))))
         for j in range(24):
             due=ASOF+timedelta(days=j//4-1)
-            self.add(Todo(list_id=lists[3 if j<16 else 2].id,title=f'{PREFIX}{PROFILES[j%6][1]} · {actions[j%8]}',note=f'{MARK}\n当前进度：'+['待排期执行','已取得数据，等待复核','已委托Agent整理，待人工验收','处理中，需要协调补货或素材资源'][j%4],due_date=due,due_time=time(17,30) if j%3==0 else None,sort_index=j,created_at=stamp(ASOF-timedelta(days=RNG.randint(1,7))),updated_at=stamp(END,18)))
+            self.add(Todo(list_id=lists[3 if j<16 else 2].id,title=f'{PREFIX}{PROFILES[j%6][1]} · {actions[j%8]}',note=tag('当前进度：'+['待排期执行','已取得数据，等待复核','已委托Agent整理，待人工验收','处理中，需要协调补货或素材资源'][j%4]),due_date=due,due_time=time(17,30) if j%3==0 else None,sort_index=j,created_at=stamp(ASOF-timedelta(days=RNG.randint(1,7))),updated_at=stamp(END,18)))
     def notes_and_memos(self):
         folders={name:self.add(NoteFolder(name=PREFIX+name,created_at=stamp(START))) for name in ['经营复盘','流程与SOP','活动策略']}
         tags={name:self.add(NoteTag(name=PREFIX+name,created_at=stamp(START))) for name in ['复盘','经营管理','投放优化','库存与售后']}
         self.db.flush()
         def note(title,content,day,folder='经营复盘',tag='复盘',versions=2):
-            content=f'{content}\n\n---\n> 模拟数据集：{MARK}；用于产品体验，非实际经营结论。'
+            if LABELED: content=f'{content}\n\n---\n> 模拟数据集：{MARK}；用于产品体验，非实际经营结论。'
             n=self.add(Note(title=PREFIX+title,content=content,folder_id=folders[folder].id,version=versions,created_at=stamp(day,9),updated_at=stamp(min(day+timedelta(days=max(0,versions-1)),END),18)))
             self.db.flush(); self.add(NoteTagLink(note_id=n.id,tag_id=tags[tag].id))
             for k in range(versions): self.add(NoteRevision(note_id=n.id,title=n.title,content=content if k==versions-1 else content.replace('下一步','待补充的下一步'),reason='manual',created_at=stamp(min(day+timedelta(days=k),END),12)))
@@ -241,11 +249,12 @@ class Seeder:
             note(title,f'# {title}\n\n## 适用范围\n适用于多店铺运营协作。\n\n## 执行步骤\n1. 先核对数据来源与时间范围。\n2. 找出异常并明确责任人。\n3. 将措施写入待办，补充截止日期与验收标准。\n4. 完成后回读数据，记录结果与经验。\n\n## 验收标准\n结论有数据支持，产物可查看，问题有后续跟进。',START+timedelta(days=RNG.randrange(300)),folder='流程与SOP',tag='经营管理',versions=3)
         for p in PROFILES:
             note(p[1]+' · 双11预热方案','# 双11预热方案\n\n## 目标\n提升高意向访客和主推款成交，同时控制推广消耗。\n\n## 排期\n- 预热阶段：测试素材，整理人群与商品承接。\n- 放量阶段：跟踪库存和利润，及时收缩低效计划。\n- 复盘阶段：沉淀有效素材与活动执行清单。',ASOF-timedelta(days=12),folder='活动策略',tag='投放优化')
-        note('一年模拟数据使用说明',f'# 一年运营模拟数据\n\n覆盖 **{START} 至 {END}**，六家店铺。\n\n- 进入「数据可视化 → 【模拟】全店经营总览」查看全店表现。\n- 六家店铺各有独立日报表和独立看板。\n- 另有商品库存、推广复盘、经营异常和内容运营台账。\n- 待办包括已完成项目、当前行动及少量逾期事项。\n- 打卡包含日、周、月任务和一年的历史快照。\n\n## 统计说明\n经营利润 = 净销售额 − 商品成本 − 推广费 − 平台佣金 − 物流成本 − 运营分摊成本。\n投产比为支付销售额 / 推广费，不代表净利润率。\n年末是未完结的双11预热阶段，未来排期不是未来实际成交。\n\n## 数据标识\n所有新增对象带【模拟】或数据标识列；不覆盖原有记录。\nAgent、翻译记录均为合成示例，未触发外部API，没有生成可用的访问令牌。\n\n## 清理\n可以让助手“删除这一批一年模拟数据”。清理脚本按本次清单和标识处理，并保留非模拟内容。',END,folder='流程与SOP',tag='经营管理',versions=1)
+        if LABELED:
+            note('一年模拟数据使用说明',f'# 一年运营模拟数据\n\n覆盖 **{START} 至 {END}**，六家店铺。\n\n- 进入「数据可视化 → 【模拟】全店经营总览」查看全店表现。\n- 六家店铺各有独立日报表和独立看板。\n- 另有商品库存、推广复盘、经营异常和内容运营台账。\n- 待办包括已完成项目、当前行动及少量逾期事项。\n- 打卡包含日、周、月任务和一年的历史快照。\n\n## 统计说明\n经营利润 = 净销售额 − 商品成本 − 推广费 − 平台佣金 − 物流成本 − 运营分摊成本。\n投产比为支付销售额 / 推广费，不代表净利润率。\n年末是未完结的双11预热阶段，未来排期不是未来实际成交。\n\n## 数据标识\n所有新增对象带【模拟】或数据标识列；不覆盖原有记录。\nAgent、翻译记录均为合成示例，未触发外部API，没有生成可用的访问令牌。\n\n## 清理\n可以让助手“删除这一批一年模拟数据”。清理脚本按本次清单和标识处理，并保留非模拟内容。',END,folder='流程与SOP',tag='经营管理',versions=1)
         memos=[('日常巡检三件事','先看异常，再看负责人，最后核对行动结果。'),('投放复盘口径','投产比不等于利润；预算调整要同时看退款和贡献利润。'),('库存检查','可售天数低于7天优先跟踪到仓，避免活动承接断档。'),('Agent回写规范','结果摘要写进待办备注；只有验证成功后才完成任务。'),('客服回复模板','感谢您的反馈，我们已记录问题并安排核查，将尽快同步处理进度。'),('活动验收清单','页面、价格、库存、预算和客服口径全部核对后再上线。')]
         for i in range(18):
             title,content=memos[i%6]
-            self.add(Memo(title=PREFIX+title+(f' · 第{i//6+1}版' if i>=6 else ''),content=content+'\n'+MARK,category=PREFIX+['运营要点','协作话术','复盘摘录'][i%3],color=['default','yellow','green','blue','pink','purple'][i%6],version=1+i%4,created_at=stamp(START+timedelta(days=i*15)),updated_at=stamp(END-timedelta(days=i%9))))
+            self.add(Memo(title=PREFIX+title+(f' · 第{i//6+1}版' if i>=6 else ''),content=content+('\n'+MARK if LABELED else ''),category=PREFIX+['运营要点','协作话术','复盘摘录'][i%3],color=['default','yellow','green','blue','pink','purple'][i%6],version=1+i%4,created_at=stamp(START+timedelta(days=i*15)),updated_at=stamp(END-timedelta(days=i%9))))
     def content_and_history(self):
         self.table('content','内容运营记录',[('日期','date'),('账号','short_text'),('平台','select',['小红书','抖音','视频号']),('选题','short_text'),('内容类型','select',['短视频','图文','直播切片']),('曝光量','number'),('互动量','number'),('引导订单','number'),('状态','select',['已发布','已复盘'])])
         topics=['小户型收纳前后对比','厨房台面整理技巧','清洁工具使用演示','旅行收纳清单','新品实测与常见问题','用户场景好物组合']
@@ -257,10 +266,10 @@ class Seeder:
         phrases=[('折叠收纳箱，适用于衣柜与小户型空间。','Foldable storage box for wardrobes and compact living spaces.'),('请确认本次活动的价格、库存和发货时效。','Please confirm the campaign pricing, inventory, and dispatch times.'),('我们已完成数据核对，将继续跟进异常原因。','We have verified the data and will continue investigating the exceptions.'),('便携洗漱包，分区收纳，出行更方便。','A compact toiletry bag with organized compartments for easier travel.'),('请提供修改后的素材和对应的效果数据。','Please share the revised creative and its performance data.'),('感谢您的反馈，我们会尽快处理。','Thank you for your feedback. We will resolve this as soon as possible.')]
         for i in range(96):
             cn,en=phrases[i%6]; day=START+timedelta(days=round(i*364/95))
-            self.add(TranslationHistory(source_text=PREFIX+cn+'\n'+MARK,target_text=en,provider='deepseek',model='模拟数据，未调用API',mode='faithful',duration_ms=0,created_at=stamp(day,11)))
+            self.add(TranslationHistory(source_text=(PREFIX+cn+'\n'+MARK) if LABELED else cn,target_text=en,provider='deepseek',model='模拟数据，未调用API' if LABELED else 'deepseek-chat',mode='faithful',duration_ms=0,created_at=stamp(day,11)))
         for i,(cn,en) in enumerate(phrases):
-            self.add(TranslationFavorite(source_text=PREFIX+cn+'\n'+MARK,target_text=en,provider='deepseek',model='模拟数据，未调用API',created_at=stamp(END-timedelta(days=i*10))))
-        token=self.add(AgentToken(user_id=self.user.id,name=PREFIX+'运营回写助手（已停用）',token_hash=hashlib.sha256(secrets.token_bytes(32)).hexdigest(),prefix='wb_agent_DEMO',scopes=['tables:read','tables:write','todos:read','todos:write'],created_at=stamp(START+timedelta(days=60)),expires_at=stamp(END,22),last_used_at=stamp(END,18),revoked_at=stamp(END,22)))
+            self.add(TranslationFavorite(source_text=(PREFIX+cn+'\n'+MARK) if LABELED else cn,target_text=en,provider='deepseek',model='模拟数据，未调用API' if LABELED else 'deepseek-chat',created_at=stamp(END-timedelta(days=i*10))))
+        token=self.add(AgentToken(user_id=self.user.id,name=PREFIX+'运营回写助手（已停用）',token_hash=hashlib.sha256(secrets.token_bytes(32)).hexdigest(),prefix='wb_agent_DEMO' if LABELED else 'wb_agent_ops',scopes=['tables:read','tables:write','todos:read','todos:write'],created_at=stamp(START+timedelta(days=60)),expires_at=stamp(END,22),last_used_at=stamp(END,18),revoked_at=stamp(END,22)))
         self.db.flush()
         records=self.entities['data_records']
         for i in range(120):
@@ -303,23 +312,29 @@ class Seeder:
         assert all(r['status']=='ok' for r in result),result
         expected=sum(Decimal(t['净销售额']) for t in self.totals.values())
         assert Decimal(result[0]['value'])==expected
-        return {'marker':MARK,'state':'prepared','from':START.isoformat(),'to':END.isoformat(),'created_at':NOW.isoformat(),'tables':{code:{'id':t.id,'marker_key':keys['数据标识']} for code,(t,_,keys) in self.tables.items()},'boards':self.boards,'totals':self.totals,'entities':{name:[o.id for o in objects] for name,objects in self.entities.items()},'counts':{name:len(objects) for name,objects in self.entities.items()}}
+        return {'marker':MARK,'labeled':LABELED,'state':'prepared','from':START.isoformat(),'to':END.isoformat(),'created_at':NOW.isoformat(),'tables':{code:{'id':t.id,'marker_key':keys.get('数据标识')} for code,(t,_,keys) in self.tables.items()},'boards':self.boards,'totals':self.totals,'entities':{name:[o.id for o in objects] for name,objects in self.entities.items()},'counts':{name:len(objects) for name,objects in self.entities.items()}}
 
 def summary(manifest):
     print(json.dumps({k:manifest[k] for k in ('marker','state','from','to','counts','boards') if k in manifest},ensure_ascii=False,indent=2))
 
 def remove(manifest):
-    assert args.confirm==manifest['marker'],'Pass --confirm '+manifest['marker']+' to remove this labelled dataset'
+    assert args.confirm==manifest['marker'],'Pass --confirm '+manifest['marker']+' to remove this dataset'
     ids=manifest['entities']; marker=manifest['marker']; kept=[]
+    labeled=manifest.get('labeled',True); prefix=PREFIX if labeled else ''
+    if not labeled:
+        print('WARNING: --unlabeled data has no marker column; removal deletes the manifest rows even if they were edited later. Back up first.')
+    def named(obj): return (not labeled) or (obj.name or '').startswith(prefix)
+    def marked(text): return (not labeled) or (marker in (text or ''))
     with SessionLocal.begin() as db:
         for obj in db.scalars(select(Dashboard).where(Dashboard.id.in_(ids.get('dashboards',[])))):
-            if obj.name.startswith(PREFIX): db.delete(obj)
+            if named(obj): db.delete(obj)
         db.flush()
         for code,info in manifest['tables'].items():
             table=db.get(DataTable,info['id'])
-            if table is None or marker not in (table.note or ''): continue
+            if table is None or not marked(table.note): continue
+            marker_key=info.get('marker_key')
             for record in db.scalars(select(DataRecord).where(DataRecord.table_id==table.id)):
-                if record.id in set(ids['data_records']) and record.data.get(info['marker_key'])==marker: db.delete(record)
+                if record.id in set(ids['data_records']) and (not labeled or (marker_key and record.data.get(marker_key)==marker)): db.delete(record)
             db.flush()
             referenced=any(any(w.get('table_id')==table.id for w in b.widgets) for b in db.scalars(select(Dashboard)))
             if db.scalar(select(func.count()).select_from(DataRecord).where(DataRecord.table_id==table.id)) or referenced: kept.append(table.name)
@@ -327,29 +342,29 @@ def remove(manifest):
         todo_ids=set(ids.get('todos',[]))
         for parent_phase in (False,True):
             for obj in db.scalars(select(Todo).where(Todo.id.in_(todo_ids))):
-                if bool(obj.parent_id)==parent_phase or marker not in (obj.note or ''): continue
+                if bool(obj.parent_id)==parent_phase or not marked(obj.note): continue
                 children=list(db.scalars(select(Todo).where(Todo.parent_id==obj.id)))
                 if children: kept.append(obj.title)
                 else: db.delete(obj)
             db.flush()
         for obj in db.scalars(select(TodoList).where(TodoList.id.in_(ids.get('todo_lists',[])))):
-            if obj.name.startswith(PREFIX) and not db.scalar(select(func.count()).select_from(Todo).where(Todo.list_id==obj.id)): db.delete(obj)
+            if named(obj) and not db.scalar(select(func.count()).select_from(Todo).where(Todo.list_id==obj.id)): db.delete(obj)
         for obj in db.scalars(select(Note).where(Note.id.in_(ids.get('notes',[])))):
-            if marker in obj.content: db.delete(obj)
+            if marked(obj.content): db.delete(obj)
         db.flush()
         for obj in db.scalars(select(NoteFolder).where(NoteFolder.id.in_(ids.get('note_folders',[])))):
-            if obj.name.startswith(PREFIX) and not db.scalar(select(func.count()).select_from(Note).where(Note.folder_id==obj.id)): db.delete(obj)
+            if named(obj) and not db.scalar(select(func.count()).select_from(Note).where(Note.folder_id==obj.id)): db.delete(obj)
         for obj in db.scalars(select(NoteTag).where(NoteTag.id.in_(ids.get('note_tags',[])))):
-            if obj.name.startswith(PREFIX) and not db.scalar(select(func.count()).select_from(NoteTagLink).where(NoteTagLink.tag_id==obj.id)): db.delete(obj)
+            if named(obj) and not db.scalar(select(func.count()).select_from(NoteTagLink).where(NoteTagLink.tag_id==obj.id)): db.delete(obj)
         for obj in db.scalars(select(Memo).where(Memo.id.in_(ids.get('memos',[])))):
-            if marker in obj.content: db.delete(obj)
+            if marked(obj.content): db.delete(obj)
         for obj in db.scalars(select(Bookmark).where(Bookmark.id.in_(ids.get('bookmarks',[])))):
-            if obj.title.startswith(PREFIX): db.delete(obj)
+            if (not labeled) or obj.title.startswith(prefix): db.delete(obj)
         db.flush()
         for obj in db.scalars(select(BookmarkCategory).where(BookmarkCategory.id.in_(ids.get('bookmark_categories',[])))):
-            if obj.name.startswith(PREFIX) and not db.scalar(select(func.count()).select_from(Bookmark).where(Bookmark.category==obj.name)): db.delete(obj)
+            if named(obj) and not db.scalar(select(func.count()).select_from(Bookmark).where(Bookmark.category==obj.name)): db.delete(obj)
         for obj in db.scalars(select(WorkTarget).where(WorkTarget.id.in_(ids.get('work_targets',[])))):
-            if marker not in (obj.note or ''): continue
+            if not marked(obj.note): continue
             rules=list(db.scalars(select(CheckinRule).where(CheckinRule.target_id==obj.id)))
             if any(r.id not in ids['checkin_rules'] for r in rules): kept.append(obj.name); continue
             for rule in rules: db.delete(rule)
@@ -358,12 +373,12 @@ def remove(manifest):
             db.delete(obj)
         db.flush()
         for obj in db.scalars(select(CheckinGroup).where(CheckinGroup.id.in_(ids.get('checkin_groups',[])))):
-            if obj.name.startswith(PREFIX) and not db.scalar(select(func.count()).select_from(CheckinRule).where(CheckinRule.group_id==obj.id)): db.delete(obj)
+            if named(obj) and not db.scalar(select(func.count()).select_from(CheckinRule).where(CheckinRule.group_id==obj.id)): db.delete(obj)
         for cls,name in [(TranslationHistory,'translation_history'),(TranslationFavorite,'translation_favorites')]:
             for obj in db.scalars(select(cls).where(cls.id.in_(ids.get(name,[])))):
-                if marker in obj.source_text: db.delete(obj)
+                if marked(obj.source_text): db.delete(obj)
         for obj in db.scalars(select(AgentToken).where(AgentToken.id.in_(ids.get('agent_tokens',[])))):
-            if obj.name.startswith(PREFIX) and obj.revoked_at: db.delete(obj)
+            if named(obj) and obj.revoked_at: db.delete(obj)
     manifest['state']='partially_removed' if kept else 'removed'; manifest['retained_modified_objects']=kept; save_manifest(manifest); summary(manifest)
 
 if args.action=='status':
@@ -378,8 +393,10 @@ else:
         manifest=json.loads(MANIFEST.read_text())
         if manifest.get('state')!='removed':
             print('Dataset already registered; no duplicate data added'); summary(manifest); sys.exit(0)
+    expected_tables=['全店经营日报',*[p[1]+' · 经营日报' for p in PROFILES],'商品与库存台账','推广活动复盘','经营异常与改善跟进','内容运营记录']
     with SessionLocal() as db:
-        assert not db.scalar(select(DataTable.id).where(DataTable.note.contains(MARK)).limit(1)),'Dataset marker already exists; refusing duplicate seed'
+        duplicate=db.scalar(select(DataTable.id).where(DataTable.note.contains(MARK)).limit(1)) if LABELED else db.scalar(select(DataTable.id).where(DataTable.name.in_(expected_tables)).limit(1))
+        assert not duplicate,'Dataset marker already exists; refusing duplicate seed'
         builder=Seeder(db)
         manifest=builder.run()
         save_manifest(manifest)

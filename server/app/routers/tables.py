@@ -502,6 +502,20 @@ def _non_empty(value) -> bool:
     return True
 
 
+def _has_record_content(fields: list, data: dict) -> bool:
+    """一行至少要有一列真实内容；未勾选的勾选框不算内容，数字 0 仍算真实内容。"""
+    for field in fields:
+        if field.key not in data:
+            continue
+        value = data[field.key]
+        if field.type == "checkbox":
+            if value is True:
+                return True
+        elif _non_empty(value):
+            return True
+    return False
+
+
 def _count_non_empty(db: Session, table_id: int, field: DataField, *, include_deleted: bool) -> int:
     stmt = select(DataRecord).where(DataRecord.table_id == table_id)
     if not include_deleted:
@@ -572,6 +586,8 @@ def create_record(table_id: int, payload: RecordIn, db: Session = Depends(get_db
     if not fields:
         raise ApiError("NO_FIELDS", "请先加至少一列，再添加内容", 409)
     data = validate_record(db, fields, payload.data, table_id=table_id)
+    if not _has_record_content(fields, data):
+        raise ApiError("EMPTY_RECORD", "请至少填写一列内容后再保存", 422)
     record = DataRecord(table_id=table_id, data=data)
     db.add(record)
     db.flush()
@@ -613,6 +629,9 @@ def update_record(record_id: int, payload: RecordIn, db: Session = Depends(get_d
             if incoming[field.key]!=current.get(field.key):raise ApiError('READ_ONLY_FIELD','计算列不能手动修改',422)
             incoming.pop(field.key)
     data = validate_record(db, fields, incoming, table_id=table.id)
+    # 只拦截“原本有内容、这次被清空”的编辑；旧数据里仅含计算列的行仍然允许更新。
+    if not _has_record_content(fields, data) and _has_record_content(fields, record.data or {}):
+        raise ApiError("EMPTY_RECORD", "请至少保留一列内容；如需清空请删除这一行", 422)
     from ..services.table_history import append,snapshot
     before=snapshot(record);expected=record.version
     changed=db.execute(update(DataRecord).where(DataRecord.id==record.id,DataRecord.version==expected,DataRecord.deleted_at.is_(None)).values(data=data,version=expected+1,updated_at=utcnow()))

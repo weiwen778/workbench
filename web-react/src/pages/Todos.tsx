@@ -2,19 +2,18 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, IconButton,
-  Menu, MenuItem, Paper, Popover, Select, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
+  Menu, MenuItem, Paper, Popover, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
-import { Divider } from '@mui/material'
 import PopCheckedIcon from '@/motion/components/PopCheckedIcon'
 import {
   DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
 } from '@dnd-kit/core'
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { ArrowDown, ArrowRight, Clock, Delete, DragIndicator, Edit, MoreFilled, Plus, Refresh } from '@/icons'
+import { ArrowDown, ArrowRight, Clock, Delete, DragIndicator, Edit, MoreFilled, Plus } from '@/icons'
 import { apiError, http } from '@/api/client'
 import { confirmDialog, promptDialog, toast } from '@/ui/feedback'
-import { EmptyHint, FieldRow, LoadingBlock, Page, PageToolbar } from '@/ui/common'
+import { EmptyHint, FieldRow, LoadingBlock, ModuleToolbar } from '@/ui/common'
 
 type TodoDrag = {
   attributes: Record<string, any>
@@ -104,8 +103,21 @@ export default function TodosPage() {
 
   const listId = Number(params.listId) || null
   const currentList = lists.find((list) => list.id === listId) || null
+  const draftKey = listId ? `wb_todo_draft:${listId}` : ''
   const viewActive = useRef(true)
   const loadRequest = useRef(0)
+
+  useEffect(() => {
+    if (!draftKey) return
+    setNewTitle(localStorage.getItem(draftKey) || '')
+  }, [draftKey])
+
+  const changeNewTitle = (value: string) => {
+    setNewTitle(value)
+    if (!draftKey) return
+    if (value) localStorage.setItem(draftKey, value)
+    else localStorage.removeItem(draftKey)
+  }
   useEffect(() => {
     viewActive.current = true
     return () => { viewActive.current = false }
@@ -212,7 +224,8 @@ export default function TodosPage() {
         list_id: listId, title: newTitle.trim(), note: null,
         due_date: newDue.due_date || null, due_time: newDue.due_time || null,
       })
-      setNewTitle(''); setNewDue({ due_date: '', due_time: '' })
+      setNewTitle(''); if (draftKey) localStorage.removeItem(draftKey)
+      setNewDue({ due_date: '', due_time: '' })
       await load(true); await focusTarget()
     } catch (error) { toast.error(apiError(error).message) }
     finally { setAdding(false) }
@@ -373,39 +386,38 @@ export default function TodosPage() {
   return (
     <Box className="todos-layout">
       <Box className="task-pane" sx={{ p: 1.5, gap: 1 }}>
-        <PageToolbar sx={{ rowGap: 1 }}>
-          <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-            {currentList ? (
-              <>
+        <ModuleToolbar
+          info={(
+            <>
+              <Typography variant="caption" color="text.secondary">未完成 {counts.nodes_pending} / 全部 {counts.nodes_total}</Typography>
+              <ToggleButtonGroup size="small" exclusive value={sortMode} disabled={!currentList} onChange={(_, value) => value && void changeSortMode(value)}>
+                <ToggleButton value="auto">按截止时间</ToggleButton>
+                <ToggleButton value="manual">手动排序</ToggleButton>
+              </ToggleButtonGroup>
+            </>
+          )}
+          onRefresh={() => void load()}
+          refreshLabel="刷新待办"
+          more={currentList ? (
+            <>
+              <Tooltip title="清单操作">
                 <IconButton size="small" aria-label="清单操作" onClick={(event) => setListMenu(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
-                <Menu anchorEl={listMenu} open={Boolean(listMenu)} onClose={() => setListMenu(null)}>
-                  <MenuItem onClick={() => { setListMenu(null); void createList() }}>新建清单</MenuItem>
-                  <MenuItem onClick={() => currentList && void listCommand('rename', currentList)}>重命名清单</MenuItem>
-                  <MenuItem divider sx={{ color: 'error.main' }} onClick={() => currentList && void listCommand('delete', currentList)}>删除清单</MenuItem>
-                </Menu>
-              </>
-            ) : null}
-            <ToggleButtonGroup size="small" exclusive value={sortMode} disabled={!currentList} onChange={(_, value) => value && void changeSortMode(value)}>
-              <ToggleButton value="auto">按截止时间</ToggleButton>
-              <ToggleButton value="manual">手动排序</ToggleButton>
-            </ToggleButtonGroup>
-          </Stack>
-          <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
-          <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-            <Typography variant="caption" color="text.secondary">未完成 {counts.nodes_pending} / 全部 {counts.nodes_total}</Typography>
-          </Stack>
-          <div className="spacer" />
-          <Tooltip title="刷新">
-            <span><IconButton size="small" aria-label="刷新待办" onClick={() => void load()}><Refresh fontSize="small" /></IconButton></span>
-          </Tooltip>
-        </PageToolbar>
+              </Tooltip>
+              <Menu anchorEl={listMenu} open={Boolean(listMenu)} onClose={() => setListMenu(null)}>
+                <MenuItem onClick={() => { setListMenu(null); currentList && void listCommand('rename', currentList) }}>重命名清单</MenuItem>
+                <MenuItem divider sx={{ color: 'error.main' }} onClick={() => { setListMenu(null); currentList && void listCommand('delete', currentList) }}>删除清单</MenuItem>
+              </Menu>
+            </>
+          ) : null}
+          primary={<Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => void createList()}>新建清单</Button>}
+        />
 
         <Paper variant="outlined" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1.25, mb: 1 }}>
           <Plus sx={{ fontSize: 16, color: 'text.disabled' }} />
           <TextField
             fullWidth variant="standard" value={newTitle} disabled={!currentList}
             placeholder="添加待办，回车保存" inputProps={{ maxLength: 200 }}
-            onChange={(event) => setNewTitle(event.target.value)}
+            onChange={(event) => changeNewTitle(event.target.value)}
             onKeyDown={(event) => { if (event.key === 'Enter') void addTodo() }}
             InputProps={{ disableUnderline: true }}
             sx={{ minWidth: 0 }}

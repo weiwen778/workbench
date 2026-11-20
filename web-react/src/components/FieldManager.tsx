@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle,
+  Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle,
   FormControlLabel, IconButton, MenuItem, Select, Stack, TextField, Typography,
 } from '@mui/material'
 import {
@@ -13,6 +13,16 @@ import { Delete, DragIndicator, Plus } from '@/icons'
 import { apiError, http } from '@/api/client'
 import { confirmDialog, toast } from '@/ui/feedback'
 import { FieldRow, SectionTitle } from '@/ui/common'
+import { isLikelyStaticDerived } from '@/table-core'
+
+const formatOptions = [
+  { label: '自动（按列名判断）', value: 'auto' },
+  { label: '数值（千分位，最多 2 位小数）', value: 'number' },
+  { label: '金额（千分位，固定 2 位小数）', value: 'money' },
+  { label: '百分比（数值后加 %）', value: 'percent' },
+  { label: '整数（四舍五入）', value: 'integer' },
+  { label: '原样显示（不格式化）', value: 'text' },
+]
 
 const fieldTypes = [
   { label: '短文本', value: 'short_text' }, { label: '长文本', value: 'long_text' },
@@ -69,10 +79,11 @@ function SortableField({ field, onEdit, onRemove }: { field: any; onEdit: () => 
   )
 }
 
-export default function FieldManager({ open, tableId, fields, onClose, onUpdated }: {
+export default function FieldManager({ open, tableId, fields, addRequest = 0, onClose, onUpdated }: {
   open: boolean
   tableId: number
   fields: any[]
+  addRequest?: number
   onClose: () => void
   onUpdated: () => void
 }) {
@@ -85,8 +96,8 @@ export default function FieldManager({ open, tableId, fields, onClose, onUpdated
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
   useEffect(() => setOrderedFields(fields), [fields])
-  const [form, setForm] = useState<{ name: string; type: string; required: boolean; default_value: any; options: { id: string; name: string }[]; expression: string }>({
-    name: '', type: 'short_text', required: false, default_value: '', options: [], expression: '',
+  const [form, setForm] = useState<{ name: string; type: string; required: boolean; default_value: any; options: { id: string; name: string }[]; expression: string; format: string }>({
+    name: '', type: 'short_text', required: false, default_value: '', options: [], expression: '', format: 'auto',
   })
   const formulaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -94,12 +105,22 @@ export default function FieldManager({ open, tableId, fields, onClose, onUpdated
 
   const openAdd = () => {
     setEditing(null)
-    setForm({ name: '', type: 'short_text', required: false, default_value: '', options: [], expression: '' })
+    setForm({ name: '', type: 'short_text', required: false, default_value: '', options: [], expression: '', format: 'auto' })
     setDialogOpen(true)
   }
+
+  // 表格顶部「添加一列」直接打开新增表单，不必先进列设置抽屉再点一次。
+  useEffect(() => {
+    if (open && addRequest > 0) openAdd()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addRequest])
   const openEdit = (row: any) => {
     setEditing(row)
-    setForm({ name: row.name, type: row.type, required: Boolean(row.required), default_value: row.default_value ?? '', options: (row.options || []).map((option: any) => ({ id: option.id, name: option.name })), expression: row.config?.expression || '' })
+    setForm({
+      name: row.name, type: row.type, required: Boolean(row.required), default_value: row.default_value ?? '',
+      options: (row.options || []).map((option: any) => ({ id: option.id, name: option.name })),
+      expression: row.config?.expression || '', format: row.config?.format || 'auto',
+    })
     setDialogOpen(true)
   }
 
@@ -157,7 +178,13 @@ export default function FieldManager({ open, tableId, fields, onClose, onUpdated
       const options = ['select', 'multiselect'].includes(form.type)
         ? form.options.filter((option) => option.name.trim()).map((option, index) => ({ id: option.id || `opt_${Date.now()}_${index}`, name: option.name.trim() }))
         : null
-      const config = isFormula ? { expression: form.expression.trim() } : undefined
+      const nextConfig: Record<string, any> = editing?.config && typeof editing.config === 'object' ? { ...editing.config } : {}
+      if (['number', 'formula'].includes(form.type) && form.format !== 'auto') nextConfig.format = form.format
+      else delete nextConfig.format
+      if (isFormula) nextConfig.expression = form.expression.trim()
+      else delete nextConfig.expression
+      // 编辑时必须把空对象也提交上去，否则“显示格式”改回自动后服务端会保留旧值。
+      const config = Object.keys(nextConfig).length ? nextConfig : (editing ? {} : undefined)
       if (editing) {
         await http.patch(`/fields/${editing.id}`, {
           name: form.name.trim(), required: isFormula ? false : form.required,
@@ -261,6 +288,18 @@ export default function FieldManager({ open, tableId, fields, onClose, onUpdated
               {fieldTypes.map((type) => <MenuItem key={type.value} value={type.value}>{type.label}</MenuItem>)}
             </Select>
           </FieldRow>
+          {['number', 'formula'].includes(form.type) ? (
+            <FieldRow label="显示格式" hint="数字列会按列名自动判断金额/百分比/整数；这里可以覆盖。格式保存在列属性里。">
+              <Select fullWidth value={form.format} onChange={(event) => setForm({ ...form, format: event.target.value })}>
+                {formatOptions.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
+              </Select>
+            </FieldRow>
+          ) : null}
+          {editing && isLikelyStaticDerived(editing) ? (
+            <Alert severity="warning" sx={{ mt: 1 }}>
+              这一列的名称像是派生值（净额、利润、率、比），但类型是普通数字列。修改源数据后它不会自动重算；如果它是计算出来的，请新建一列「公式」并迁移数据。
+            </Alert>
+          ) : null}
           {form.type !== 'formula' ? <FormControlLabel control={<Checkbox checked={form.required} onChange={(event) => setForm({ ...form, required: event.target.checked })} />} label="必填" /> : null}
           {form.type === 'formula' ? (
             <Box sx={{ mt: 1 }}>

@@ -5,10 +5,10 @@ import {
 } from '@mui/material'
 import StaggerList, { StaggerItem } from '@/motion/components/StaggerList'
 import LiftCard from '@/motion/components/LiftCard'
-import { Brush, Edit, MoreFilled, Plus, Refresh, Search } from '@/icons'
+import { Brush, Edit, MoreFilled, Plus, Search } from '@/icons'
 import { apiError } from '@/api/client'
 import { useSession } from '@/session'
-import { EmptyHint, LoadingBlock, Page, PageBody, PageToolbar } from '@/ui/common'
+import { EmptyHint, LoadingBlock, ModuleToolbar, Page, PageBody } from '@/ui/common'
 import { confirmDialog, promptDialog, toast } from '@/ui/feedback'
 import {
   createWhiteboard, deleteWhiteboard, duplicateWhiteboard, listWhiteboards, renameWhiteboard,
@@ -139,21 +139,21 @@ export default function WhiteboardsPage() {
 
   return (
     <Page>
-      <PageToolbar>
-        <Stack direction="row" spacing={1} alignItems="baseline" sx={{ minWidth: 0 }}>
-          <Typography sx={{ fontSize: 18, fontWeight: 650 }}>白板</Typography>
-          <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>{boards.length} 个 · 按最近编辑排序</Typography>
-        </Stack>
-        <div className="spacer" />
-        <TextField
-          size="small" placeholder="搜索白板" value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          sx={{ width: { xs: '100%', sm: 220 } }}
-          InputProps={{ startAdornment: <InputAdornment position="start"><Search sx={{ fontSize: 17 }} /></InputAdornment> }}
-        />
-        <Tooltip title="刷新"><span><IconButton size="small" aria-label="刷新白板列表" onClick={() => void load()} disabled={loading}><Refresh fontSize="small" /></IconButton></span></Tooltip>
-        {boards.length ? <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => void create()}>新建白板</Button> : null}
-      </PageToolbar>
+      <ModuleToolbar
+        info={<Typography sx={{ fontSize: 12, color: 'text.secondary' }}>{boards.length} 个 · 按最近编辑排序</Typography>}
+        filters={(
+          <TextField
+            size="small" placeholder="搜索白板" value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            sx={{ width: { xs: '100%', sm: 220 } }}
+            InputProps={{ startAdornment: <InputAdornment position="start"><Search sx={{ fontSize: 17 }} /></InputAdornment> }}
+          />
+        )}
+        onRefresh={() => void load()}
+        refreshLabel="刷新白板列表"
+        refreshDisabled={loading}
+        primary={<Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => void create()}>新建白板</Button>}
+      />
       <PageBody>
         {loading ? <LoadingBlock text="正在加载白板…" /> : error ? (
           <EmptyHint action={<Button size="small" onClick={() => void load()}>重试</Button>}>{error}</EmptyHint>

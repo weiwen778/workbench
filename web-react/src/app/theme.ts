@@ -70,8 +70,8 @@ export function buildTheme(mode: 'light' | 'dark', themeColor: string): Theme {
       subtitle2: { fontSize: 12.5, fontWeight: 600 },
       body1: { fontSize: 13, lineHeight: 1.6 },
       body2: { fontSize: 12.5, lineHeight: 1.55 },
-      caption: { fontSize: 11, lineHeight: 1.45 },
-      overline: { fontSize: 10.5, fontWeight: 600, letterSpacing: '0.05em' },
+      caption: { fontSize: 12, lineHeight: 1.5 },
+      overline: { fontSize: 11, fontWeight: 600, letterSpacing: '0.05em' },
       button: { textTransform: 'none', fontWeight: 500, fontSize: 12.5 },
     },
     components: {
@@ -138,7 +138,7 @@ export function buildTheme(mode: 'light' | 'dark', themeColor: string): Theme {
           },
         },
       },
-      MuiFormHelperText: { styleOverrides: { root: { fontSize: 11, marginLeft: 0, marginRight: 0 } } },
+      MuiFormHelperText: { styleOverrides: { root: { fontSize: 11.5, marginLeft: 0, marginRight: 0 } } },
       MuiPaper: {
         defaultProps: { elevation: 0 },
         styleOverrides: {
@@ -170,7 +170,7 @@ export function buildTheme(mode: 'light' | 'dark', themeColor: string): Theme {
       MuiChip: {
         styleOverrides: {
           root: { borderRadius: 4, fontWeight: 500, transition: 'background-color 160ms ease, border-color 160ms ease, color 160ms ease' },
-          sizeSmall: { height: 22, fontSize: 11 },
+          sizeSmall: { height: 22, fontSize: 11.5 },
         },
       },
       MuiTableCell: {
@@ -178,7 +178,7 @@ export function buildTheme(mode: 'light' | 'dark', themeColor: string): Theme {
           root: { borderColor: dark ? '#2A373B' : '#EDF1EF' },
           sizeSmall: { padding: '7px 12px' },
           head: {
-            fontSize: 11.5,
+            fontSize: 12,
             fontWeight: 600,
             letterSpacing: '0.02em',
             whiteSpace: 'nowrap',

@@ -77,6 +77,9 @@ class Settings(BaseSettings):
 
     # 仅测试环境使用：允许翻译服务指向 http:// 本机地址
     allow_insecure_upstream: bool = False
+    # Clash 等代理的 fake-IP 模式会把公网域名解析到 198.18.0.0/15。
+    # 开启后只放行该保留段，其他非公网地址仍然拒绝；默认关闭。
+    allow_fake_ip_upstream: bool = False
 
     max_bytes_baidu: int = 6000
     max_chars_youdao: int = 5000

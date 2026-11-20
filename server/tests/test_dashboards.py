@@ -58,10 +58,13 @@ def test_full_table_aggregation_not_current_page_and_exact_decimals(auth, db):
 
 
 @pytest.mark.parametrize(('aggregation', 'expected'), [('count', '4'), ('sum', '8'), ('avg', None), ('min', '-2'), ('max', '10')])
-def test_aggregations_zero_negative_and_empty(auth, aggregation, expected):
+def test_aggregations_zero_negative_and_empty(auth, db, aggregation, expected):
     table, keys = source(auth)
-    for amount in ('0', '-2', '10', None):
+    for amount in ('0', '-2', '10'):
         add(auth, table, keys, 销售额=amount)
+    # 空行现在不允许通过接口创建；这里直接落一条空记录，验证汇总会忽略它。
+    db.add(DataRecord(table_id=table['id'], data={keys['销售额']: None}))
+    db.commit()
     b = board(auth, [widget(table, keys, aggregation=aggregation)])
     result = data(auth, b)[0]
     if aggregation == 'avg':
@@ -107,11 +110,23 @@ def test_date_trends_week_and_month_and_recent_limit(auth):
         widget(table, keys, kind='line', group_field=keys['日期'], date_bucket='week'),
         widget(table, keys, id='months', kind='bar', group_field=keys['日期'], date_bucket='month', sort='label_asc'),
         widget(table, keys, id='recent', kind='line', group_field=keys['日期'], limit=2),
+        # 柱状图未显式设置排序时，日期分组也应按时间升序并取最近两组。
+        widget(table, keys, id='bar_recent', kind='bar', group_field=keys['日期'], limit=2),
     ])
     results = data(auth, b)
     assert [(p['label'], p['value']) for p in results[0]['points']] == [('2026-10-26', '6'), ('2026-11-02', '4')]
     assert [(p['label'], p['value']) for p in results[1]['points']] == [('2026-10', '3'), ('2026-11', '7')]
     assert [p['label'] for p in results[2]['points']] == ['2026-11-01', '2026-11-02']
+    assert [p['label'] for p in results[3]['points']] == ['2026-11-01', '2026-11-02']
+
+
+def test_bar_date_group_defaults_to_chronological_and_recent_limit(auth):
+    table, keys = source(auth)
+    for day, amount in [('2026-10-01', '100'), ('2026-10-02', '1'), ('2026-10-03', '2')]:
+        add(auth, table, keys, 日期=day, 销售额=amount)
+    b = board(auth, [widget(table, keys, kind='bar', group_field=keys['日期'], limit=2)])
+    result = data(auth, b)[0]
+    assert [p['label'] for p in result['points']] == ['2026-10-02', '2026-10-03']
 
 
 def test_edits_and_deleted_records_reflected_live(auth):

@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
-  Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
+  Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle,
   FormControl, IconButton, InputLabel, Menu, MenuItem, Paper, Popover, Select, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
-import { Divider } from '@mui/material'
 import SpringDrawer from '@/motion/components/SpringDrawer'
 import ProgressRing from '@/motion/components/ProgressRing'
 import Burst from '@/motion/components/Burst'
@@ -17,7 +16,7 @@ import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, v
 import { CSS } from '@dnd-kit/utilities'
 import { Clock, Download, DragIndicator, InfoFilled, MoreFilled, Plus, Refresh, Setting, Upload } from '@/icons'
 import { apiError, http } from '@/api/client'
-import { DataTable, EmptyHint, FieldRow, Page, PageBody, PageToolbar, UploadDropzone } from '@/ui/common'
+import { DataTable, EmptyHint, FieldRow, ModuleToolbar, Page, PageBody, UploadDropzone } from '@/ui/common'
 import { confirmDialog, promptDialog, toast } from '@/ui/feedback'
 
 type Period = 'daily' | 'weekly' | 'monthly'
@@ -66,8 +65,14 @@ export default function CheckinPage() {
   const params = useParams()
   const navigate = useNavigate()
   const targetId = Number(params.targetId) || null
-  const [period, setPeriod] = useState<Period>('daily')
-  const [status, setStatus] = useState('all')
+  const [period, setPeriod] = useState<Period>(() => {
+    const saved = sessionStorage.getItem('wb_checkin_period')
+    return saved === 'weekly' || saved === 'monthly' ? saved : 'daily'
+  })
+  const [status, setStatus] = useState(() => {
+    const saved = sessionStorage.getItem('wb_checkin_status')
+    return saved === 'pending' || saved === 'done' ? saved : 'all'
+  })
   const [groups, setGroups] = useState<any[]>([])
   const [targets, setTargets] = useState<any[]>([])
   const [stats, setStats] = useState({ completed: 0, total: 0, rate: null as number | null })
@@ -75,7 +80,10 @@ export default function CheckinPage() {
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState<Set<number>>(new Set())
   const [noteDraft, setNoteDraft] = useState<Record<number, string>>({})
-  const [noteAnchor, setNoteAnchor] = useState<{ el: HTMLElement; item: any } | null>(null)
+  const [noteAnchor, setNoteAnchor] = useState<{ el: HTMLElement; id: number } | null>(null)
+  const editingNote = useRef<number | null>(null)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const scrollKey = `wb_checkin_scroll:${targetId || 'all'}:${period}:${status}`
 
   const [manageOpen, setManageOpen] = useState(false)
   const [allTargets, setAllTargets] = useState<any[]>([])
@@ -147,8 +155,14 @@ export default function CheckinPage() {
       setStats(data.statistics)
       setRange(displayRange(data.period_start, data.period_end))
       setNoteDraft((prev) => {
-        const next = { ...prev }
-        for (const group of data.groups) for (const item of group.items) if (next[item.id] === undefined) next[item.id] = item.note || ''
+        // 列表数据是备注的权威来源：除正在编辑的那一条外，全部同步为服务端值，
+        // 避免旧的本地缓存让“再次打开备注”显示空白。
+        const next: Record<number, string> = { ...prev }
+        for (const group of data.groups) {
+          for (const item of group.items) {
+            if (item.id !== editingNote.current) next[item.id] = item.note || ''
+          }
+        }
         return next
       })
     } catch (error) {
@@ -159,6 +173,18 @@ export default function CheckinPage() {
   }, [period, status, targetId])
 
   useEffect(() => { void refresh(true) }, [refresh])
+
+  useEffect(() => {
+    sessionStorage.setItem('wb_checkin_period', period)
+    sessionStorage.setItem('wb_checkin_status', status)
+  }, [period, status])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const saved = Number(sessionStorage.getItem(scrollKey) || 0)
+    if (saved > 0) requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = saved })
+  }, [scrollKey, groups])
 
   const formatTime = (value: string) => value
     ? new Date(value).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
@@ -185,11 +211,52 @@ export default function CheckinPage() {
     }
   }
 
-  const saveNote = async (item: any) => {
-    if (item.locked || busy.has(item.id)) return
+  const findItem = useCallback((id: number) => {
+    for (const group of groups) {
+      const found = group.items.find((item: any) => item.id === id)
+      if (found) return found
+    }
+    return null
+  }, [groups])
+
+  const updateItem = (data: any) => {
+    setGroups((prev) => prev.map((group) => ({
+      ...group,
+      items: group.items.map((item: any) => item.id === data.id ? { ...item, ...data } : item),
+    })))
+  }
+
+  const openNoteEditor = async (event: ReactMouseEvent<HTMLElement>, item: any) => {
+    const latest = findItem(item.id) || item
+    editingNote.current = item.id
+    setNoteDraft((prev) => ({ ...prev, [item.id]: latest.note || '' }))
+    setNoteAnchor({ el: event.currentTarget, id: item.id })
+    try {
+      // 浮层打开时按 instance id 重新取一次，避免复用列表里的旧快照。
+      const { data } = await http.get(`/checkin-instances/${item.id}`)
+      updateItem(data)
+      setNoteDraft((prev) => {
+        // 只有用户还没改过输入框时才用服务端最新值覆盖，避免打断输入。
+        if ((prev[item.id] ?? '') !== (latest.note || '')) return prev
+        return { ...prev, [item.id]: data.note || '' }
+      })
+    } catch { /* 拉取失败时保留列表值，仍可编辑 */ }
+  }
+
+  const closeNoteEditor = () => {
+    editingNote.current = null
+    setNoteAnchor(null)
+  }
+
+  const saveNote = async (itemId: number) => {
+    const item = findItem(itemId)
+    if (!item || item.locked || busy.has(item.id)) return
     setBusy((prev) => new Set(prev).add(item.id))
     try {
-      await http.patch(`/checkin-instances/${item.id}`, { note: (noteDraft[item.id] || '').trim() || null })
+      const { data } = await http.patch(`/checkin-instances/${item.id}`, { note: (noteDraft[item.id] || '').trim() || null })
+      updateItem(data)
+      setNoteDraft((prev) => ({ ...prev, [item.id]: data.note || '' }))
+      editingNote.current = null
       setNoteAnchor(null)
       toast.success('备注已保存')
       await refresh()
@@ -392,64 +459,62 @@ export default function CheckinPage() {
       : status === 'done' ? '这一轮还没有完成记录'
         : '当前没有要做的打卡'
 
+  const noteItem = noteAnchor ? findItem(noteAnchor.id) : null
+
   return (
     <Page variant="dense">
-      <PageToolbar sx={{ rowGap: 1 }}>
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          <ToggleButtonGroup size="small" exclusive value={period} onChange={(_, value) => value && setPeriod(value)}>
-            <ToggleButton value="daily">今日</ToggleButton>
-            <ToggleButton value="weekly">本周</ToggleButton>
-            <ToggleButton value="monthly">本月</ToggleButton>
-          </ToggleButtonGroup>
-        </Stack>
-        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          {!targetId ? (
-            <FormControl size="small" sx={{ width: 190 }}>
-              <InputLabel shrink>打卡项目</InputLabel>
-              <Select label="打卡项目" displayEmpty value={targetId ?? ''} onChange={(event) => {
-                const value = event.target.value
-                navigate(value ? `/checkins/items/${value}` : '/checkins')
-              }}>
-                <MenuItem value="">全部打卡项目</MenuItem>
-                {targets.map((target) => <MenuItem key={target.id} value={target.id}>{target.name}</MenuItem>)}
+      <ModuleToolbar
+        info={(
+          <>
+            <ToggleButtonGroup size="small" exclusive value={period} onChange={(_, value) => value && setPeriod(value)}>
+              <ToggleButton value="daily">今日</ToggleButton>
+              <ToggleButton value="weekly">本周</ToggleButton>
+              <ToggleButton value="monthly">本月</ToggleButton>
+            </ToggleButtonGroup>
+            {!targetId ? (
+              <FormControl size="small" sx={{ width: 190 }}>
+                <InputLabel shrink>打卡项目</InputLabel>
+                <Select label="打卡项目" displayEmpty value={targetId ?? ''} onChange={(event) => {
+                  const value = event.target.value
+                  navigate(value ? `/checkins/items/${value}` : '/checkins')
+                }}>
+                  <MenuItem value="">全部打卡项目</MenuItem>
+                  {targets.map((target) => <MenuItem key={target.id} value={target.id}>{target.name}</MenuItem>)}
+                </Select>
+              </FormControl>
+            ) : null}
+            <FormControl size="small" sx={{ width: 120 }}>
+              <InputLabel shrink>状态</InputLabel>
+              <Select label="状态" value={status} onChange={(event) => setStatus(event.target.value)}>
+                <MenuItem value="all">全部</MenuItem>
+                <MenuItem value="pending">未完成</MenuItem>
+                <MenuItem value="done">已完成</MenuItem>
               </Select>
             </FormControl>
-          ) : null}
-          <FormControl size="small" sx={{ width: 120 }}>
-            <InputLabel shrink>状态</InputLabel>
-            <Select label="状态" value={status} onChange={(event) => setStatus(event.target.value)}>
-              <MenuItem value="all">全部</MenuItem>
-              <MenuItem value="pending">未完成</MenuItem>
-              <MenuItem value="done">已完成</MenuItem>
-            </Select>
-          </FormControl>
-        </Stack>
-        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>{periodLabel} {range}</Typography>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Box sx={{ position: 'relative', color: 'primary.main', display: 'flex' }}>
-              <ProgressRing value={(stats.rate ?? 0) / 100} size={26} stroke={3} label={`完成率 ${stats.rate === null ? '—' : `${stats.rate}%`}`} />
-              <Burst trigger={stats.completed} size={30} color="currentColor" />
-            </Box>
-            <Typography sx={{ fontSize: 13 }}>
-              完成 <b>{stats.completed}</b> / {stats.total}
-              <Box component="span" sx={{ color: 'text.secondary', fontSize: 12 }}>（完成率 {stats.rate === null ? '—' : `${stats.rate}%`}）</Box>
-            </Typography>
-          </Stack>
-        </Stack>
-        <Box className="spacer" />
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Tooltip title="刷新">
-            <span><IconButton size="small" aria-label="刷新打卡" disabled={loading} onClick={() => void refresh(true)}>{loading ? <CircularProgress size={14} /> : <Refresh fontSize="small" />}</IconButton></span>
-          </Tooltip>
-          <Button size="small" startIcon={<Clock fontSize="small" />} onClick={() => setHistoryOpen(true)}>历史</Button>
-          {targetId ? <Button size="small" onClick={() => navigate(`/checkins/targets/${targetId}`)}>资料与任务</Button> : null}
-        </Stack>
-        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
-        <Button size="small" variant="contained" startIcon={<Setting fontSize="small" />} onClick={() => setManageOpen(true)}>管理打卡项目</Button>
-      </PageToolbar>
+            <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>{periodLabel} {range}</Typography>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Box sx={{ position: 'relative', color: 'primary.main', display: 'flex' }}>
+                <ProgressRing value={(stats.rate ?? 0) / 100} size={26} stroke={3} label={`完成率 ${stats.rate === null ? '—' : `${stats.rate}%`}`} />
+                <Burst trigger={stats.completed} size={30} color="currentColor" />
+              </Box>
+              <Typography sx={{ fontSize: 13 }}>
+                完成 <b>{stats.completed}</b> / {stats.total}
+                <Box component="span" sx={{ color: 'text.secondary', fontSize: 12 }}>（完成率 {stats.rate === null ? '—' : `${stats.rate}%`}）</Box>
+              </Typography>
+            </Stack>
+          </>
+        )}
+        filters={(
+          <>
+            <Button size="small" startIcon={<Clock fontSize="small" />} onClick={() => setHistoryOpen(true)}>历史</Button>
+            {targetId ? <Button size="small" onClick={() => navigate(`/checkins/targets/${targetId}`)}>资料与任务</Button> : null}
+          </>
+        )}
+        onRefresh={() => { void refresh(true) }}
+        refreshLabel="刷新打卡"
+        refreshing={loading}
+        primary={<Button size="small" variant="contained" startIcon={<Setting fontSize="small" />} onClick={() => setManageOpen(true)}>管理打卡项目</Button>}
+      />
 
       <PageBody>
         {loading && !groups.length ? <EmptyHint>加载中…</EmptyHint> : !groups.length ? (
@@ -457,7 +522,11 @@ export default function CheckinPage() {
             {emptyText}
           </EmptyHint>
         ) : (
-          <Box sx={{ overflow: 'auto', minHeight: 0 }}>
+          <Box
+            ref={scrollRef}
+            onScroll={(event) => sessionStorage.setItem(scrollKey, String(event.currentTarget.scrollTop))}
+            sx={{ overflow: 'auto', minHeight: 0 }}
+          >
             <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
               {groups.map((group, groupIndex) => (
                 <Box key={group.group_id}>
@@ -465,7 +534,7 @@ export default function CheckinPage() {
                     direction="row" spacing={1} alignItems="center"
                     sx={{ px: 2, py: 1, minHeight: 36, bgcolor: 'action.hover', borderTop: groupIndex ? 1 : 0, borderColor: 'divider' }}
                   >
-                    <Typography sx={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '0.02em', flex: 1 }}>{group.group_name}</Typography>
+                    <Typography sx={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.02em', flex: 1 }}>{group.group_name}</Typography>
                     <Typography variant="caption" color="text.disabled" sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>{group.completed} / {group.total}</Typography>
                   </Stack>
                   {group.items.map((item: any) => (
@@ -504,10 +573,7 @@ export default function CheckinPage() {
                         size="small"
                         sx={{ whiteSpace: 'nowrap', flexShrink: 0, color: 'text.secondary', minWidth: 0, px: 1 }}
                         disabled={item.locked || busy.has(item.id)}
-                        onClick={(event) => {
-                          setNoteDraft((prev) => ({ ...prev, [item.id]: item.note || '' }))
-                          setNoteAnchor({ el: event.currentTarget, item })
-                        }}
+                        onClick={(event) => void openNoteEditor(event, item)}
                       >
                         {item.note ? '改备注' : '备注'}
                       </Button>
@@ -523,7 +589,7 @@ export default function CheckinPage() {
       <Popover
         open={Boolean(noteAnchor)}
         anchorEl={noteAnchor?.el}
-        onClose={() => setNoteAnchor(null)}
+        onClose={closeNoteEditor}
         anchorOrigin={{ vertical: 'center', horizontal: 'left' }}
         transformOrigin={{ vertical: 'center', horizontal: 'right' }}
       >
@@ -531,12 +597,12 @@ export default function CheckinPage() {
           <Typography sx={{ fontSize: 13, mb: 1 }}>本次备注（可选）</Typography>
           <TextField
             fullWidth multiline minRows={3} label="本次备注（可选）" inputProps={{ maxLength: 2000 }}
-            value={noteAnchor ? noteDraft[noteAnchor.item.id] || '' : ''}
-            onChange={(event) => noteAnchor && setNoteDraft((prev) => ({ ...prev, [noteAnchor.item.id]: event.target.value }))}
+            value={noteItem ? noteDraft[noteItem.id] || '' : ''}
+            onChange={(event) => noteItem && setNoteDraft((prev) => ({ ...prev, [noteItem.id]: event.target.value }))}
           />
           <Stack direction="row" justifyContent="flex-end" spacing={1} sx={{ mt: 1 }}>
-            <Button size="small" onClick={() => setNoteAnchor(null)}>取消</Button>
-            <Button size="small" variant="contained" onClick={() => noteAnchor && void saveNote(noteAnchor.item)}>保存</Button>
+            <Button size="small" onClick={closeNoteEditor}>取消</Button>
+            <Button size="small" variant="contained" onClick={() => noteItem && void saveNote(noteItem.id)}>保存</Button>
           </Stack>
         </Box>
       </Popover>
@@ -575,7 +641,7 @@ export default function CheckinPage() {
         />
 
         <Typography sx={{ fontSize: 13, fontWeight: 600, mt: 2, mb: 0.25 }}>侧栏项目顺序</Typography>
-        <Typography sx={{ fontSize: 11.5, color: 'text.secondary', mb: 1 }}>拖动调整顺序，或把常用项目置顶。</Typography>
+        <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 1 }}>拖动调整顺序，或把常用项目置顶。</Typography>
         <DndContext sensors={navSensors} collisionDetection={closestCenter} onDragEnd={(event) => void reorderNavTargets(event)}>
           <SortableContext items={navTargets.map((target) => target.id)} strategy={verticalListSortingStrategy}>
             <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, overflow: 'auto', maxHeight: 180 }}>

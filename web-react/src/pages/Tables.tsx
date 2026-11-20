@@ -8,10 +8,10 @@ import Star from '@mui/icons-material/Star'
 import StarBorder from '@mui/icons-material/StarBorder'
 import GridView from '@mui/icons-material/GridView'
 import ViewList from '@mui/icons-material/ViewList'
-import { Collection, Delete, MoreFilled, Plus, Refresh, Search, Upload } from '@/icons'
+import { Collection, Delete, MoreFilled, Plus, Search, Upload } from '@/icons'
 import { apiError, http } from '@/api/client'
-import { EmptyHint, FieldRow, Page, PageBody, PageToolbar } from '@/ui/common'
-import { confirmDialog, promptDialog, toast } from '@/ui/feedback'
+import { EmptyHint, FieldRow, ModuleToolbar, Page, PageBody } from '@/ui/common'
+import { promptDialog, toast } from '@/ui/feedback'
 import ImportWizard from '@/components/ImportWizard'
 import DeleteTableDialog from '@/components/DeleteTableDialog'
 
@@ -157,12 +157,13 @@ export default function TablesPage() {
 
   return (
     <Page variant="dense">
-      <PageToolbar>
-        <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
-          {tables.length} 张表格 · {totalRecords} 条数据{latest ? ` · 最近更新 ${relativeTime(latest)}` : ''}
-        </Typography>
-        <div className="spacer" />
-        {!empty ? (
+      <ModuleToolbar
+        info={(
+          <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
+            {tables.length} 张表格 · {totalRecords} 条数据{latest ? ` · 最近更新 ${relativeTime(latest)}` : ''}
+          </Typography>
+        )}
+        filters={!empty ? (
           <>
             <TextField
               size="small" placeholder="搜索表格名称、说明或字段" value={query}
@@ -179,17 +180,19 @@ export default function TablesPage() {
               <ToggleButton value="cards" aria-label="卡片视图"><GridView sx={{ fontSize: 17 }} /></ToggleButton>
               <ToggleButton value="list" aria-label="列表视图"><ViewList sx={{ fontSize: 17 }} /></ToggleButton>
             </ToggleButtonGroup>
-            <Tooltip title="刷新">
-              <span><IconButton size="small" aria-label="刷新表格列表" disabled={loading} onClick={() => void load()}><Refresh fontSize="small" /></IconButton></span>
-            </Tooltip>
             <Button size="small" startIcon={<Upload fontSize="small" />} onClick={() => setImportOpen(true)}>导入</Button>
-            <Tooltip title="更多">
-              <IconButton size="small" aria-label="更多表格操作" onClick={(event) => setMoreAnchor(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
-            </Tooltip>
-            <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => setCreateOpen(true)}>新建表格</Button>
           </>
         ) : null}
-      </PageToolbar>
+        onRefresh={!empty ? () => void load() : undefined}
+        refreshLabel="刷新表格列表"
+        refreshDisabled={loading}
+        more={!empty ? (
+          <Tooltip title="更多">
+            <IconButton size="small" aria-label="更多表格操作" onClick={(event) => setMoreAnchor(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
+          </Tooltip>
+        ) : null}
+        primary={<Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => setCreateOpen(true)}>新建表格</Button>}
+      />
 
       <PageBody sx={{ overflow: 'auto', pt: 0.75 }}>
         {recentTables.length ? (

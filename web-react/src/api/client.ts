@@ -12,6 +12,11 @@ function readCookie(name: string): string {
   return match ? decodeURIComponent(match[1]) : ''
 }
 
+/** 供 keepalive fetch 等需要手动构造请求的地方读取 CSRF 令牌。 */
+export function readCsrfToken(): string {
+  return readCookie('wb_csrf')
+}
+
 http.interceptors.request.use((config) => {
   const method = (config.method || 'get').toLowerCase()
   if (['post', 'put', 'patch', 'delete'].includes(method)) {

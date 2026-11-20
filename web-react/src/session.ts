@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react'
 import { http, onUnauthorized } from '@/api/client'
 import { applyThemeColor, DEFAULT_THEME_COLOR } from '@/theme-color'
 import { clearDocumentDraft } from '@/storage/document-drafts'
+import { clearNoteDrafts } from '@/storage/note-drafts'
 
 export interface SessionUser {
   id: number
@@ -87,7 +88,10 @@ export async function login(username: string, password: string) {
 export async function logout() {
   const userId = state.user?.id
   await http.post('/auth/logout')
-  if (userId) await clearDocumentDraft(userId)
+  if (userId) {
+    await clearDocumentDraft(userId)
+    clearNoteDrafts(userId)
+  }
   setState({ user: null })
 }
 

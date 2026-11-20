@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import {
   Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem,
   Stack, TextField, Tooltip, Typography,
@@ -8,7 +8,7 @@ import StaggerList, { StaggerItem } from '@/motion/components/StaggerList'
 import LiftCard from '@/motion/components/LiftCard'
 import { MoreFilled, Plus } from '@/icons'
 import { apiError, http } from '@/api/client'
-import { EmptyHint, FieldRow, Page, PageBody, PageToolbar } from '@/ui/common'
+import { EmptyHint, FieldRow, ModuleToolbar, Page, PageBody } from '@/ui/common'
 import { confirmDialog, toast } from '@/ui/feedback'
 import CategoryManager from '@/components/CategoryManager'
 
@@ -16,7 +16,6 @@ type Item = { id: number; url: string; title: string; icon_url: string; category
 
 export default function BookmarksPage() {
   const location = useLocation()
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const focusId = searchParams.get('focus')
   const queryCategory = new URLSearchParams(location.search).get('category') || '__all'
@@ -31,6 +30,7 @@ export default function BookmarksPage() {
   const [parsing, setParsing] = useState(false)
   const [testing, setTesting] = useState(false)
   const [form, setForm] = useState({ url: '', title: '', icon_url: '', category: '', description: '' })
+  const [urlError, setUrlError] = useState('')
   const [iconErrors, setIconErrors] = useState<Record<number, boolean>>({})
   const [results, setResults] = useState<Record<number, string>>({})
   const [menu, setMenu] = useState<{ el: HTMLElement; item: Item } | null>(null)
@@ -75,13 +75,30 @@ export default function BookmarksPage() {
   }
 
   const validUrl = (raw: string) => {
-    try { const url = new URL(raw); return (url.protocol === 'http:' || url.protocol === 'https:') && !url.username && !url.password }
-    catch { return false }
+    try {
+      const url = new URL(raw)
+      const host = url.hostname
+      return (url.protocol === 'http:' || url.protocol === 'https:')
+        && !url.username && !url.password
+        && host.includes('.') && !host.startsWith('.') && !host.endsWith('.') && !host.includes('..')
+    } catch { return false }
+  }
+
+  const urlMessage = (raw: string) => {
+    if (!raw.trim()) return '请输入网址'
+    return '请输入有效的 HTTP 或 HTTPS 网址，且不要包含账号密码'
+  }
+
+  const validateUrl = (raw: string) => {
+    if (!validUrl(raw)) { setUrlError(urlMessage(raw)); return false }
+    setUrlError('')
+    return true
   }
 
   const openForm = (item?: Item) => {
     parseSequence.current++
     setParsing(false)
+    setUrlError('')
     setEditing(item || null)
     setForm(item
       ? { url: item.url, title: item.title, icon_url: item.icon_url || '', category: item.category, description: item.description }
@@ -103,7 +120,7 @@ export default function BookmarksPage() {
 
   const parseTitle = async (manual = true) => {
     const target = normalizeUrl()
-    if (!validUrl(target)) { if (manual) toast.warning('请先输入有效网址'); return }
+    if (!validateUrl(target)) { if (manual) toast.warning(urlMessage(target)); return }
     const initialTitle = form.title
     const sequence = ++parseSequence.current
     setParsing(true)
@@ -122,7 +139,7 @@ export default function BookmarksPage() {
 
   const save = async () => {
     const target = normalizeUrl()
-    if (!validUrl(target)) { toast.warning('请输入有效的 HTTP 或 HTTPS 网址，且不要包含账号密码'); return }
+    if (!validateUrl(target)) return
     setSaving(true)
     try {
       if (editing) await http.put(`/bookmarks/${editing.id}`, form)
@@ -184,24 +201,30 @@ export default function BookmarksPage() {
 
   return (
     <Page variant="bleed">
-      <PageToolbar sx={{ px: 2.5, py: 1.25, borderBottom: 1, borderColor: 'divider', rowGap: 1, flexShrink: 0 }}>
-        <TextField size="small" value={query} placeholder="搜索网址" onChange={(event) => setQuery(event.target.value)} sx={{ width: 250 }} />
-        <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>{filtered.length} 个网址</Typography>
-        <Box sx={{ flex: 1 }} />
-        <Tooltip title="更多">
-          <IconButton size="small" aria-label="更多网址操作" onClick={(event) => setMoreAnchor(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
-        </Tooltip>
-        <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
-          <CategoryManager
-            resource="bookmarks" onChanged={load}
-            trigger={(open) => <MenuItem onClick={() => { setMoreAnchor(null); open() }}>管理分类</MenuItem>}
-          />
-          <MenuItem disabled={!filtered.length || testing} onClick={() => { setMoreAnchor(null); void testAll() }}>{testing ? '检测中…' : '一键测速'}</MenuItem>
-          <MenuItem disabled={!filtered.length} onClick={() => { setMoreAnchor(null); openAll() }}>全部打开</MenuItem>
-          <MenuItem onClick={() => { setMoreAnchor(null); void load() }}>刷新</MenuItem>
-        </Menu>
-        <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => openForm()}>添加网址</Button>
-      </PageToolbar>
+      <ModuleToolbar
+        sx={{ px: 2.5, py: 1.25, borderBottom: 1, borderColor: 'divider', rowGap: 1, flexShrink: 0 }}
+        info={<Typography sx={{ fontSize: 12, color: 'text.secondary' }}>{filtered.length} 个网址</Typography>}
+        filters={<TextField size="small" value={query} placeholder="搜索网址" onChange={(event) => setQuery(event.target.value)} sx={{ width: { xs: '100%', sm: 250 } }} />}
+        onRefresh={() => void load()}
+        refreshLabel="刷新网址列表"
+        refreshDisabled={loading}
+        more={(
+          <>
+            <Tooltip title="更多">
+              <IconButton size="small" aria-label="更多网址操作" onClick={(event) => setMoreAnchor(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
+            </Tooltip>
+            <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
+              <CategoryManager
+                resource="bookmarks" onChanged={load}
+                trigger={(open) => <MenuItem onClick={() => { setMoreAnchor(null); open() }}>管理分类</MenuItem>}
+              />
+              <MenuItem disabled={!filtered.length || testing} onClick={() => { setMoreAnchor(null); void testAll() }}>{testing ? '检测中…' : '一键测速'}</MenuItem>
+              <MenuItem disabled={!filtered.length} onClick={() => { setMoreAnchor(null); openAll() }}>全部打开</MenuItem>
+            </Menu>
+          </>
+        )}
+        primary={<Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => openForm()}>添加网址</Button>}
+      />
 
       <PageBody sx={{ overflow: 'auto' }}>
         {!filtered.length && !loading ? <EmptyHint>{items.length ? '没有找到匹配的网址' : '暂无网址'}</EmptyHint> : null}
@@ -226,7 +249,7 @@ export default function BookmarksPage() {
             </Box>
             <Box sx={{ alignSelf: 'stretch', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'space-between', flexShrink: 0, gap: 0.4, maxWidth: 105 }}>
               <IconButton size="small" aria-label="网址操作" onClick={(event) => setMenu({ el: event.currentTarget, item })} sx={{ fontSize: 18 }}>···</IconButton>
-              {results[item.id] ? <Typography sx={{ fontSize: 10, lineHeight: '14px', color: 'text.secondary', whiteSpace: 'nowrap' }} title={results[item.id]}>{shortResult(results[item.id])}</Typography> : null}
+              {results[item.id] ? <Typography sx={{ fontSize: 11, lineHeight: '15px', color: 'text.secondary', whiteSpace: 'nowrap' }} title={results[item.id]}>{shortResult(results[item.id])}</Typography> : null}
             </Box>
           </LiftCard>
           </StaggerItem>
@@ -244,7 +267,12 @@ export default function BookmarksPage() {
         <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>{editing ? '编辑网址' : '添加网址'}</DialogTitle>
         <DialogContent>
           <FieldRow label="网址">
-            <TextField fullWidth label="网址" value={form.url} placeholder="https://example.com" onChange={(event) => setForm({ ...form, url: event.target.value })} onBlur={() => { const target = normalizeUrl(); if (target && validUrl(target)) void parseTitle(false) }} />
+            <TextField
+              fullWidth label="网址" value={form.url} placeholder="https://example.com"
+              error={Boolean(urlError)} helperText={urlError || undefined}
+              onChange={(event) => { setForm({ ...form, url: event.target.value }); if (urlError) setUrlError('') }}
+              onBlur={() => { const target = normalizeUrl(); if (validateUrl(target)) void parseTitle(false) }}
+            />
           </FieldRow>
           <Box sx={{ mb: 1.5 }}>
             <Stack direction="row" spacing={1} alignItems="stretch">

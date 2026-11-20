@@ -33,8 +33,20 @@ _NAT64_PREFIXES = (
     ipaddress.ip_network("64:ff9b:1::/48"),
 )
 
+# 198.18.0.0/15 是 RFC 2544 的基准测试保留段。Clash / Mihomo 等代理的
+# fake-IP 模式会让公网域名解析到这里，实际连接仍由本机 TUN 转发到代理。
+_FAKE_IP_NETWORKS = (ipaddress.ip_network("198.18.0.0/15"),)
 
-def is_public_ip(address: str) -> bool:
+
+def is_fake_ip(address: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    return isinstance(ip, ipaddress.IPv4Address) and any(ip in network for network in _FAKE_IP_NETWORKS)
+
+
+def is_public_ip(address: str, *, allow_fake_ip: bool = False) -> bool:
     """Return True only for a globally routable unicast address.
 
     ``ipaddress.is_global`` considers the NAT64 well-known prefix global even
@@ -45,6 +57,8 @@ def is_public_ip(address: str) -> bool:
         ip = ipaddress.ip_address(address)
     except ValueError:
         return False
+    if allow_fake_ip and is_fake_ip(address):
+        return True
     if isinstance(ip, ipaddress.IPv6Address):
         if ip.ipv4_mapped is not None or ip.sixtofour is not None or ip.teredo is not None:
             return False
@@ -78,7 +92,7 @@ def _port(parts) -> int:
         raise PublicHttpError("URL_REJECTED", "来源地址端口不合法")
 
 
-def public_target(url: str, *, allow_loopback: bool = False) -> tuple[object, int, str]:
+def public_target(url: str, *, allow_loopback: bool = False, allow_fake_ip: bool = False) -> tuple[object, int, str]:
     """Validate a URL and return (parsed URL, port, validated IP)."""
     raw = (url or "").strip()
     if not raw or len(raw) > 2048 or any(ord(ch) < 32 for ch in raw):
@@ -104,7 +118,9 @@ def public_target(url: str, *, allow_loopback: bool = False) -> tuple[object, in
         raise PublicHttpError("DNS_FAILED", "无法解析来源域名")
     addresses = [info[4][0] for info in infos]
     only_loopback = all(ipaddress.ip_address(address).is_loopback for address in addresses)
-    if not (allow_loopback and only_loopback) and any(not is_public_ip(address) for address in addresses):
+    if not (allow_loopback and only_loopback) and any(
+        not is_public_ip(address, allow_fake_ip=allow_fake_ip) for address in addresses
+    ):
         raise PublicHttpError("PRIVATE_ADDRESS", "来源地址指向非公开网络")
     addresses.sort(key=lambda value: ipaddress.ip_address(value).version != 4)
     return parts, port, addresses[0]
@@ -159,13 +175,14 @@ def fetch_public(
     method: str = "GET",
     body: bytes | None = None,
     allow_loopback: bool = False,
+    allow_fake_ip: bool = False,
 ) -> PublicResponse:
     started = time.monotonic()
     deadline = started + max(0.1, timeout)
     current = url
     redirects = 0
     while True:
-        parts, port, address = public_target(current, allow_loopback=allow_loopback)
+        parts, port, address = public_target(current, allow_loopback=allow_loopback, allow_fake_ip=allow_fake_ip)
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise PublicHttpError("TIMEOUT", "来源请求超时")

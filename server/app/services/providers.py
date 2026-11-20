@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import hashlib
-import ipaddress
 import json
 import socket
 import time
@@ -15,7 +14,7 @@ from urllib.parse import urlencode, urlparse
 from ..config import settings
 from ..errors import ApiError
 from .languages import to_provider_code
-from .public_http import PublicHttpError, fetch_public
+from .public_http import PublicHttpError, fetch_public, is_fake_ip, is_public_ip
 
 TIMEOUT_SECONDS = 60.0
 
@@ -90,7 +89,17 @@ def validate_base_url(url: str) -> str:
             infos = socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM)
         except (socket.gaierror, ValueError, TypeError):
             raise UpstreamError("UPSTREAM_DNS_FAILED", "无法解析翻译服务地址", 400)
-        if not infos or any(not ipaddress.ip_address(info[4][0]).is_global for info in infos):
+        addresses = [info[4][0] for info in infos]
+        if not infos or any(
+            not is_public_ip(address, allow_fake_ip=settings.allow_fake_ip_upstream)
+            for address in addresses
+        ):
+            if addresses and all(is_fake_ip(address) for address in addresses) and not settings.allow_fake_ip_upstream:
+                raise UpstreamError(
+                    "UPSTREAM_URL_REJECTED",
+                    "翻译服务地址解析到代理 fake-IP（198.18.0.0/15）；请在代理中放行该域名，或设置 WB_ALLOW_FAKE_IP_UPSTREAM=true",
+                    400,
+                )
             raise UpstreamError("UPSTREAM_URL_REJECTED", "翻译服务地址不能指向内网或保留地址", 400)
     return raw
 
@@ -131,6 +140,7 @@ def _request(
             method=method,
             body=body,
             allow_loopback=settings.allow_insecure_upstream,
+            allow_fake_ip=settings.allow_fake_ip_upstream,
         )
     except PublicHttpError as error:
         if error.code == "TIMEOUT":

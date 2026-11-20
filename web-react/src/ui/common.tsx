@@ -1,8 +1,8 @@
 import {
   Box,
-  Button,
   CircularProgress,
   FormControl,
+  IconButton,
   InputLabel,
   LinearProgress,
   MenuItem,
@@ -10,12 +10,13 @@ import {
   Select,
   Stack,
   TextField,
+  Tooltip,
   Typography,
   useTheme,
 } from '@mui/material'
-import { Divider } from '@mui/material'
-import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState, type DragEvent, type ReactElement, type ReactNode } from 'react'
+import { cloneElement, isValidElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactElement, type ReactNode } from 'react'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
+import RefreshIcon from '@mui/icons-material/Refresh'
 import { DataGrid, useGridApiRef, type GridColDef } from '@mui/x-data-grid'
 import { zhCN } from '@mui/x-data-grid/locales'
 
@@ -44,8 +45,66 @@ export function Page({
   )
 }
 
-export function PageToolbar({ children, sx }: { children: ReactNode; sx?: any }) {
-  return <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, minHeight: 44, flexShrink: 0, ...sx }}>{children}</Box>
+/**
+ * 模块操作栏统一槽位：
+ * 左侧上下文 | 右侧：筛选/搜索 → 刷新 → 更多 → 主操作
+ * 主操作固定最右，切换模块时位置不变。新增页面应优先使用本组件。
+ */
+export function ModuleToolbar({
+  info, filters, onRefresh, refreshLabel = '刷新', refreshDisabled = false, refreshing = false,
+  more, primary, sx,
+}: {
+  info?: ReactNode
+  filters?: ReactNode
+  onRefresh?: () => void
+  refreshLabel?: string
+  refreshDisabled?: boolean
+  refreshing?: boolean
+  more?: ReactNode
+  primary?: ReactNode
+  sx?: any
+}) {
+  return (
+    <Box
+      data-module-toolbar="true"
+      sx={{
+        display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, minHeight: 44, flexShrink: 0,
+        ...sx,
+      }}
+    >
+      {info ? (
+        <Box data-toolbar-slot="info" sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, minWidth: 0 }}>
+          {info}
+        </Box>
+      ) : null}
+      <Box
+        sx={{
+          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap',
+          gap: 0.75, ml: 'auto', minWidth: 0, flex: '1 1 auto',
+        }}
+      >
+        {filters ? <Box data-toolbar-slot="filters" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 0.75, minWidth: 0 }}>{filters}</Box> : null}
+        <Box data-toolbar-actions="true" sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexShrink: 0 }}>
+          {onRefresh ? (
+            <Box component="span" data-toolbar-slot="refresh" sx={{ display: 'inline-flex' }}>
+              <Tooltip title={refreshLabel}>
+                <span>
+                  <IconButton
+                    size="small" aria-label={refreshLabel}
+                    disabled={refreshDisabled || refreshing} onClick={onRefresh}
+                  >
+                    {refreshing ? <CircularProgress size={14} /> : <RefreshIcon fontSize="small" />}
+                  </IconButton>
+                </span>
+              </Tooltip>
+            </Box>
+          ) : null}
+          {more ? <Box component="span" data-toolbar-slot="more" sx={{ display: 'inline-flex' }}>{more}</Box> : null}
+          {primary ? <Box component="span" data-toolbar-slot="primary" sx={{ display: 'inline-flex' }}>{primary}</Box> : null}
+        </Box>
+      </Box>
+    </Box>
+  )
 }
 
 export function PageBody({ children, sx }: { children: ReactNode; sx?: any }) {
@@ -108,6 +167,7 @@ export interface Column<T> {
   label: ReactNode
   width?: number | string
   align?: 'left' | 'right' | 'center'
+  headerAlign?: 'left' | 'right' | 'center'
   ellipsis?: boolean
   sticky?: boolean
   sortable?: boolean
@@ -133,6 +193,10 @@ export function DataTable<T>({
   onColumnWidthsChange,
   columnVisibility,
   onColumnVisibilityChange,
+  pinnedLeft,
+  checkboxSelection,
+  rowSelectionModel,
+  onRowSelectionModelChange,
   sortKey,
   sortDirection = 'asc',
   onSort,
@@ -156,17 +220,29 @@ export function DataTable<T>({
   onColumnWidthsChange?: (widths: Record<string, number>) => void
   columnVisibility?: Record<string, boolean>
   onColumnVisibilityChange?: (model: Record<string, boolean>) => void
+  /** 需要固定在左侧的列 key，按顺序排列。 */
+  pinnedLeft?: string[]
+  /** 使用 DataGrid 内置复选框列（字段名 __check__）。 */
+  checkboxSelection?: boolean
+  /** 内置复选框的选中模型，行 id 为字符串。 */
+  rowSelectionModel?: readonly (string | number)[]
+  onRowSelectionModelChange?: (model: readonly (string | number)[]) => void
   sortKey?: string
   sortDirection?: 'asc' | 'desc'
   onSort?: (key: string, direction: 'asc' | 'desc') => void
   onSortClear?: () => void
   sx?: any
 }) {
-  const gridColumns: GridColDef[] = columns.map((column) => {
+  const rowIndexByRow = useMemo(() => {
+    const index = new Map<T, number>()
+    rows.forEach((row, position) => index.set(row, position))
+    return index
+  }, [rows])
+  const gridColumns = useMemo<GridColDef[]>(() => columns.map((column) => {
     const field = String(column.key)
     const pinnedActions = field === '__actions'
     const tailActions = field === 'actions'
-    const fixed = pinnedActions || tailActions || field === '__select'
+    const fixed = pinnedActions || tailActions
     const savedWidth = typeof columnWidths?.[field] === 'number' && columnWidths[field] > 0 ? columnWidths[field] : undefined
     const baseWidth = savedWidth ?? (typeof column.width === 'number' ? column.width : undefined)
     const hasSavedWidths = Boolean(columnWidths && Object.keys(columnWidths).length)
@@ -176,15 +252,14 @@ export function DataTable<T>({
       width: baseWidth,
       minWidth: savedWidth ?? (!fixed && typeof column.width === 'number' ? column.width : undefined),
       flex: fixed || savedWidth || hasSavedWidths ? 0 : typeof column.width === 'number' ? column.width : 1,
-      // 表头与单元格共用「水平居中」开关：勾选一起居中，不勾一起靠左
-      align: column.align ?? (centerX ? 'center' : 'left'),
-      headerAlign: centerX ? 'center' : 'left',
+      // 「水平居中」打开时整表居中；关闭时按列类型对齐（数字靠右、文本靠左）。
+      align: centerX ? 'center' : (column.align ?? 'left'),
+      headerAlign: centerX ? 'center' : (column.headerAlign ?? column.align ?? 'left'),
       sortable: Boolean(column.sortable && onSort),
-      hideable: !(pinnedActions || tailActions || field === '__select'),
-      disableColumnMenu: field === '__select',
+      hideable: !(pinnedActions || tailActions),
       renderHeader: () => column.headerRender ?? column.label,
       renderCell: (params) => {
-        if (column.render) return column.render(params.row as T, rows.indexOf(params.row as T))
+        if (column.render) return column.render(params.row as T, rowIndexByRow.get(params.row as T) ?? 0)
         const value = (params.row as any)?.[column.key]
         return (
           <Box component="span" title={value == null ? undefined : String(value)} sx={{ display: 'block', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -193,16 +268,27 @@ export function DataTable<T>({
         )
       },
     }
-  })
+  }), [columns, columnWidths, centerX, onSort, rowIndexByRow])
   const theme = useTheme()
   const softBg = theme.palette.mode === 'dark' ? '#242B2E' : '#F4F5F5'
   const apiRef = useGridApiRef()
   const hasActions = columns.some((column) => String(column.key) === '__actions')
-  // DataGrid 免费版没有 pinnedColumns 属性，但社区版内部状态已支持列固定，这里直接注入状态把操作列固定在右侧。
+  // DataGrid 免费版没有 pinnedColumns 属性，但社区版内部状态已支持列固定，这里直接注入状态：
+  // 左侧固定上下文列（日期、店铺等），右侧固定操作列。
+  const pinnedLeftFields = useMemo(
+    () => (checkboxSelection ? ['__check__', ...(pinnedLeft ?? [])] : (pinnedLeft ?? [])),
+    [checkboxSelection, pinnedLeft],
+  )
+  const pinnedLeftKey = [Boolean(checkboxSelection), ...pinnedLeftFields].join('|')
   useLayoutEffect(() => {
-    if (!hasActions) return
-    apiRef.current.setState((state: any) => ({ ...state, pinnedColumns: { left: [], right: ['__actions'] } }))
-  }, [apiRef, hasActions])
+    if (!checkboxSelection && pinnedLeft === undefined && !hasActions) return
+    const left = pinnedLeftFields
+    apiRef.current.setState((state: any) => ({
+      ...state,
+      pinnedColumns: { left, right: hasActions ? ['__actions'] : (state.pinnedColumns?.right ?? []) },
+    }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiRef, checkboxSelection, hasActions, pinnedLeftKey])
 
   const widthsChangeRef = useRef(onColumnWidthsChange)
   widthsChangeRef.current = onColumnWidthsChange
@@ -226,6 +312,73 @@ export function DataTable<T>({
       ? (naturalHeight <= maxHeight ? undefined : maxHeight)
       : maxHeight ?? (rows.length <= 8 ? undefined : 440)
   const effectiveHeight = !loading && rows.length === 0 ? undefined : height
+  const getRowId = useCallback((row: T) => {
+    const index = rowIndexByRow.get(row) ?? 0
+    return String(rowKey ? rowKey(row, index) : (row as any)?.id ?? index)
+  }, [rowKey, rowIndexByRow])
+  const handleRowClick = useCallback((params: { row: T }) => {
+    onRowClick?.(params.row, rowIndexByRow.get(params.row) ?? 0)
+  }, [onRowClick, rowIndexByRow])
+  const gridSx = useMemo(() => ({
+    height: effectiveHeight ?? undefined,
+    border: 1,
+    borderColor: 'divider',
+    borderRadius: 1.5,
+    bgcolor: 'background.paper',
+    '& .MuiDataGrid-columnHeaders': { bgcolor: 'action.hover', borderBottom: '1px solid', borderColor: 'divider' },
+    '& .MuiDataGrid-cell': {
+      fontSize: 12.5, borderBottom: '1px solid', borderColor: 'divider',
+      ...(columnDividers ? { borderRight: '1px solid', borderRightColor: 'divider' } : {}),
+      ...(centerY ? {} : { lineHeight: '1.5 !important', paddingTop: '4px !important' }),
+      ...(autoRowHeight ? { py: 1, whiteSpace: 'normal', lineHeight: 1.45, alignItems: 'center' } : {}),
+    },
+    '& .MuiDataGrid-row--lastVisible .MuiDataGrid-cell': { borderBottom: 0 },
+    '& .MuiDataGrid-columnHeaderTitle': { fontSize: 12.5, fontWeight: 600 },
+    // 排序入口保留列菜单和工具栏，隐藏表头里的排序箭头/按钮，避免重复
+    '& .MuiDataGrid-columnHeader .MuiDataGrid-iconButtonContainer': { display: 'none' },
+    '& .wb-table-cell-text': {
+      display: 'block', width: '100%', minWidth: 0, minHeight: 22, overflow: 'hidden',
+      textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderRadius: 4,
+      fontVariantNumeric: 'tabular-nums',
+    },
+    '& .wb-table-cell-text:hover': { backgroundColor: theme.palette.action.hover },
+    '& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within': { outline: 'none' },
+    '& .MuiDataGrid-scrollbar--horizontal': { height: '8px !important' },
+    '& .MuiDataGrid-scrollbar--horizontal > div': { height: '8px !important' },
+    '& .MuiDataGrid-scrollbar--vertical': { width: '8px !important' },
+    '& .MuiDataGrid-scrollbar--vertical > div': { width: '8px !important' },
+    '& .MuiDataGrid-scrollbar::-webkit-scrollbar': { width: 8, height: 8 },
+    '& .MuiDataGrid-scrollbar::-webkit-scrollbar-track': { backgroundColor: 'transparent' },
+    '& .MuiDataGrid-scrollbar::-webkit-scrollbar-thumb': {
+      backgroundColor: theme.palette.mode === 'dark' ? 'rgba(228,235,233,0.28)' : 'rgba(26,36,38,0.24)',
+      borderRadius: 4,
+    },
+    '& .MuiDataGrid-cell--pinnedRight': {
+      backgroundColor: 'background.paper',
+      boxShadow: '-8px 0 8px -8px rgba(0,0,0,0.28)',
+    },
+    '& .MuiDataGrid-columnHeader--pinnedRight': {
+      backgroundColor: softBg,
+      boxShadow: '-8px 0 8px -8px rgba(0,0,0,0.28)',
+    },
+    '& .MuiDataGrid-cell--pinnedLeft': {
+      backgroundColor: 'background.paper',
+    },
+    '& .MuiDataGrid-columnHeader--pinnedLeft': {
+      backgroundColor: softBg,
+      boxShadow: '8px 0 8px -8px rgba(0,0,0,0.28)',
+    },
+
+    ...(columnDividers ? {
+      '& .MuiDataGrid-columnHeader': { borderRight: '1px solid', borderColor: 'divider' },
+      '& .MuiDataGrid-cell:last-child, & .MuiDataGrid-columnHeader:last-child': { borderRight: 0 },
+    } : {}),
+    ...(striped ? {
+      '& .MuiDataGrid-row:nth-of-type(even)': { backgroundColor: softBg },
+      '& .MuiDataGrid-row:nth-of-type(even) .MuiDataGrid-cell--pinnedRight': { backgroundColor: softBg },
+      '& .MuiDataGrid-row:nth-of-type(even) .MuiDataGrid-cell--pinnedLeft': { backgroundColor: softBg },
+    } : {}),
+  }), [autoRowHeight, centerY, columnDividers, effectiveHeight, softBg, striped, theme.palette.action.hover, theme.palette.mode])
   return (
     <Box sx={{ width: '100%', minWidth: 0, ...(maxHeight === '100%' ? { flex: 1, minHeight: 0, height: '100%' } : {}), ...sx }}>
       <DataGrid
@@ -234,17 +387,20 @@ export function DataTable<T>({
         rows={rows}
         columns={gridColumns}
         loading={Boolean(loading)}
-        getRowId={(row) => {
-          const index = rows.indexOf(row)
-          return String(rowKey ? rowKey(row, index) : (row as any)?.id ?? index)
-        }}
-        onRowClick={onRowClick ? (params) => onRowClick(params.row as T, rows.indexOf(params.row as T)) : undefined}
+        getRowId={getRowId}
+        onRowClick={onRowClick ? handleRowClick : undefined}
         hideFooter
         disableRowSelectionOnClick
         disableColumnFilter
+        checkboxSelection={Boolean(checkboxSelection)}
+        indeterminateCheckboxAction="select"
+        keepNonExistentRowsSelected
+        rowSelectionModel={rowSelectionModel}
+        onRowSelectionModelChange={onRowSelectionModelChange}
         columnVisibilityModel={columnVisibility}
         onColumnVisibilityModelChange={onColumnVisibilityChange ? (model) => onColumnVisibilityChange(model) : undefined}
         scrollbarSize={8}
+        columnBufferPx={600}
         autoHeight={!effectiveHeight}
         getRowHeight={autoRowHeight ? () => 'auto' as const : undefined}
         rowHeight={autoRowHeight ? undefined : rowHeightValue}
@@ -259,52 +415,7 @@ export function DataTable<T>({
           onSort(next.field, next.sort === 'desc' ? 'desc' : 'asc')
         }}
         slots={{ noRowsOverlay: () => <Box sx={{ p: 4, textAlign: 'center', fontSize: 13, color: 'text.secondary' }}>{empty}</Box> }}
-        sx={{
-          height: effectiveHeight ?? undefined,
-          border: 1,
-          borderColor: 'divider',
-          borderRadius: 1.5,
-          bgcolor: 'background.paper',
-          '& .MuiDataGrid-columnHeaders': { bgcolor: 'action.hover', borderBottom: '1px solid', borderColor: 'divider' },
-          '& .MuiDataGrid-cell': {
-            fontSize: 12.5, borderBottom: '1px solid', borderColor: 'divider',
-            ...(columnDividers ? { borderRight: '1px solid', borderRightColor: 'divider' } : {}),
-            ...(centerY ? {} : { lineHeight: '1.5 !important', paddingTop: '4px !important' }),
-            ...(autoRowHeight ? { py: 1, whiteSpace: 'normal', lineHeight: 1.45, alignItems: 'center' } : {}),
-          },
-          '& .MuiDataGrid-row--lastVisible .MuiDataGrid-cell': { borderBottom: 0 },
-          '& .MuiDataGrid-columnHeaderTitle': { fontSize: 12.5, fontWeight: 600 },
-          // 排序入口保留列菜单和工具栏，隐藏表头里的排序箭头/按钮，避免重复
-          '& .MuiDataGrid-columnHeader .MuiDataGrid-iconButtonContainer': { display: 'none' },
-          '& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within': { outline: 'none' },
-          '& .MuiDataGrid-scrollbar--horizontal': { height: '8px !important' },
-          '& .MuiDataGrid-scrollbar--horizontal > div': { height: '8px !important' },
-          '& .MuiDataGrid-scrollbar--vertical': { width: '8px !important' },
-          '& .MuiDataGrid-scrollbar--vertical > div': { width: '8px !important' },
-          '& .MuiDataGrid-scrollbar::-webkit-scrollbar': { width: 8, height: 8 },
-          '& .MuiDataGrid-scrollbar::-webkit-scrollbar-track': { backgroundColor: 'transparent' },
-          '& .MuiDataGrid-scrollbar::-webkit-scrollbar-thumb': {
-            backgroundColor: theme.palette.mode === 'dark' ? 'rgba(228,235,233,0.28)' : 'rgba(26,36,38,0.24)',
-            borderRadius: 4,
-          },
-          '& .MuiDataGrid-cell--pinnedRight': {
-            backgroundColor: 'background.paper',
-            boxShadow: '-8px 0 8px -8px rgba(0,0,0,0.28)',
-          },
-          '& .MuiDataGrid-columnHeader--pinnedRight': {
-            backgroundColor: softBg,
-            boxShadow: '-8px 0 8px -8px rgba(0,0,0,0.28)',
-          },
-
-          ...(columnDividers ? {
-            '& .MuiDataGrid-columnHeader': { borderRight: '1px solid', borderColor: 'divider' },
-            '& .MuiDataGrid-cell:last-child, & .MuiDataGrid-columnHeader:last-child': { borderRight: 0 },
-          } : {}),
-          ...(striped ? {
-            '& .MuiDataGrid-row:nth-of-type(even)': { backgroundColor: softBg },
-            '& .MuiDataGrid-row:nth-of-type(even) .MuiDataGrid-cell--pinnedRight': { backgroundColor: softBg },
-          } : {}),
-        }}
+        sx={gridSx}
       />
     </Box>
   )
@@ -323,10 +434,15 @@ export function Pager({
   showSize?: boolean
 }) {
   const pages = Math.max(1, Math.ceil(total / pageSize))
+  const currentPage = Math.min(page, pages)
+  const from = total > 0 ? (currentPage - 1) * pageSize + 1 : 0
+  const to = Math.min(total, currentPage * pageSize)
   if (total <= 0 && !showSize) return null
   return (
     <Stack direction="row" spacing={1.5} alignItems="center" justifyContent="flex-end" sx={{ py: 1 }}>
-      <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>共 {total} 条</Typography>
+      <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+        {total > 0 ? `第 ${from}–${to} 条 / 共 ${total} 条` : '共 0 条'}
+      </Typography>
       {showSize && onPageSize ? (
         <Select
           size="small"
@@ -340,7 +456,7 @@ export function Pager({
       <Pagination
         size="small"
         count={pages}
-        page={Math.min(page, pages)}
+        page={currentPage}
         onChange={(_, value) => onPage(value)}
         showFirstButton
         showLastButton

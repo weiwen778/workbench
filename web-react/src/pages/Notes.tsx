@@ -2,15 +2,17 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Alert, Autocomplete, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
-  Drawer, FormControl, IconButton, InputLabel, Menu, MenuItem, Popover, Select, Stack, TextField, Typography, useMediaQuery,
+  Drawer, FormControl, IconButton, InputLabel, Menu, MenuItem, Popover, Select, Stack, TextField, Tooltip, Typography, useMediaQuery,
 } from '@mui/material'
 import { Divider } from '@mui/material'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
-import { Check, Clock, Edit, MoreFilled, Picture, Plus, Search, Tune } from '@/icons'
-import { apiError, http } from '@/api/client'
-import { EmptyHint, Page } from '@/ui/common'
+import { Check, Edit, Folder, MoreFilled, Picture, Plus, Search, Tune } from '@/icons'
+import { apiError, http, readCsrfToken } from '@/api/client'
+import { EmptyHint, ModuleToolbar } from '@/ui/common'
 import { confirmDialog, promptDialog, toast } from '@/ui/feedback'
+import { clearNoteDraft, readNoteDraft, writeNoteDraft } from '@/storage/note-drafts'
+import { useSession } from '@/session'
 import MarkdownEditor from '@/components/MarkdownEditor'
 import { exportNote } from '@/utils/note-export'
 
@@ -30,10 +32,12 @@ export default function NotesPage() {
   const params = useParams()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+  const session = useSession()
+  const userId = session.user?.id ?? 0
   const routeFolder = String(params.folderKey || '')
 
   const [folders, setFolders] = useState<any[]>([])
-  const [uncategorized, setUncategorized] = useState(0)
+  const [, setUncategorized] = useState(0)
   const [tags, setTags] = useState<any[]>([])
   const [notes, setNotes] = useState<any[]>([])
   const [notePage, setNotePage] = useState(1)
@@ -48,6 +52,7 @@ export default function NotesPage() {
   const [filterTag, setFilterTag] = useState<number | null>(null)
   const [tagAnchor, setTagAnchor] = useState<HTMLElement | null>(null)
   const [folderMenu, setFolderMenu] = useState<HTMLElement | null>(null)
+  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [saving, setSaving] = useState(false)
   const [conflict, setConflict] = useState(false)
@@ -68,6 +73,7 @@ export default function NotesPage() {
 
   const suppress = useRef(true)
   const saveTimer = useRef<number | null>(null)
+  const draftTimer = useRef<number | null>(null)
   const searchTimer = useRef<number | null>(null)
   const saveInFlight = useRef<Promise<boolean> | null>(null)
   const noteRequest = useRef(0)
@@ -131,18 +137,71 @@ export default function NotesPage() {
       || JSON.stringify(snapshot.tagNames) !== JSON.stringify(snapshot.current.tags)
   }, [])
 
+  const persistDraft = useCallback(() => {
+    const snapshot = stateRef.current
+    if (!snapshot.current) return
+    writeNoteDraft(snapshot.current.id, userId, {
+      title: snapshot.title,
+      content: snapshot.content,
+      folderId: snapshot.folderId,
+      tagNames: snapshot.tagNames,
+      version: snapshot.version,
+    })
+  }, [userId])
+
+  /**
+   * 页面被刷新/关闭时，普通 axios 请求可能被浏览器直接中断。
+   * keepalive fetch 能让请求在文档卸载后继续完成；即使失败，本地草稿也会在下次打开时恢复。
+   */
+  const flushSaveOnUnload = useCallback(() => {
+    const snapshot = stateRef.current
+    if (!snapshot.current || !hasUnsaved()) return
+    persistDraft()
+    // 已有自动保存在飞行中时不要再发一次，避免同一版本并发 PUT 产生 409。
+    if (saveInFlight.current) return
+    const token = readCsrfToken()
+    void fetch(`/api/v1/notes/${snapshot.current.id}`, {
+      method: 'PUT',
+      credentials: 'include',
+      keepalive: true,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'X-CSRF-Token': token } : {}),
+      },
+      body: JSON.stringify({
+        title: snapshot.title,
+        content: snapshot.content,
+        folder_id: snapshot.folderId ?? null,
+        tags: snapshot.tagNames,
+        version: snapshot.version,
+        mode: 'auto',
+      }),
+    }).catch(() => { /* 草稿已写本地，忽略卸载阶段的网络失败 */ })
+  }, [hasUnsaved, persistDraft])
+
   const performSave = useCallback(async (saveMode: 'auto' | 'manual'): Promise<boolean> => {
     const snapshot = stateRef.current
     if (!snapshot.current) return true
     setSaving(true); setSaveState('saving')
     try {
-      const { data } = await http.put(`/notes/${snapshot.current.id}`, {
+      const noteId = snapshot.current.id
+      const folderChanged = snapshot.folderId !== snapshot.current.folder_id
+      const tagsChanged = JSON.stringify(snapshot.tagNames) !== JSON.stringify(snapshot.current.tags)
+      const { data } = await http.put(`/notes/${noteId}`, {
         title: snapshot.title, content: snapshot.content,
         folder_id: snapshot.folderId ?? null, tags: snapshot.tagNames,
         version: snapshot.version, mode: saveMode,
       })
       setVersion(data.version); setCurrent(data); setSaveState('saved'); setConflict(false)
-      await Promise.all([loadNotes(), loadFolders()])
+      // 自动保存不要整页重新拉列表：只更新当前这条摘要，避免每次保存都重排 50 条笔记。
+      setNotes((prev) => prev.map((item) => item.id === data.id
+        ? { ...item, title: data.title, raw_title: data.raw_title, excerpt: data.excerpt, folder_id: data.folder_id, tags: data.tags, updated_at: data.updated_at, version: data.version }
+        : item))
+      if (folderChanged || tagsChanged) await Promise.all([loadNotes(), loadFolders()])
+      const latest = stateRef.current
+      const stillDirty = latest.title !== data.raw_title || latest.content !== data.content
+        || latest.folderId !== data.folder_id || JSON.stringify(latest.tagNames) !== JSON.stringify(data.tags)
+      if (!stillDirty) clearNoteDraft(noteId, userId)
       return true
     } catch (error: any) {
       setSaveState('error')
@@ -150,7 +209,7 @@ export default function NotesPage() {
       else toast.error(apiError(error).message)
       return false
     } finally { setSaving(false) }
-  }, [loadNotes, loadFolders])
+  }, [loadNotes, loadFolders, userId])
 
   const save = useCallback(async (saveMode: 'auto' | 'manual'): Promise<boolean> => {
     if (saveTimer.current) { window.clearTimeout(saveTimer.current); saveTimer.current = null }
@@ -161,29 +220,59 @@ export default function NotesPage() {
     try { return await request } finally { if (saveInFlight.current === request) saveInFlight.current = null }
   }, [hasUnsaved, performSave])
 
-  const openNote = useCallback(async (id: number, skipGuard = false) => {
+  const openNote = useCallback(async (id: number, skipGuard = false, restoreDraft = true) => {
     if (!skipGuard && (hasUnsaved() || saveInFlight.current)) {
       if (!await save('manual')) return
     }
     try {
       const { data } = await http.get(`/notes/${id}`)
+      const draft = restoreDraft ? readNoteDraft(id, userId) : null
+      const staleDraft = Boolean(draft) && draft!.version < data.version
+      const draftDiffers = Boolean(draft) && (
+        draft!.title !== (data.raw_title ?? '')
+        || draft!.content !== data.content
+        || draft!.folderId !== data.folder_id
+        || JSON.stringify(draft!.tagNames) !== JSON.stringify(data.tags)
+      )
       suppress.current = true
       setCurrent(data)
-      setTitle(data.raw_title ?? data.title)
-      setContent(data.content)
-      setFolderId(data.folder_id)
-      setTagNames([...data.tags])
+      if (draftDiffers && draft) {
+        setTitle(draft.title)
+        setContent(draft.content)
+        setFolderId(draft.folderId)
+        setTagNames([...draft.tagNames])
+      } else {
+        if (draft) clearNoteDraft(id, userId)
+        setTitle(data.raw_title ?? data.title)
+        setContent(data.content)
+        setFolderId(data.folder_id)
+        setTagNames([...data.tags])
+      }
       setVersion(data.version)
       setSaveState('idle'); setConflict(false)
-      window.setTimeout(() => { suppress.current = false }, 0)
+      if (draftDiffers && staleDraft) {
+        // 服务端已经在别处更新过：不要把旧草稿直接 PUT 回去，交给用户选择。
+        setConflict(true)
+        setEditOpen(true)
+        toast.warning('本地草稿基于旧版本，已载入编辑器；可换成最新内容，或按你的内容保存。')
+      } else if (draftDiffers) {
+        toast.info('已恢复上次未保存的草稿')
+      }
+      window.setTimeout(() => {
+        suppress.current = false
+        // 只有基于当前服务端版本的草稿才自动补保存；旧草稿等待用户确认。
+        if (draftDiffers && !staleDraft) void save('auto')
+      }, 80)
     } catch (error) { toast.error(apiError(error).message) }
-  }, [hasUnsaved, save])
+  }, [hasUnsaved, save, userId])
 
   useEffect(() => {
     if (suppress.current || !stateRef.current.current) return
     setSaveState('idle')
     if (saveTimer.current) window.clearTimeout(saveTimer.current)
     saveTimer.current = window.setTimeout(() => void save('auto'), 1500)
+    if (draftTimer.current) window.clearTimeout(draftTimer.current)
+    draftTimer.current = window.setTimeout(persistDraft, 150)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [title, content, folderId, tagNames])
 
@@ -204,16 +293,22 @@ export default function NotesPage() {
   }, [routeFolder, searchParams.get('note')])
 
   useEffect(() => {
-    const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (hasUnsaved()) { event.preventDefault(); event.returnValue = '' }
-    }
-    window.addEventListener('beforeunload', beforeUnload)
+    // 不再弹 beforeunload 原生确认框：它会阻塞刷新/导航，让页面看起来“卡死”。
+    // 改为在页面隐藏/卸载时把内容写本地并 keepalive 提交，刷新后还能恢复草稿。
+    const flush = () => { if (hasUnsaved()) flushSaveOnUnload() }
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flush() }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onVisibility)
     return () => {
-      window.removeEventListener('beforeunload', beforeUnload)
-      if (saveTimer.current) window.clearTimeout(saveTimer.current)
-      if (searchTimer.current) window.clearTimeout(searchTimer.current)
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', onVisibility)
+      if (saveTimer.current) { window.clearTimeout(saveTimer.current); saveTimer.current = null }
+      if (draftTimer.current) { window.clearTimeout(draftTimer.current); draftTimer.current = null }
+      if (searchTimer.current) { window.clearTimeout(searchTimer.current); searchTimer.current = null }
+      // 卸载前同步落一份本地草稿，防止 1.5 秒自动保存窗口内切页丢字。
+      if (hasUnsaved()) flushSaveOnUnload()
     }
-  }, [hasUnsaved])
+  }, [flushSaveOnUnload, hasUnsaved, persistDraft])
 
   const onSearchChange = (value: string) => {
     keywordRef.current = value
@@ -229,7 +324,12 @@ export default function NotesPage() {
       await Promise.all([loadNotes(), loadFolders()])
       await openNote(data.id, true)
       setEditOpen(true)
-      window.setTimeout(() => document.querySelector<HTMLInputElement>('.edit-title input')?.focus(), 150)
+      // 首次进入把焦点放在标题上；但如果用户已经开始点正文/选择文件夹，不要抢焦点。
+      window.setTimeout(() => {
+        const active = document.activeElement as HTMLElement | null
+        if (active && active.closest('.markdown-editor, input, textarea, select, .MuiSelect-select')) return
+        document.querySelector<HTMLInputElement>('.edit-title input')?.focus()
+      }, 150)
     } catch (error) { toast.error(apiError(error).message) }
   }
 
@@ -242,6 +342,25 @@ export default function NotesPage() {
       setCurrent(null)
       await loadFolders()
       navigate('/notes/uncategorized', { replace: true })
+    } catch (error) { toast.error(apiError(error).message) }
+  }
+
+  const removeNote = async () => {
+    if (!current) return
+    const name = current.raw_title || '未命名笔记'
+    const ok = await confirmDialog({
+      title: '删除笔记', danger: true, confirmText: '删除',
+      message: `删除笔记「${name}」？删除后会在回收站保留 30 天，未保存的修改也会一并丢弃。`,
+    })
+    if (!ok) return
+    if (saveTimer.current) { window.clearTimeout(saveTimer.current); saveTimer.current = null }
+    while (saveInFlight.current) { await saveInFlight.current }
+    try {
+      await http.delete(`/notes/${current.id}`)
+      clearNoteDraft(current.id, userId)
+      setCurrent(null)
+      await Promise.all([loadNotes(), loadFolders()])
+      toast.success('已删除')
     } catch (error) { toast.error(apiError(error).message) }
   }
 
@@ -285,7 +404,8 @@ export default function NotesPage() {
 
   const reloadServer = async () => {
     if (!current) return
-    await openNote(current.id, true)
+    clearNoteDraft(current.id, userId)
+    await openNote(current.id, true, false)
     toast.success('已载入最新内容')
   }
 
@@ -320,6 +440,7 @@ export default function NotesPage() {
       const leave = await confirmDialog({ title: '保存失败', danger: true, confirmText: '仍然关闭', message: '内容还没有保存成功，关闭后本次修改会被丢弃。' })
       if (!leave) return
       // 丢弃草稿，回到服务器上的版本，避免阅读页显示未保存内容
+      if (current) clearNoteDraft(current.id, userId)
       suppress.current = true
       setTitle(current?.raw_title ?? '')
       setContent(current?.content ?? '')
@@ -351,6 +472,7 @@ export default function NotesPage() {
     try {
       const { data } = await http.post(`/notes/${current.id}/revisions/${rev.id}/restore`, { version: current.version })
       setPreviewOpen(false); setRevisionsOpen(false)
+      clearNoteDraft(current.id, userId)
       suppress.current = true
       setTitle(data.raw_title ?? data.title); setContent(data.content); setVersion(data.version); setCurrent(data)
       setSaveState('saved')
@@ -384,22 +506,12 @@ export default function NotesPage() {
   }, [editOpen, save])
 
   return (
-    <Box className={`notes-layout${current ? ' has-current' : ''}`} sx={{ display: 'flex', height: '100%', minHeight: 0 }}>
-      <Box className="note-list-pane" sx={{ display: { xs: current ? 'none' : 'flex', md: 'flex' }, width: { xs: '100%', md: 232 }, flex: { xs: 1, md: '0 0 232px' }, borderRight: { md: (theme) => `1px solid ${theme.palette.divider}` }, borderColor: { md: 'divider' }, bgcolor: 'background.paper', flexDirection: 'column', minHeight: 0 }}>
-        <Box className="list-toolbar" sx={{ p: '6px 8px', borderBottom: 1, borderColor: 'divider' }}>
-          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 0.6 }}>
-            <Typography sx={{ fontSize: 13, fontWeight: 600 }} noWrap>
-              {selectedFolder?.name || (uncategorizedFilter ? '未分类' : missingFolder ? '文件夹不存在' : '全部笔记')}
-            </Typography>
-            <IconButton size="small" aria-label="文件夹操作" onClick={(event) => setFolderMenu(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
-            <Menu anchorEl={folderMenu} open={Boolean(folderMenu)} onClose={() => setFolderMenu(null)}>
-              <MenuItem onClick={() => void folderCommand('create')}>新建文件夹</MenuItem>
-              {selectedFolder ? <MenuItem onClick={() => void folderCommand('rename')}>重命名文件夹</MenuItem> : null}
-              {selectedFolder ? <MenuItem divider sx={{ color: 'error.main' }} onClick={() => void folderCommand('delete')}>删除文件夹</MenuItem> : null}
-            </Menu>
-          </Stack>
-          {missingFolder ? <Alert severity="error" sx={{ mb: 1, fontSize: 12 }}>文件夹不存在或已删除</Alert> : null}
-          <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mb: 1 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <ModuleToolbar
+        sx={{ px: 1.5, borderBottom: 1, borderColor: 'divider' }}
+        info={(
+          <>
+            <Typography sx={{ fontSize: 13, fontWeight: 600 }} noWrap>{noteTotal} 篇笔记</Typography>
             <Button size="small" onClick={(event) => setTagAnchor(event.currentTarget)} sx={{ fontSize: 12 }}>
               {selectedTag ? `标签：${selectedTag.name}` : '标签筛选'}
             </Button>
@@ -417,15 +529,35 @@ export default function NotesPage() {
                 {!tags.length ? <Typography sx={{ fontSize: 12, color: 'text.secondary', p: 0.5 }}>还没有标签</Typography> : null}
               </Box>
             </Popover>
-          </Stack>
+          </>
+        )}
+        filters={(
           <TextField
-            fullWidth size="small" placeholder="搜索标题或正文" value={keyword}
+            size="small" placeholder="搜索标题或正文" value={keyword}
             onChange={(event) => onSearchChange(event.target.value)}
             InputProps={{ startAdornment: <Search sx={{ fontSize: 17, mr: 0.5, color: 'text.secondary' }} /> }}
-            sx={{ mb: 0.75, '& .MuiOutlinedInput-root': { fontSize: 12.5 } }}
+            sx={{ width: { xs: '100%', sm: 220 } }}
           />
-          <Button fullWidth size="small" variant="contained" startIcon={<Plus fontSize="small" />} disabled={missingFolder} onClick={createNote}>新建笔记</Button>
-        </Box>
+        )}
+        onRefresh={() => void loadNotes()}
+        refreshLabel="刷新笔记"
+        more={(
+          <>
+            <Tooltip title="文件夹操作">
+              <IconButton size="small" aria-label="文件夹操作" onClick={(event) => setFolderMenu(event.currentTarget)}><Folder fontSize="small" /></IconButton>
+            </Tooltip>
+            <Menu anchorEl={folderMenu} open={Boolean(folderMenu)} onClose={() => setFolderMenu(null)}>
+              <MenuItem onClick={() => { setFolderMenu(null); void folderCommand('create') }}>新建文件夹</MenuItem>
+              {selectedFolder ? <MenuItem onClick={() => { setFolderMenu(null); void folderCommand('rename') }}>重命名文件夹</MenuItem> : null}
+              {selectedFolder ? <MenuItem divider sx={{ color: 'error.main' }} onClick={() => { setFolderMenu(null); void folderCommand('delete') }}>删除文件夹</MenuItem> : null}
+            </Menu>
+          </>
+        )}
+        primary={<Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} disabled={missingFolder} onClick={createNote}>新建笔记</Button>}
+      />
+      <Box className={`notes-layout${current ? ' has-current' : ''}`} sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      <Box className="note-list-pane" sx={{ display: { xs: current ? 'none' : 'flex', md: 'flex' }, width: { xs: '100%', md: 232 }, flex: { xs: 1, md: '0 0 232px' }, borderRight: { md: (theme) => `1px solid ${theme.palette.divider}` }, borderColor: { md: 'divider' }, bgcolor: 'background.paper', flexDirection: 'column', minHeight: 0 }}>
+        {missingFolder ? <Alert severity="error" sx={{ m: 1, fontSize: 12 }}>文件夹不存在或已删除</Alert> : null}
         <Box className="note-list" sx={{ flex: 1, overflow: 'auto', p: 1, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
           {notes.map((item) => (
             <Box
@@ -443,7 +575,7 @@ export default function NotesPage() {
               <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 0.25, display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>
                 {item.excerpt || '空白笔记'}
               </Typography>
-              <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1} sx={{ fontSize: 11.5, color: 'text.secondary', mt: 0.5 }}>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1} sx={{ fontSize: 12, color: 'text.secondary', mt: 0.5 }}>
                 <span style={{ whiteSpace: 'nowrap' }}>{formatDate(item.updated_at)}</span>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.tags?.length ? item.tags.join(' · ') : ''}</span>
               </Stack>
@@ -461,34 +593,50 @@ export default function NotesPage() {
       </Box>
 
       <Box className="editor-pane" sx={{ display: { xs: current ? 'flex' : 'none', md: 'flex' }, flex: 1, minWidth: 0, flexDirection: 'column', bgcolor: 'background.paper', minHeight: 0 }}>
-        {current ? <Button size="small" onClick={() => setCurrent(null)} sx={{ display: { xs: 'inline-flex', md: 'none' }, alignSelf: 'flex-start', m: 0.75 }}>返回笔记列表</Button> : null}
         {current ? (
           <>
-            <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap sx={{ px: 1.5, py: 0.75, borderBottom: 1, borderColor: 'divider' }}>
-              <Button size="small" variant="contained" startIcon={<Edit fontSize="small" />} onClick={openEditor}>编辑</Button>
-              <Box sx={{ flex: 1 }} />
-              <Button size="small" startIcon={<Tune fontSize="small" />} onClick={(event) => setWidthAnchor(event.currentTarget)}>宽度</Button>
-              <Menu anchorEl={widthAnchor} open={Boolean(widthAnchor)} onClose={() => setWidthAnchor(null)}>
-                {NOTE_WIDTHS.map((item) => (
-                  <MenuItem
-                    key={item.key} selected={item.key === widthKey}
-                    onClick={() => { setWidthKey(item.key); localStorage.setItem('wb_note_width', item.key); setWidthAnchor(null) }}
-                    sx={{ gap: 3, minWidth: 130 }}
-                  >
-                    <Box sx={{ flex: 1 }}>{item.label}</Box>
-                    {item.key === widthKey ? <Check sx={{ fontSize: 16 }} /> : null}
-                  </MenuItem>
-                ))}
-              </Menu>
-              <Button size="small" disabled={exporting} onClick={(event) => setExportMenu(event.currentTarget)}>导出</Button>
-              <Menu anchorEl={exportMenu} open={Boolean(exportMenu)} onClose={() => setExportMenu(null)}>
-                <MenuItem onClick={() => void doExport('html')}>HTML 网页</MenuItem>
-                <MenuItem onClick={() => void doExport('pdf')}>PDF 文档</MenuItem>
-                <MenuItem onClick={() => void doExport('png')}>PNG 图片</MenuItem>
-                <MenuItem onClick={() => void doExport('docx')}>Word 文档</MenuItem>
-              </Menu>
-              <Button size="small" startIcon={<Clock fontSize="small" />} onClick={() => void openRevisions()}>历史版本</Button>
-            </Stack>
+            <ModuleToolbar
+              sx={{ px: 1.5, py: 0.75, borderBottom: 1, borderColor: 'divider' }}
+              info={(
+                <Button size="small" onClick={() => setCurrent(null)} sx={{ display: { xs: 'inline-flex', md: 'none' } }}>返回笔记列表</Button>
+              )}
+              filters={(
+                <>
+                  <Button size="small" startIcon={<Tune fontSize="small" />} onClick={(event) => setWidthAnchor(event.currentTarget)}>宽度</Button>
+                  <Menu anchorEl={widthAnchor} open={Boolean(widthAnchor)} onClose={() => setWidthAnchor(null)}>
+                    {NOTE_WIDTHS.map((item) => (
+                      <MenuItem
+                        key={item.key} selected={item.key === widthKey}
+                        onClick={() => { setWidthKey(item.key); localStorage.setItem('wb_note_width', item.key); setWidthAnchor(null) }}
+                        sx={{ gap: 3, minWidth: 130 }}
+                      >
+                        <Box sx={{ flex: 1 }}>{item.label}</Box>
+                        {item.key === widthKey ? <Check sx={{ fontSize: 16 }} /> : null}
+                      </MenuItem>
+                    ))}
+                  </Menu>
+                  <Button size="small" disabled={exporting} onClick={(event) => setExportMenu(event.currentTarget)}>导出</Button>
+                  <Menu anchorEl={exportMenu} open={Boolean(exportMenu)} onClose={() => setExportMenu(null)}>
+                    <MenuItem onClick={() => void doExport('html')}>HTML 网页</MenuItem>
+                    <MenuItem onClick={() => void doExport('pdf')}>PDF 文档</MenuItem>
+                    <MenuItem onClick={() => void doExport('png')}>PNG 图片</MenuItem>
+                    <MenuItem onClick={() => void doExport('docx')}>Word 文档</MenuItem>
+                  </Menu>
+                </>
+              )}
+              more={(
+                <>
+                  <Tooltip title="笔记操作">
+                    <IconButton size="small" aria-label="笔记操作" onClick={(event) => setMoreAnchor(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
+                  </Tooltip>
+                  <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
+                    <MenuItem onClick={() => { setMoreAnchor(null); void openRevisions() }}>历史版本</MenuItem>
+                    <MenuItem divider sx={{ color: 'error.main' }} onClick={() => { setMoreAnchor(null); void removeNote() }}>删除笔记</MenuItem>
+                  </Menu>
+                </>
+              )}
+              primary={<Button size="small" variant="contained" startIcon={<Edit fontSize="small" />} onClick={openEditor}>编辑</Button>}
+            />
 
             <Box className="note-reader" sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
               <Box sx={{ maxWidth: contentWidth, mx: 'auto', px: { xs: 2, md: 3 }, py: { xs: 2, md: 2.5 } }}>
@@ -519,7 +667,7 @@ export default function NotesPage() {
       >
         <DialogTitle sx={{ px: 2, py: 1, borderBottom: 1, borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Typography sx={{ fontSize: 15, fontWeight: 600, flex: 1, minWidth: 0 }} noWrap>{title || '未命名笔记'}</Typography>
-          <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>编辑 · 预览</Typography>
+          <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>编辑 · 预览</Typography>
         </DialogTitle>
 
         <DialogContent sx={{ p: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -554,7 +702,7 @@ export default function NotesPage() {
 
           <Box className="edit-title" sx={{ px: 2, py: 1, borderBottom: 1, borderColor: 'divider' }}>
             <TextField
-              fullWidth variant="standard" placeholder="未命名笔记" value={title} inputProps={{ maxLength: 200 }}
+              fullWidth variant="standard" placeholder="不填写时显示为「未命名笔记」" value={title} inputProps={{ maxLength: 200 }}
               onChange={(event) => setTitle(event.target.value)}
               InputProps={{ disableUnderline: true }}
               sx={{ '& input': { fontSize: 17, fontWeight: 600 } }}
@@ -563,13 +711,13 @@ export default function NotesPage() {
 
           <Box sx={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0,1fr) minmax(0,1fr)' }, gridTemplateRows: { xs: 'minmax(0,1fr) minmax(0,1fr)', md: 'minmax(0,1fr)' } }}>
             <Box sx={{ minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', borderRight: { md: 1 }, borderBottom: { xs: 1, md: 0 }, borderColor: 'divider' }}>
-              <Typography sx={{ px: 2, py: 0.75, fontSize: 11.5, color: 'text.secondary', borderBottom: 1, borderColor: 'divider' }}>编辑</Typography>
+              <Typography sx={{ px: 2, py: 0.75, fontSize: 12, color: 'text.secondary', borderBottom: 1, borderColor: 'divider' }}>编辑</Typography>
               <Box sx={{ flex: 1, minHeight: 0, px: 1.5, py: 0.75 }}>
                 <MarkdownEditor value={content} onChange={setContent} onPaste={onPaste} />
               </Box>
             </Box>
             <Box sx={{ minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-              <Typography sx={{ px: 2, py: 0.75, fontSize: 11.5, color: 'text.secondary', borderBottom: 1, borderColor: 'divider' }}>预览</Typography>
+              <Typography sx={{ px: 2, py: 0.75, fontSize: 12, color: 'text.secondary', borderBottom: 1, borderColor: 'divider' }}>预览</Typography>
               <Box className="markdown-body" sx={{ flex: 1, minHeight: 0, overflow: 'auto', px: 2.5, py: 2 }}>
                 {content.trim()
                   ? <Box dangerouslySetInnerHTML={{ __html: previewHtml }} />
@@ -616,6 +764,7 @@ export default function NotesPage() {
           <Button size="small" variant="contained" onClick={() => previewing && void restoreRevision(previewing)}>恢复此版本</Button>
         </DialogActions>
       </Dialog>
+      </Box>
     </Box>
   )
 }

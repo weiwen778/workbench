@@ -7,7 +7,7 @@ import QRCode from 'qrcode'
 import JsBarcode from 'jsbarcode'
 import { Check, CopyDocument, Download, Picture, Upload, View } from '@/icons'
 import { copyText } from '@/api/client'
-import { Page, PageBody, PageToolbar } from '@/ui/common'
+import { ModuleToolbar, Page, PageBody } from '@/ui/common'
 import { toast } from '@/ui/feedback'
 import { downloadBlob } from '@/convert/files'
 import { decodeCodeImage, type DecodedCode } from '@/codes/decode'
@@ -233,14 +233,16 @@ export default function CodesPage() {
 
   return (
     <Page variant="dense">
-      <PageToolbar sx={{ gap: 1 }}>
-        <Tabs value={tab} onChange={(_, value) => setTab(value)} sx={{ minHeight: 34, '& .MuiTab-root': { minHeight: 34, py: 0, fontSize: 13 } }}>
-          <Tab value="generate" label="生成" />
-          <Tab value="recognize" label="识别" />
-        </Tabs>
-        <div className="spacer" />
-        <Chip size="small" variant="outlined" label="本地处理 · 不上传" />
-      </PageToolbar>
+      <ModuleToolbar
+        sx={{ gap: 1 }}
+        info={(
+          <Tabs value={tab} onChange={(_, value) => setTab(value)} sx={{ minHeight: 34, '& .MuiTab-root': { minHeight: 34, py: 0, fontSize: 13 } }}>
+            <Tab value="generate" label="生成" />
+            <Tab value="recognize" label="识别" />
+          </Tabs>
+        )}
+        filters={<Chip size="small" variant="outlined" label="本地处理 · 不上传" />}
+      />
       <PageBody>
         <Box className="scroll-area" sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
           {tab === 'generate' ? (

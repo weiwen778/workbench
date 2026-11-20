@@ -185,6 +185,16 @@ def history(
     return {"total": total, "page": page, "page_size": page_size, "items": [serialize_instance(r) for r in rows]}
 
 
+@router.get("/checkin-instances/{instance_id}")
+def get_instance(instance_id: int, db: Session = Depends(get_db)):
+    inst = db.get(CheckinInstance, instance_id)
+    if not inst:
+        raise ApiError("NOT_FOUND", "任务不存在", 404)
+    refresh_locks(db, [inst])
+    db.commit()
+    return serialize_instance(inst)
+
+
 @router.post("/checkin-instances/{instance_id}/complete")
 def complete(instance_id: int, payload: CompleteIn | None = None, db: Session = Depends(get_db)):
     inst = db.get(CheckinInstance, instance_id)

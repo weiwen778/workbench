@@ -2,10 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { Link as RouterLink, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel, InputLabel,
-  Avatar, Card, CardActionArea, IconButton, Link, List, ListItem, ListItemButton, ListItemText, Menu, MenuItem, Paper, Select, Stack, TextField, Tooltip,
+  Avatar, IconButton, Link, List, ListItem, ListItemButton, ListItemText, Menu, MenuItem, Paper, Select, Stack, TextField, Tooltip,
   ToggleButton, ToggleButtonGroup, Typography, useTheme,
 } from '@mui/material'
-import { Divider } from '@mui/material'
 import StaggerList, { StaggerItem } from '@/motion/components/StaggerList'
 import LiftCard from '@/motion/components/LiftCard'
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
@@ -15,19 +14,30 @@ import Star from '@mui/icons-material/Star'
 import StarBorder from '@mui/icons-material/StarBorder'
 import GridView from '@mui/icons-material/GridView'
 import ViewList from '@mui/icons-material/ViewList'
-import { AutoAwesome, ChevronDown, DashboardIcon, DragIndicator, MoreFilled, Plus, Refresh, Search } from '@/icons'
+import { AutoAwesome, ChevronDown, DashboardIcon, DragIndicator, MoreFilled, Palette, Plus, Search } from '@/icons'
 import { apiError, http } from '@/api/client'
 import { confirmDialog, promptDialog, toast } from '@/ui/feedback'
-import { EmptyHint, FieldRow, Page, PageBody, PageToolbar } from '@/ui/common'
+import { EmptyHint, FieldRow, ModuleToolbar, Page, PageBody } from '@/ui/common'
 import DashboardChart from '@/components/DashboardChart'
 import DashboardAiDialog from '@/components/DashboardAiDialog'
 import ProgressEditor from '@/components/ProgressEditor'
-import { aggregationLabels, chartLabels, chartPalette, type DashboardBoard, type DashboardResult, type DashboardWidget, type ProgressConfig } from '@/dashboard'
+import { aggregationLabels, CHART_COLORS, chartLabels, randomChartColors, type DashboardBoard, type DashboardResult, type DashboardWidget, type ProgressConfig } from '@/dashboard'
 
 const emptyProgress = (): ProgressConfig => ({
-  mode: 'tasks', display: 'bar', completed: { field: '', op: 'eq', value: true },
+  mode: 'tasks', display: 'bar', completed: null,
   actual_field: null, target_mode: 'rows', target_field: null, target_value: '100', filters: [], due_field: null,
 })
+
+const DIMENSION_TYPES = ['short_text', 'long_text', 'select', 'checkbox', 'date']
+
+/** 新建图表时的默认分组：饼图跳过日期列，避免默认按天切片。 */
+function defaultGroupKey(kind: DashboardWidget['kind'], list: any[]): string | null {
+  const dimensions = list.filter((field) => DIMENSION_TYPES.includes(field.type))
+  if (kind === 'pie') {
+    return (dimensions.find((field) => field.type !== 'date') || dimensions[0])?.key || null
+  }
+  return dimensions[0]?.key || null
+}
 
 const emptyWidget = (): DashboardWidget => ({
   id: `w_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`, title: '', kind: 'metric', table_id: 0,
@@ -86,7 +96,7 @@ function WidgetDragHandle({ label }: { label: string }) {
 }
 
 function SortableWidget({ id, disabled, gridColumn, children }: { id: string; disabled?: boolean; gridColumn: any; children: ReactNode }) {
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: Boolean(disabled) })
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, isDragging } = useSortable({ id, disabled: Boolean(disabled) })
   return (
     <DragHandleContext.Provider value={{ attributes, listeners, setActivatorNodeRef }}>
       <Paper
@@ -310,14 +320,19 @@ export default function DashboardPage() {
     const isProgress = form.kind === 'progress'
     setForm((prev) => {
       const numeric = loaded.filter((field) => ['number', 'formula', 'rollup'].includes(field.type))
-      const dimensions = loaded.filter((field) => ['short_text', 'long_text', 'select', 'checkbox', 'date'].includes(field.type))
       const dates = loaded.filter((field) => field.type === 'date')
       let aggregation = prev.aggregation
       if (['bar', 'line'].includes(prev.kind) && aggregation === 'count' && numeric.length) aggregation = 'sum'
       const valueField = numeric[0]?.key || null
+      const groupField = isProgress ? null : defaultGroupKey(prev.kind, loaded)
+      const group = loaded.find((field) => field.key === groupField)
+      // 日期分组的柱状图/折线图默认按时间升序，和分组下拉、切换图表类型时保持一致。
+      const dateGroup = Boolean(group && ['bar', 'line'].includes(prev.kind) && group.type === 'date')
       return {
         ...prev, table_id: id, value_field: valueField, value_fields: valueField ? [valueField] : [],
-        group_field: isProgress ? null : dimensions[0]?.key || null, date_field: dates[0]?.key || null,
+        group_field: groupField,
+        date_field: dateGroup ? (prev.date_field || groupField) : (dates[0]?.key || null),
+        ...(dateGroup ? { sort: 'label_asc' as const } : {}),
         aggregation, progress: isProgress ? initializeProgress(prev.progress, loaded) : prev.progress,
       }
     })
@@ -325,13 +340,8 @@ export default function DashboardPage() {
 
   const initializeProgress = (progress: ProgressConfig | null | undefined, loaded: any[]): ProgressConfig => {
     const next = { ...(progress || emptyProgress()) }
-    const complete = loaded.find((field) => field.type === 'checkbox') || loaded.find((field) => field.type === 'select') || loaded.find((field) => field.type === 'short_text')
-    if (complete && !next.completed?.field) {
-      next.completed = {
-        field: complete.key, op: 'eq',
-        value: complete.type === 'checkbox' ? true : complete.type === 'select' ? (complete.options?.find((option: any) => /^(已完成|完成|done|complete)$/i.test(option.name)) || complete.options?.[0])?.id || '' : '',
-      }
-    }
+    // 完成条件必须由用户显式选择，不能猜测某一列代表“已完成”。
+    if (!next.completed?.field) next.completed = null
     const numeric = loaded.filter((field) => ['number', 'formula', 'rollup'].includes(field.type))
     next.actual_field ||= numeric[0]?.key || null
     next.target_field ||= numeric[1]?.key || numeric[0]?.key || null
@@ -347,11 +357,20 @@ export default function DashboardPage() {
         next = { ...next, aggregation: 'count', value_field: null, value_fields: [], group_field: null, progress: initializeProgress(prev.progress, fields) }
         return next
       }
+      if (kind === 'pie') {
+        const current = fields.find((field) => field.key === prev.group_field)
+        // 只替换“日期列”这种不适合占比的分组；用户主动选择“不分组”时保留原意。
+        if (current?.type === 'date') next.group_field = defaultGroupKey('pie', fields)
+      }
       if (['bar', 'line'].includes(kind) && next.aggregation === 'count' && numericFields.length) next.aggregation = 'sum'
       if (!['bar', 'line'].includes(kind)) next.value_fields = []
       else if (!next.value_fields?.length && next.value_field) next.value_fields = [next.value_field]
       if (kind === 'pie' && !['count', 'sum'].includes(next.aggregation)) next.aggregation = 'count'
-      if (kind === 'line' && selectedGroup?.type === 'date') { next.sort = 'label_asc'; if (!next.date_field) next.date_field = next.group_field }
+      const group = fields.find((field) => field.key === next.group_field)
+      if (['bar', 'line'].includes(kind) && group?.type === 'date') {
+        next.sort = 'label_asc'
+        if (!next.date_field) next.date_field = next.group_field
+      }
       return next
     })
   }
@@ -366,7 +385,8 @@ export default function DashboardPage() {
     group_field: form.group_field || null,
   })
 
-  const defaultColors = chartPalette(theme.palette.primary.main)
+  // 指标卡不设颜色时用正文色；其余图表默认使用独立色板，不跟随工作台主题主色。
+  const defaultColors = form.kind === 'metric' ? [theme.palette.text.primary] : CHART_COLORS
   const colorTargets: { label: string }[] = (() => {
     if (form.kind === 'metric') return [{ label: '数值颜色' }]
     if (form.kind === 'progress') return [{ label: '进度颜色' }]
@@ -389,14 +409,35 @@ export default function DashboardPage() {
     colors[index] = value
     return { ...prev, colors }
   })
+  const randomizeColors = () => {
+    const count = form.kind === 'metric' || form.kind === 'progress' ? 1 : Math.max(colorTargets.length, 8)
+    setForm((prev) => ({ ...prev, colors: randomChartColors(count, theme.palette.mode) }))
+  }
   // 颜色只影响本地预览渲染，不必触发重新汇总
   const previewSignature = useMemo(() => JSON.stringify({ ...form, colors: [] }), [form])
 
-  const previewReady = Boolean(form.table_id) && !fieldsLoading && !fieldError && (
+  const progressReady = (() => {
+    if (form.kind !== 'progress') return true
+    const progress = form.progress
+    if (!progress) return false
+    const conditionReady = (condition: ProgressConfig['filters'][number] | null | undefined) => {
+      if (!condition?.field) return false
+      return ['empty', 'not_empty'].includes(condition.op)
+        || (condition.value !== null && condition.value !== undefined && condition.value !== '')
+    }
+    if (progress.filters.some((condition) => !conditionReady(condition))) return false
+    if (progress.mode === 'tasks') return conditionReady(progress.completed)
+    if (!progress.actual_field) return false
+    return progress.target_mode !== 'field' || Boolean(progress.target_field)
+  })()
+
+  const previewReady = Boolean(form.table_id) && !fieldsLoading && !fieldError && progressReady && (
     form.kind === 'progress'
       ? Boolean(form.progress)
       : form.aggregation === 'count' || (['bar', 'line'].includes(form.kind) ? Boolean(form.value_fields?.length) : Boolean(form.value_field))
   )
+
+  const pieTooMany = form.kind === 'pie' && (previewResult?.groups_total || 0) > 8
 
   useEffect(() => {
     if (!editorOpen) return
@@ -545,26 +586,16 @@ export default function DashboardPage() {
 
   return (
     <Page>
-      <PageToolbar sx={{ rowGap: 1 }}>
-        {current
+      <ModuleToolbar
+        info={current
           ? <Button size="small" onClick={() => navigate('/visualizations')}>全部看板</Button>
           : (
             <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
               {boards.length} 个看板 · {totalWidgets} 张图表{latestBoardUpdate ? ` · 最近更新 ${relativeTime(latestBoardUpdate)}` : ''}
             </Typography>
           )}
-        <div className="spacer" />
-        {current ? (
-          <>
-            <Tooltip title="刷新数据">
-              <span><IconButton size="small" aria-label="刷新看板数据" disabled={refreshing} onClick={() => void fetchData()}>{refreshing ? <CircularProgress size={14} /> : <Refresh fontSize="small" />}</IconButton></span>
-            </Tooltip>
-            <Button size="small" startIcon={<AutoAwesome fontSize="small" />} disabled={saving || current.widgets.length >= 24} onClick={() => setAiOpen(true)}>AI 生成</Button>
-            <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} disabled={saving || current.widgets.length >= 24} onClick={() => void openEditor()}>添加图表</Button>
-            <Tooltip title="看板操作">
-              <IconButton size="small" aria-label="看板操作" onClick={(event) => setDetailMenu(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
-            </Tooltip>
-          </>
+        filters={current ? (
+          <Button size="small" startIcon={<AutoAwesome fontSize="small" />} disabled={saving || current.widgets.length >= 24} onClick={() => setAiOpen(true)}>AI 生成</Button>
         ) : (
           <>
             <TextField
@@ -582,13 +613,22 @@ export default function DashboardPage() {
               <ToggleButton value="cards" aria-label="卡片视图"><GridView sx={{ fontSize: 17 }} /></ToggleButton>
               <ToggleButton value="list" aria-label="列表视图"><ViewList sx={{ fontSize: 17 }} /></ToggleButton>
             </ToggleButtonGroup>
-            <Tooltip title="刷新">
-              <span><IconButton size="small" aria-label="刷新看板列表" disabled={loading} onClick={() => void load()}>{loading ? <CircularProgress size={14} /> : <Refresh fontSize="small" />}</IconButton></span>
-            </Tooltip>
-            <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={createBoard}>新建看板</Button>
           </>
         )}
-      </PageToolbar>
+        onRefresh={() => { if (current) void fetchData(); else void load() }}
+        refreshLabel={current ? '刷新看板数据' : '刷新看板列表'}
+        refreshing={current ? refreshing : loading}
+        more={current ? (
+          <Tooltip title="看板操作">
+            <IconButton size="small" aria-label="看板操作" onClick={(event) => setDetailMenu(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
+          </Tooltip>
+        ) : null}
+        primary={current ? (
+          <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} disabled={saving || current.widgets.length >= 24} onClick={() => void openEditor()}>添加图表</Button>
+        ) : (
+          <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={createBoard}>新建看板</Button>
+        )}
+      />
 
       <PageBody sx={{ gap: 1.5 }}>
         {loadError ? <Alert severity="error" action={<Button size="small" onClick={() => void load()}>重新加载</Button>}>{loadError}</Alert> : null}
@@ -857,10 +897,10 @@ export default function DashboardPage() {
         onEdit={(widget) => { setAiOpen(false); void openEditor(widget) }}
       />
 
-      <Dialog open={editorOpen} onClose={() => setEditorOpen(false)} maxWidth="lg" fullWidth>
+      <Dialog open={editorOpen} onClose={() => setEditorOpen(false)} maxWidth="xl" fullWidth>
         <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>{editingId ? '编辑图表' : '添加图表'}</DialogTitle>
         <DialogContent>
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(340px, 400px) minmax(0, 1fr)' }, gap: 2, alignItems: 'start' }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 5fr) minmax(0, 6fr)' }, gap: { xs: 2, md: 3 }, alignItems: 'start' }}>
             <Stack spacing={1.5}>
               <Box>
                 <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 0.75 }}>展示方式</Typography>
@@ -929,10 +969,16 @@ export default function DashboardPage() {
                       <Select label={form.kind === 'pie' ? '按什么分类看占比？' : '横轴：按什么对比？'} fullWidth size="small" displayEmpty value={form.group_field || ''} onChange={(event) => {
                         const groupField = event.target.value || null
                         const group = fields.find((field) => field.key === groupField)
-                        setForm({ ...form, group_field: groupField, ...(form.kind === 'line' && group?.type === 'date' ? { sort: 'label_asc' as const, date_field: form.date_field || groupField } : {}) })
+                        setForm({ ...form, group_field: groupField, ...(group?.type === 'date' && ['bar', 'line'].includes(form.kind) ? { sort: 'label_asc' as const, date_field: form.date_field || groupField } : {}) })
                       }}>
                         <MenuItem value="">不分组</MenuItem>
-                        {dimensionFields.map((field) => <MenuItem key={field.key} value={field.key}>{field.name}</MenuItem>)}
+                        {dimensionFields.map((field) => {
+                          const hint = form.kind === 'pie'
+                            ? field.type === 'date' ? '（时间列，不适合占比）'
+                              : field.type === 'select' && (field.options?.length || 0) > 12 ? '（选项较多，不适合占比）' : ''
+                            : ''
+                          return <MenuItem key={field.key} value={field.key}>{field.name}{hint}</MenuItem>
+                        })}
                       </Select>
                     </FormControl>
                   ) : null}
@@ -957,6 +1003,7 @@ export default function DashboardPage() {
               <Box>
                 <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.75 }}>
                   <Typography sx={{ fontSize: 12, color: 'text.secondary', flex: 1 }}>数据颜色</Typography>
+                  <Button size="small" startIcon={<Palette sx={{ fontSize: 16 }} />} onClick={randomizeColors}>随机配色</Button>
                   {form.colors?.length ? <Button size="small" onClick={() => setForm({ ...form, colors: [] })}>恢复默认</Button> : null}
                 </Stack>
                 <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 0.75, maxHeight: 132, overflow: 'auto' }}>
@@ -976,7 +1023,13 @@ export default function DashboardPage() {
                   ))}
                 </Box>
                 <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.5 }}>
-                  {form.kind === 'pie' ? '按分类顺序取色；不设置时使用默认配色。' : form.kind === 'metric' || form.kind === 'progress' ? '不设置时跟随主题主色。' : '柱状图和折线图按系列顺序取色；不设置时使用默认配色。'}
+                  {form.kind === 'pie'
+                    ? '按分类顺序取色，默认配色不受工作台主题影响；可点「随机配色」一次生成。'
+                    : form.kind === 'metric'
+                      ? '不设置时使用正文颜色；可点「随机配色」生成单个颜色。'
+                      : form.kind === 'progress'
+                        ? '不设置时使用默认图表色；可点「随机配色」重新生成。'
+                        : '柱状图和折线图按系列顺序取色，默认配色不受工作台主题影响；可点「随机配色」一次生成。'}
                 </Typography>
               </Box>
 
@@ -999,7 +1052,7 @@ export default function DashboardPage() {
                     {form.kind !== 'metric' ? (
                       <TextField fullWidth size="small" type="number" label={form.kind === 'progress' ? '最多展示多少个分组？' : '最多显示多少个横轴项目？'} value={form.limit} inputProps={{ min: 1, max: 30 }} onChange={(event) => setForm({ ...form, limit: Math.max(1, Math.min(30, Number(event.target.value) || 1)) })} />
                     ) : null}
-                    {form.kind !== 'metric' && !(form.kind === 'line' && selectedGroup?.type === 'date') ? (
+                    {form.kind !== 'metric' && !(selectedGroup?.type === 'date' && ['bar', 'line'].includes(form.kind)) ? (
                       <FormControl fullWidth>
                         <InputLabel shrink>{form.kind === 'progress' ? '分组怎么排列？' : '横轴项目怎么排列？'}</InputLabel>
                         <Select label={form.kind === 'progress' ? '分组怎么排列？' : '横轴项目怎么排列？'} fullWidth size="small" value={form.sort} onChange={(event) => setForm({ ...form, sort: event.target.value as any })}>
@@ -1017,12 +1070,25 @@ export default function DashboardPage() {
               </Accordion>
             </Stack>
 
-            <Paper variant="outlined" sx={{ p: 1.75, minHeight: 300, display: 'flex', flexDirection: 'column', gap: 1, position: { md: 'sticky' }, top: 0 }}>
+            <Paper variant="outlined" sx={{ p: 2, minHeight: { xs: 300, md: 420 }, display: 'flex', flexDirection: 'column', gap: 1, position: { md: 'sticky' }, top: 0 }}>
               <Stack direction="row" alignItems="center" spacing={1}>
                 <Typography sx={{ fontSize: 13, fontWeight: 600, flex: 1 }}>实时预览</Typography>
                 {previewing ? <CircularProgress size={14} /> : null}
               </Stack>
               {previewError ? <Alert severity="error" sx={{ fontSize: 12.5 }}>{previewError}</Alert> : null}
+              {form.kind === 'progress' && !progressReady ? (
+                <Alert severity="info" sx={{ fontSize: 12.5 }}>
+                  {form.progress?.mode === 'tasks' ? '请先补全完成条件和比较值，再保存或预览。' : '请先补全完成量、目标和筛选条件，再保存或预览。'}
+                </Alert>
+              ) : null}
+              {pieTooMany ? (
+                <Alert
+                  severity="info" sx={{ fontSize: 12.5 }}
+                  action={<Button size="small" onClick={() => kindChanged('bar')}>改用柱状图</Button>}
+                >
+                  当前分组有 {previewResult?.groups_total} 项，饼图建议不超过 8 项。
+                </Alert>
+              ) : null}
               {previewResult ? (
                 <DashboardChart widget={draft()} result={previewResult} />
               ) : (
@@ -1038,7 +1104,7 @@ export default function DashboardPage() {
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button size="small" onClick={() => setEditorOpen(false)}>取消</Button>
-          <Button size="small" variant="contained" disabled={!form.table_id || fieldsLoading || Boolean(fieldError) || saving} onClick={saveWidget}>保存图表</Button>
+          <Button size="small" variant="contained" disabled={!form.table_id || fieldsLoading || Boolean(fieldError) || !progressReady || saving} onClick={saveWidget}>保存图表</Button>
         </DialogActions>
       </Dialog>
     </Page>

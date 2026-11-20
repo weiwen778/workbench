@@ -105,6 +105,56 @@ def test_record_validation_errors(auth):
     assert resp.status_code == 422
 
 
+def test_empty_record_rejected(auth):
+    table = make_table(
+        auth,
+        name="空行校验",
+        fields=[{"name": "备注", "type": "long_text"}, {"name": "已确认", "type": "checkbox"}],
+    )
+    keys = {f["name"]: f["key"] for f in table["fields"]}
+
+    resp = auth.post(f"/api/v1/tables/{table['id']}/records", json={"data": {}})
+    assert resp.status_code == 422
+    assert resp.json()["code"] == "EMPTY_RECORD"
+
+    resp = auth.post(f"/api/v1/tables/{table['id']}/records", json={"data": {keys["备注"]: "   "}})
+    assert resp.status_code == 422
+    assert resp.json()["code"] == "EMPTY_RECORD"
+
+    resp = auth.post(f"/api/v1/tables/{table['id']}/records", json={"data": {keys["已确认"]: False}})
+    assert resp.status_code == 422
+    assert resp.json()["code"] == "EMPTY_RECORD"
+
+    ok = auth.post(f"/api/v1/tables/{table['id']}/records", json={"data": {keys["已确认"]: True}})
+    assert ok.status_code == 201, ok.text
+    body = ok.json()
+
+    emptied = auth.put(
+        f"/api/v1/records/{body['id']}",
+        json={"data": {keys["备注"]: None, keys["已确认"]: False}, "version": body["version"]},
+    )
+    assert emptied.status_code == 422
+    assert emptied.json()["code"] == "EMPTY_RECORD"
+
+
+def test_update_legacy_row_with_only_computed_content(auth, db):
+    from app.models import DataRecord
+
+    table = make_table(
+        auth,
+        name="计算列兼容",
+        fields=[{"name": "计算", "type": "formula", "config": {"expression": "1+1"}}],
+    )
+    record = DataRecord(table_id=table["id"], data={})
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+
+    # 旧数据可能只有计算列；允许更新，不要因为“没有可编辑内容”被空行规则挡住。
+    resp = auth.put(f"/api/v1/records/{record.id}", json={"data": {}, "version": record.version})
+    assert resp.status_code == 200, resp.text
+
+
 def test_number_precision_limits(auth):
     table = make_table(auth)
     resp = add_record(auth, table["id"], SKU="A", **{"价格": "1234567890123456789"})

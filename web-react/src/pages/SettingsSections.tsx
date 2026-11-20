@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Alert, Box, Button, Checkbox, Chip, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, Divider,
   FormControlLabel, IconButton, LinearProgress, Menu, MenuItem, Pagination, Paper, Select, Stack, Tab, Tabs, TextField, Tooltip, Typography,
@@ -1176,6 +1176,8 @@ export function SystemSection({ part }: { part?: 'backup' | 'runtime' }) {
   const [backups, setBackups] = useState<any>({ items: [], enabled: false })
   const [failure, setFailure] = useState('')
   const [creating, setCreating] = useState(false)
+  const [backupTask, setBackupTask] = useState<any | null>(null)
+  const backupTimer = useRef<number | null>(null)
   const [backupMenu, setBackupMenu] = useState<HTMLElement | null>(null)
   const [rowMenu, setRowMenu] = useState<{ el: HTMLElement; row: any } | null>(null)
   const [metrics, setMetrics] = useState<any>({})
@@ -1212,10 +1214,36 @@ export function SystemSection({ part }: { part?: 'backup' | 'runtime' }) {
   const clamped = (value: any) => Math.min(100, Math.max(0, Number(value) || 0))
   const createBackup = async () => {
     setCreating(true)
-    try { await http.post('/backups'); toast.success('已加入后台备份队列，可在任务中心查看进度') }
+    try {
+      const { data } = await http.post('/backups')
+      setBackupTask(data)
+      toast.success('已开始备份，进度会显示在页面内')
+      pollBackupTask(data.id)
+    }
     catch (error) { toast.error(apiError(error).message) }
     finally { setCreating(false) }
   }
+
+  const pollBackupTask = (id: number) => {
+    if (backupTimer.current) window.clearInterval(backupTimer.current)
+    backupTimer.current = window.setInterval(async () => {
+      try {
+        const { data } = await http.get(`/tasks/${id}`)
+        setBackupTask(data)
+        if (!['queued', 'running'].includes(data.status)) {
+          if (backupTimer.current) { window.clearInterval(backupTimer.current); backupTimer.current = null }
+          if (data.status === 'completed') { toast.success('备份已完成'); await loadBackups() }
+          else if (data.status === 'failed') toast.error(data.error || '备份失败，请到任务中心查看详情')
+        }
+      } catch { /* 单次轮询失败不终止，下一次继续 */ }
+    }, 1200)
+  }
+
+  useEffect(() => () => {
+    if (backupTimer.current) window.clearInterval(backupTimer.current)
+  }, [])
+
+  const backupRunning = creating || Boolean(backupTask && ['queued', 'running'].includes(backupTask.status))
 
   return (
     <>
@@ -1225,10 +1253,22 @@ export function SystemSection({ part }: { part?: 'backup' | 'runtime' }) {
             <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.75 }}>备份与恢复</Typography>
             <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>包含数据库、附件与加密配置；恢复密钥需另行保存。</Typography>
           </Box>
-          <Button size="small" variant="contained" disabled={creating} onClick={createBackup}>立即备份</Button>
+          <Button size="small" variant="contained" disabled={backupRunning} onClick={createBackup}>{backupRunning ? '备份中…' : '立即备份'}</Button>
         </Stack>
         {failure ? <Alert severity="error" sx={{ mt: 1.5 }}>{failure}</Alert> : null}
-        <Typography sx={{ fontSize: 13, color: 'text.secondary', mt: 1.5 }}>{backups.enabled ? `每 ${backups.interval_hours} 小时备份，保留最近 ${backups.keep} 份。` : '自动备份已关闭。'} 进度见任务中心。</Typography>
+        {backupTask && ['queued', 'running'].includes(backupTask.status) ? (
+          <Box sx={{ mt: 1.5 }}>
+            <LinearProgress variant={backupTask.progress ? 'determinate' : 'indeterminate'} value={backupTask.progress || 0} sx={{ height: 4, borderRadius: 2 }} />
+            <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 0.75 }}>
+              {backupTask.status === 'queued' ? '备份已排队，等待后台开始…' : `正在生成完整备份… ${backupTask.progress || 0}%`}
+            </Typography>
+          </Box>
+        ) : backupTask?.status === 'completed' ? (
+          <Alert severity="success" sx={{ mt: 1.5 }}>备份已完成，最新备份已出现在下方列表。</Alert>
+        ) : backupTask?.status === 'failed' ? (
+          <Alert severity="error" sx={{ mt: 1.5 }}>{backupTask.error || '备份失败，请到任务中心查看详情。'}</Alert>
+        ) : null}
+        <Typography sx={{ fontSize: 13, color: 'text.secondary', mt: 1.5 }}>{backups.enabled ? `每 ${backups.interval_hours} 小时备份，保留最近 ${backups.keep} 份。` : '自动备份已关闭。'} 历史任务可在任务中心查看。</Typography>
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1.5, flexWrap: 'wrap' }}>
           <Button size="small" onClick={() => window.dispatchEvent(new Event('wb:open-tasks'))}>打开任务中心</Button>
           <Tooltip title="更多备份操作">

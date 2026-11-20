@@ -17,14 +17,24 @@ def test_multiple_series_align_before_top_limit_and_persist(auth,db):
  assert result.status_code==200,result.text
  series=result.json()['series']
  assert [s['name'] for s in series]==['销售额','成本']
- assert [p['label'] for p in series[0]['points']]==['2026-10-31','2026-10-30']
- assert [p['label'] for p in series[1]['points']]==['2026-10-31','2026-10-30']
- assert [p['value'] for p in series[1]['points']]==['69','70']
+ assert [p['label'] for p in series[0]['points']]==['2026-10-30','2026-10-31']
+ assert [p['label'] for p in series[1]['points']]==['2026-10-30','2026-10-31']
+ assert [p['value'] for p in series[1]['points']]==['70','69']
  board=auth.post('/api/v1/dashboards',json={'name':'对比'}).json()
  saved=auth.put(f"/api/v1/dashboards/{board['id']}",json={'name':'对比','version':board['version'],'widgets':[w]})
  assert saved.status_code==200,saved.text
  assert saved.json()['widgets'][0]['value_fields']==w['value_fields']
  assert auth.get(f"/api/v1/dashboards/{board['id']}/data").json()['widgets'][0]['series']==series
+
+
+def test_multiple_series_date_group_uses_recent_dates_not_top_values(auth,db):
+ t,k,w=source(auth,db)
+ db.add(DataRecord(table_id=t['id'],data={k['日期']:'2026-10-01',k['销售额']:'999'}));db.commit()
+ w.update(limit=2)
+ r=auth.post('/api/v1/dashboards/preview',json={'widget':w})
+ assert r.status_code==200,r.text
+ assert [p['label'] for p in r.json()['series'][0]['points']]==['2026-10-30','2026-10-31']
+ assert [p['value'] for p in r.json()['series'][0]['points']]==['30','31']
 
 
 def test_date_series_and_nulls_and_time_filter(auth,db):

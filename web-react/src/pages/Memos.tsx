@@ -1,25 +1,24 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import {
-  Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, List, ListItem, ListItemButton, ListItemText, Menu, MenuItem, Select,
+  Box, Button, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, List, ListItem, ListItemButton, ListItemText, Menu, MenuItem, Select,
   Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography, useTheme,
 } from '@mui/material'
-import { Divider } from '@mui/material'
 import LiftCard from '@/motion/components/LiftCard'
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { CopyDocument, Delete, DragIndicator, Edit, MoreFilled, Plus, Refresh, Search, Brush, Tune } from '@/icons'
+import { DragIndicator, Edit, MoreFilled, Plus, Search, Brush, Tune } from '@/icons'
 import GridView from '@mui/icons-material/GridView'
 import ViewList from '@mui/icons-material/ViewList'
 import { apiError, copyText, http } from '@/api/client'
-import { EmptyHint, Page, PageBody, PageToolbar } from '@/ui/common'
+import { EmptyHint, ModuleToolbar, Page, PageBody } from '@/ui/common'
 import { confirmDialog, toast } from '@/ui/feedback'
 import CategoryManager from '@/components/CategoryManager'
 import MemoContent from '@/components/MemoContent'
 import WhiteboardPicker from '@/components/WhiteboardPicker'
 import type { InsertItem } from '@/whiteboard/insert'
-import { memoFilter, memoTitle } from '@/memo-navigation'
+import { memoFilter } from '@/memo-navigation'
 
 const MEMO_COLORS = [
   { value: 'default', label: '默认' },
@@ -62,7 +61,7 @@ function MemoDragHandle({ label }: { label: string }) {
 }
 
 function SortableMemo({ id, disabled, children }: { id: number; disabled?: boolean; children: ReactNode }) {
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: Boolean(disabled) })
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, isDragging } = useSortable({ id, disabled: Boolean(disabled) })
   return (
     <MemoDragContext.Provider value={{ attributes, listeners, setActivatorNodeRef }}>
       <Box
@@ -118,6 +117,8 @@ export default function MemosPage() {
   const [wbOpen, setWbOpen] = useState(false)
   const [wbItems, setWbItems] = useState<InsertItem[] | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
+  const contentRef = useRef<HTMLTextAreaElement>(null)
   const [editing, setEditing] = useState<any | null>(null)
   const [saving, setSaving] = useState(false)
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
@@ -196,14 +197,23 @@ export default function MemosPage() {
   const openCreate = () => {
     setEditing(null)
     setForm({ title: '', content: '', category: selection.category, color: 'default' })
+    setMoreOpen(false)
     setDialogOpen(true)
   }
 
   const openEdit = (memo: any) => {
     setEditing(memo)
     setForm({ title: memo.title, content: memo.content, category: memo.category || '', color: memo.color || 'default' })
+    setMoreOpen(true)
     setDialogOpen(true)
   }
+
+  // 新建时直接聚焦正文，标题和分类收进“可选”区域，减少高频录入的摩擦。
+  useEffect(() => {
+    if (!dialogOpen) return
+    const timer = window.setTimeout(() => contentRef.current?.focus(), 60)
+    return () => window.clearTimeout(timer)
+  }, [dialogOpen])
 
   const save = async () => {
     if (!form.content.trim()) { toast.warning('正文不能为空'); return }
@@ -253,42 +263,50 @@ export default function MemosPage() {
 
   return (
     <Page variant="dense">
-      <PageToolbar>
-        <TextField
-          size="small" placeholder="搜索标题或正文" value={keyword} onChange={(event) => onSearch(event.target.value)}
-          InputProps={{ startAdornment: <Search sx={{ fontSize: 17, mr: 0.5, color: 'text.secondary' }} /> }}
-          sx={{ width: 220 }}
-        />
-        <Typography variant="caption" color="text.secondary">{memoTotal} 张便利贴</Typography>
-        <div className="spacer" />
-        <ToggleButtonGroup size="small" exclusive value={view} onChange={(_, value) => value && setView(value)}>
-          <ToggleButton value="cards" aria-label="卡片视图"><GridView sx={{ fontSize: 17 }} /></ToggleButton>
-          <ToggleButton value="list" aria-label="列表视图"><ViewList sx={{ fontSize: 17 }} /></ToggleButton>
-        </ToggleButtonGroup>
-        <Tooltip title="视图选项">
-          <IconButton size="small" aria-label="视图选项" onClick={(event) => setViewAnchor(event.currentTarget)}><Tune fontSize="small" /></IconButton>
-        </Tooltip>
-        <Tooltip title="更多">
-          <IconButton size="small" aria-label="更多便利贴操作" onClick={(event) => setMoreAnchor(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
-        </Tooltip>
-        <Menu anchorEl={viewAnchor} open={Boolean(viewAnchor)} onClose={() => setViewAnchor(null)}>
-          <Box sx={{ px: 1.5, py: 1, width: 190 }}>
-            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.75 }}>卡片每行</Typography>
-            <Select fullWidth size="small" value={columns} onChange={(event) => rememberColumns(Number(event.target.value))} sx={{ fontSize: 12 }} inputProps={{ 'aria-label': '便利贴每行列数' }}>
-              <MenuItem value={0}>自动</MenuItem>
-              {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => <MenuItem key={n} value={n}>{n} 列</MenuItem>)}
-            </Select>
-          </Box>
-        </Menu>
-        <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
-          <CategoryManager
-            resource="memos" onChanged={load}
-            trigger={(open) => <MenuItem onClick={() => { setMoreAnchor(null); open() }}>管理分类</MenuItem>}
-          />
-          <MenuItem onClick={() => { setMoreAnchor(null); void load() }}>刷新</MenuItem>
-        </Menu>
-        <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={openCreate}>新建便利贴</Button>
-      </PageToolbar>
+      <ModuleToolbar
+        info={<Typography variant="caption" color="text.secondary">{memoTotal} 张便利贴</Typography>}
+        filters={(
+          <>
+            <TextField
+              size="small" placeholder="搜索标题或正文" value={keyword} onChange={(event) => onSearch(event.target.value)}
+              InputProps={{ startAdornment: <Search sx={{ fontSize: 17, mr: 0.5, color: 'text.secondary' }} /> }}
+              sx={{ width: { xs: '100%', sm: 220 } }}
+            />
+            <ToggleButtonGroup size="small" exclusive value={view} onChange={(_, value) => value && setView(value)}>
+              <ToggleButton value="cards" aria-label="卡片视图"><GridView sx={{ fontSize: 17 }} /></ToggleButton>
+              <ToggleButton value="list" aria-label="列表视图"><ViewList sx={{ fontSize: 17 }} /></ToggleButton>
+            </ToggleButtonGroup>
+            <Tooltip title="视图选项">
+              <IconButton size="small" aria-label="视图选项" onClick={(event) => setViewAnchor(event.currentTarget)}><Tune fontSize="small" /></IconButton>
+            </Tooltip>
+            <Menu anchorEl={viewAnchor} open={Boolean(viewAnchor)} onClose={() => setViewAnchor(null)}>
+              <Box sx={{ px: 1.5, py: 1, width: 190 }}>
+                <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.75 }}>卡片每行</Typography>
+                <Select fullWidth size="small" value={columns} onChange={(event) => rememberColumns(Number(event.target.value))} sx={{ fontSize: 12 }} inputProps={{ 'aria-label': '便利贴每行列数' }}>
+                  <MenuItem value={0}>自动</MenuItem>
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => <MenuItem key={n} value={n}>{n} 列</MenuItem>)}
+                </Select>
+              </Box>
+            </Menu>
+          </>
+        )}
+        onRefresh={() => void load()}
+        refreshLabel="刷新便利贴"
+        more={(
+          <>
+            <Tooltip title="更多">
+              <IconButton size="small" aria-label="更多便利贴操作" onClick={(event) => setMoreAnchor(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
+            </Tooltip>
+            <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
+              <CategoryManager
+                resource="memos" onChanged={load}
+                trigger={(open) => <MenuItem onClick={() => { setMoreAnchor(null); open() }}>管理分类</MenuItem>}
+              />
+            </Menu>
+          </>
+        )}
+        primary={<Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={openCreate}>新建便利贴</Button>}
+      />
 
       <PageBody>
         <Box className="scroll-area memo-board" sx={{ bgcolor: 'background.default', p: 0 }}>
@@ -302,7 +320,7 @@ export default function MemosPage() {
                 <ListItem disablePadding>
                   <ListItemButton onClick={openCreate} sx={{ gap: 1.25, px: 1.75, py: 1.25 }}>
                     <Box sx={{ width: 3, alignSelf: 'stretch', minHeight: 34, borderRadius: 2, bgcolor: '#9AA7A9', flexShrink: 0 }} />
-                    <ListItemText primary={keyword ? '没有匹配的便利贴' : '还没有便利贴'} secondary="写一张便利贴，记录临时信息。" primaryTypographyProps={{ fontSize: 13.5, fontWeight: 600 }} secondaryTypographyProps={{ fontSize: 11.5 }} sx={{ my: 0 }} />
+                    <ListItemText primary={keyword ? '没有匹配的便利贴' : '还没有便利贴'} secondary="写一张便利贴，记录临时信息。" primaryTypographyProps={{ fontSize: 13.5, fontWeight: 600 }} secondaryTypographyProps={{ fontSize: 12 }} sx={{ my: 0 }} />
                     <Typography sx={{ fontSize: 12, color: 'primary.main', flexShrink: 0 }}>开始 →</Typography>
                   </ListItemButton>
                 </ListItem>
@@ -374,12 +392,12 @@ export default function MemosPage() {
                             primary={memo.display_title}
                             secondary={(memo.content || '').replace(/\s+/g, ' ')}
                             primaryTypographyProps={{ fontSize: 13.5, fontWeight: 600, noWrap: true }}
-                            secondaryTypographyProps={{ fontSize: 11.5, noWrap: true }}
+                            secondaryTypographyProps={{ fontSize: 12, noWrap: true }}
                             sx={{ minWidth: 0, my: 0 }}
                           />
                           <Stack direction="row" spacing={1.25} alignItems="center" sx={{ flexShrink: 0 }}>
-                            <Typography component="span" sx={{ fontSize: 11.5, color: 'text.secondary' }}>{memo.display_category}</Typography>
-                            <Typography component="span" sx={{ fontSize: 11.5, color: 'text.disabled' }}>{formatDate(memo.updated_at)}</Typography>
+                            <Typography component="span" sx={{ fontSize: 12, color: 'text.secondary' }}>{memo.display_category}</Typography>
+                            <Typography component="span" sx={{ fontSize: 12, color: 'text.disabled' }}>{formatDate(memo.updated_at)}</Typography>
                           </Stack>
                           <Stack direction="row" spacing={0.25} sx={{ flexShrink: 0 }} onClick={(event) => event.stopPropagation()}>
                             <Tooltip title="编辑"><IconButton size="small" aria-label="编辑便利贴" onClick={() => openEdit(memo)}><Edit fontSize="small" /></IconButton></Tooltip>
@@ -415,18 +433,24 @@ export default function MemosPage() {
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>{editing ? '编辑便利贴' : '新建便利贴'}</DialogTitle>
         <DialogContent sx={{ pt: 2.5 }}>
-          <TextField fullWidth label="标题（可选）" value={form.title} inputProps={{ maxLength: 200 }} placeholder="不填则显示为无标题便利贴" onChange={(event) => setForm({ ...form, title: event.target.value })} sx={{ mb: 1.5 }} />
           <TextField
             fullWidth multiline minRows={3} maxRows={16} label="正文" required value={form.content} inputProps={{ maxLength: 2000 }}
+            autoFocus inputRef={contentRef}
             placeholder="随手记内容，Ctrl / Command + Enter 保存"
             onChange={(event) => setForm({ ...form, content: event.target.value })}
             onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); void save() } }}
             sx={{ mb: 1.5 }}
           />
-          <Box>
-            <TextField fullWidth size="small" label="分类（可选）" value={form.category} placeholder="选择或输入新分类" onChange={(event) => setForm({ ...form, category: event.target.value })} inputProps={{ list: 'memo-categories' }} />
-            <datalist id="memo-categories">{categories.map((name) => <option key={name} value={name} />)}</datalist>
-          </Box>
+          <Button size="small" onClick={() => setMoreOpen((value) => !value)} sx={{ mb: moreOpen ? 1.5 : 0 }}>
+            {moreOpen ? '收起标题与分类' : '添加标题 / 分类（可选）'}
+          </Button>
+          <Collapse in={moreOpen}>
+            <TextField fullWidth label="标题（可选）" value={form.title} inputProps={{ maxLength: 200 }} placeholder="不填则显示为无标题便利贴" onChange={(event) => setForm({ ...form, title: event.target.value })} sx={{ mb: 1.5 }} />
+            <Box sx={{ mb: 1.5 }}>
+              <TextField fullWidth size="small" label="分类（可选）" value={form.category} placeholder="选择或输入新分类" onChange={(event) => setForm({ ...form, category: event.target.value })} inputProps={{ list: 'memo-categories' }} />
+              <datalist id="memo-categories">{categories.map((name) => <option key={name} value={name} />)}</datalist>
+            </Box>
+          </Collapse>
           <Box sx={{ mt: 1.5 }}>
             <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 0.75 }}>纸张颜色</Typography>
             <Stack direction="row" spacing={1}>

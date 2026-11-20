@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Link,
-  Menu, MenuItem, Paper, Select, Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Typography,
+  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton,
+  Menu, MenuItem, Paper, Select, Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
-import { AutoAwesome, Check, ChevronDown, Close, Delete, Edit, InfoFilled, Plus, Refresh, Sort, Tune } from '@/icons'
+import { AutoAwesome, Close, Delete, Edit, InfoFilled, MoreFilled, Plus, Sort, Tune } from '@/icons'
 import { apiError, http } from '@/api/client'
 import { confirmDialog, toast } from '@/ui/feedback'
-import { DataTable, EmptyHint, FieldRow, PageBody, PageToolbar, Pager } from '@/ui/common'
+import { DataTable, EmptyHint, ModuleToolbar, PageBody, Pager, type Column } from '@/ui/common'
 import RecordDrawer from '@/components/RecordDrawer'
 import FieldManager from '@/components/FieldManager'
 import ImportWizard from '@/components/ImportWizard'
@@ -15,7 +15,9 @@ import DeleteTableDialog from '@/components/DeleteTableDialog'
 import AttachmentPreview from '@/components/AttachmentPreview'
 import TableAnalysisDialog from '@/components/TableAnalysisDialog'
 import AiTableFill from '@/components/AiTableFill'
-import { display, type Field } from '@/table-core'
+import TableCell from '@/components/TableCell'
+import { setTableCellSaving, stopTableCellEdit } from '@/components/table-edit-store'
+import { isLikelyStaticDerived, valueAlign, type Field } from '@/table-core'
 
 const operatorsByType: Record<string, { label: string; value: string }[]> = {
   short_text: [{ label: '包含', value: 'contains' }, { label: '等于', value: 'eq' }, { label: '为空', value: 'empty' }, { label: '不为空', value: 'not_empty' }],
@@ -49,7 +51,7 @@ export default function TableView({ tableId }: { tableId: number }) {
   const [density, setDensity] = useState<'compact' | 'comfortable'>(() => localStorage.getItem('wb_table_density') === 'comfortable' ? 'comfortable' : 'compact')
   const [striped, setStriped] = useState(() => localStorage.getItem('wb_table_striped') === '1')
   const toggleStriped = (value: boolean) => { setStriped(value); localStorage.setItem('wb_table_striped', value ? '1' : '0') }
-  const [centerX, setCenterX] = useState(() => localStorage.getItem('wb_table_center_x') !== '0')
+  const [centerX, setCenterX] = useState(() => localStorage.getItem('wb_table_center_x') === '1')
   const [centerY, setCenterY] = useState(() => localStorage.getItem('wb_table_center_y') !== '0')
   const toggleCenterX = (value: boolean) => { setCenterX(value); localStorage.setItem('wb_table_center_x', value ? '1' : '0') }
   const toggleCenterY = (value: boolean) => { setCenterY(value); localStorage.setItem('wb_table_center_y', value ? '1' : '0') }
@@ -91,10 +93,11 @@ export default function TableView({ tableId }: { tableId: number }) {
   const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null)
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   const [viewAnchor, setViewAnchor] = useState<HTMLElement | null>(null)
-  const [selection, setSelection] = useState<number[]>([])
+  const [rowSelectionModel, setRowSelectionModel] = useState<readonly (string | number)[]>([])
   const [recordOpen, setRecordOpen] = useState(false)
   const [editingRecord, setEditingRecord] = useState<any | null>(null)
   const [fieldsOpen, setFieldsOpen] = useState(false)
+  const [addFieldRequest, setAddFieldRequest] = useState(0)
   const [importOpen, setImportOpen] = useState(false)
   const [analysisOpen, setAnalysisOpen] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
@@ -104,19 +107,22 @@ export default function TableView({ tableId }: { tableId: number }) {
   const [exportScope, setExportScope] = useState<'all' | 'filtered'>('all')
   const [exporting, setExporting] = useState(false)
   const [previewFile, setPreviewFile] = useState<any | null>(null)
-  const [editingCell, setEditingCell] = useState<{ rowId: number; key: string } | null>(null)
-  const [editValue, setEditValue] = useState<any>('')
-  const [cellSaving, setCellSaving] = useState(false)
-  const skipBlur = useRef(false)
 
   const viewActive = useRef(true)
   const recordsRequest = useRef(0)
   useEffect(() => {
     viewActive.current = true
-    return () => { viewActive.current = false }
+    return () => { viewActive.current = false; stopTableCellEdit() }
   }, [])
 
-  const sortableFields = fields.filter((field) => !['long_text', 'multiselect', 'attachment'].includes(field.type))
+  const sortableFields = useMemo(
+    () => fields.filter((field) => !['long_text', 'multiselect', 'attachment'].includes(field.type)),
+    [fields],
+  )
+  const selection = useMemo(
+    () => rowSelectionModel.map(Number).filter((id) => Number.isFinite(id)),
+    [rowSelectionModel],
+  )
   const fieldType = (key: string) => fields.find((field) => field.key === key)?.type || 'short_text'
   const operatorsFor = (key: string) => operatorsByType[fieldType(key)] || operatorsByType.short_text
   const optionsOf = (key: string) => fields.find((field) => field.key === key)?.options || []
@@ -195,21 +201,24 @@ export default function TableView({ tableId }: { tableId: number }) {
     setEditingRecord(null); setRecordOpen(true)
   }
 
-  const removeRecord = async (row: any) => {
+  const removeRecord = useCallback(async (row: any) => {
     const ok = await confirmDialog({ title: '删除行', danger: true, confirmText: '删除', message: '删除这一行？删除后会在回收站保留 30 天。' })
     if (!ok) return
-    try { await http.delete(`/records/${row.id}`); await loadRecords(); setSelection((prev) => prev.filter((id) => id !== row.id)) }
-    catch (error) { toast.error(apiError(error).message) }
-  }
+    try {
+      await http.delete(`/records/${row.id}`)
+      await loadRecords()
+      setRowSelectionModel((prev) => prev.filter((id) => String(id) !== String(row.id)))
+    } catch (error) { toast.error(apiError(error).message) }
+  }, [loadRecords])
 
-  const batchDelete = async () => {
+  const batchDelete = useCallback(async () => {
     const ok = await confirmDialog({ title: '删除行', danger: true, confirmText: '删除', message: `删除选中的 ${selection.length} 行？一次最多 100 行。` })
     if (!ok) return
     try {
       await http.post(`/tables/${tableId}/records/batch-delete`, { ids: selection })
-      toast.success('已移入回收站'); setSelection([]); await loadRecords()
+      toast.success('已移入回收站'); setRowSelectionModel([]); await loadRecords()
     } catch (error) { toast.error(apiError(error).message) }
-  }
+  }, [loadRecords, selection, tableId])
 
   const exportTable = async () => {
     if (exporting) return
@@ -225,10 +234,10 @@ export default function TableView({ tableId }: { tableId: number }) {
     finally { setExporting(false) }
   }
 
-  const openAttachment = async (id: number) => {
+  const openAttachment = useCallback(async (id: number) => {
     try { setPreviewFile((await http.get(`/files/${id}`)).data) }
     catch (error) { toast.error(apiError(error).message) }
-  }
+  }, [])
 
   const addFilter = () => {
     const first = sortableFields[0]
@@ -236,175 +245,161 @@ export default function TableView({ tableId }: { tableId: number }) {
     setFilters([...filters, { field: first.key, op: operatorsFor(first.key)[0].value, value: '' }])
   }
 
-  const saveCell = async (row: any, field: Field, value: any) => {
-    if (cellSaving) return
-    setCellSaving(true)
+  const saveCell = useCallback(async (row: any, field: Field, value: any) => {
+    setTableCellSaving(true)
     try {
       const data = { ...row.data, [field.key]: value === '' ? null : value }
       const response = await http.put(`/records/${row.id}`, { data, version: row.version })
       setRows((prev) => prev.map((item) => item.id === row.id ? response.data : item))
-      setEditingCell(null)
+      stopTableCellEdit()
     } catch (error) {
       toast.error(apiError(error).message)
     } finally {
-      setCellSaving(false)
+      setTableCellSaving(false)
     }
-  }
+  }, [])
 
-  const startEdit = (row: any, field: Field) => {
-    if (['attachment', 'multiselect', 'reference', 'formula', 'lookup', 'rollup'].includes(field.type)) return
-    setEditingCell({ rowId: row.id, key: field.key })
-    setEditValue(row.data[field.key] ?? (field.type === 'checkbox' ? false : ''))
-  }
-
-  const renderEditor = (field: Field, row: any) => {
-    const value = editValue
-    const commit = () => {
-      if (skipBlur.current) { skipBlur.current = false; return }
-      void saveCell(row, field, value)
-    }
-    if (field.type === 'checkbox') {
-      return <Checkbox size="small" checked={Boolean(value)} disabled={cellSaving} onChange={(event) => void saveCell(row, field, event.target.checked)} sx={{ p: 0.25 }} />
-    }
-    if (field.type === 'select') {
-      return (
-        <Select
-          autoFocus size="small" value={value ?? ''} disabled={cellSaving}
-          onChange={(event) => void saveCell(row, field, event.target.value)}
-          sx={{ minWidth: 110, height: 30 }}
-          onKeyDown={(event) => { event.stopPropagation(); if (event.key === 'Escape') setEditingCell(null) }}
-        >
-          <MenuItem value="">—</MenuItem>
-          {(field.options || []).map((option) => <MenuItem key={option.id} value={option.id}>{option.name}</MenuItem>)}
-        </Select>
-      )
-    }
-    return (
-      <TextField
-        autoFocus fullWidth size="small" disabled={cellSaving}
-        type={field.type === 'date' ? 'date' : 'text'}
-        value={value ?? ''}
-        placeholder={field.type === 'date' ? 'YYYY-MM-DD' : ''}
-        onChange={(event) => setEditValue(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          event.stopPropagation()
-          if (event.key === 'Enter') { event.preventDefault(); (event.target as HTMLElement).blur() }
-          if (event.key === 'Escape') { skipBlur.current = true; setEditingCell(null) }
-        }}
-        inputProps={{ inputMode: field.type === 'number' ? 'decimal' : undefined }}
-        sx={{ height: '100%', minHeight: 0, '& .MuiInputBase-root': { height: '100%', minHeight: 0, fontSize: 13 }, '& .MuiInputBase-input': { paddingTop: 0, paddingBottom: 0, height: '100%', boxSizing: 'border-box' } }}
-      />
-    )
-  }
-
-  const renderCell = (field: Field, row: any) => {
-    const value = row.data[field.key]
-    if (editingCell && editingCell.rowId === row.id && editingCell.key === field.key) return renderEditor(field, row)
-    if (field.type === 'attachment' && value) return <Link component="button" onClick={(event) => { event.stopPropagation(); void openAttachment(value) }} underline="none">查看附件</Link>
-    if (field.type === 'url' && value) return <Link href={value} target="_blank" rel="noopener noreferrer" onClick={(event) => event.stopPropagation()}>{value}</Link>
-    const content = field.type === 'checkbox'
-      ? (value ? <Check sx={{ fontSize: 16, color: 'primary.main' }} /> : <Typography component="span" variant="body2" color="text.secondary">否</Typography>)
-      : display(field, value)
-    return (
-      <Box
-        onDoubleClick={(event) => { event.stopPropagation(); startEdit(row, field) }}
-        title={typeof content === 'string' && content ? `${content}（双击编辑）` : '双击编辑'}
-        sx={{
-          minWidth: 0, width: '100%', minHeight: 22, mx: -0.5, px: 0.5, borderRadius: 0.5,
-          overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
-          cursor: ['multiselect', 'reference', 'formula', 'lookup', 'rollup', 'attachment'].includes(field.type) ? 'default' : 'text',
-          '&:hover': { bgcolor: 'action.hover' },
-        }}
-      >
-        {content}
-      </Box>
-    )
-  }
-
-  const allVisibleSelected = rows.length > 0 && rows.every((row) => selection.includes(row.id))
-  const someVisibleSelected = rows.some((row) => selection.includes(row.id)) && !allVisibleSelected
-  const toggleVisibleSelection = (checked: boolean) => {
-    const ids = new Set(rows.map((row) => row.id))
-    setSelection((prev) => checked ? [...new Set([...prev, ...ids])] : prev.filter((id) => !ids.has(id)))
-  }
   const headerSort = sorts.length === 1 ? sorts[0] : null
-  const toggleSort = (field: string, direction?: 'asc' | 'desc') => {
+  const toggleSort = useCallback((field: string, direction?: 'asc' | 'desc') => {
     const current = sorts.find((item) => item.field === field)
     setSorts([{ field, order: direction || (current?.order === 'asc' ? 'desc' : 'asc') }])
     setPage(1)
-  }
+  }, [sorts])
+
+  // 默认固定「日期 + 店铺/门店」两列，横向滚动到金额、备注时仍能读出这一行属于哪一天、哪家店。
+  const pinnedLeft = useMemo(() => {
+    if (!fields.length) return []
+    const date = fields.find((field) => field.type === 'date')
+    const store = fields.find((field) => field.type !== 'date' && /店铺|门店|店/.test(field.name))
+    const keys = [date?.key, store?.key]
+      .filter((key): key is string => typeof key === 'string')
+      .filter((key) => columnVisibility[key] !== false)
+    return keys
+  }, [fields, columnVisibility])
+
+  const fieldHeader = useCallback((field: Field) => {
+    const align = valueAlign(field)
+    return (
+      <Stack direction="row" spacing={0.5} alignItems="center" justifyContent={align === 'right' ? 'flex-end' : 'flex-start'} sx={{ minWidth: 0, width: '100%' }}>
+        <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{field.name}</Box>
+        {isLikelyStaticDerived(field) ? (
+          <Tooltip title="静态派生值：按录入时的数值保存，修改源数据后不会自动重算。建议改用「公式」列，或在列设置里确认它是手工录入值。">
+            <Box component="span" sx={{ flexShrink: 0, fontSize: 10, lineHeight: '14px', px: 0.5, border: 1, borderColor: 'warning.main', color: 'warning.main', borderRadius: 0.5, fontWeight: 600 }}>静态</Box>
+          </Tooltip>
+        ) : null}
+      </Stack>
+    )
+  }, [])
+
+  const sortableKeys = useMemo(() => new Set(sortableFields.map((field) => field.key)), [sortableFields])
+  const columns = useMemo<Column<any>[]>(() => [
+    ...fields.map((field) => ({
+      key: field.key, label: field.name, width: field.type === 'long_text' ? 220 : field.type === 'url' ? 200 : field.type === 'number' ? 110 : 130,
+      align: valueAlign(field), headerAlign: valueAlign(field), headerRender: fieldHeader(field),
+      ellipsis: true, sortable: sortableKeys.has(field.key),
+      render: (row: any) => <TableCell field={field} row={row} onSave={saveCell} onOpenAttachment={openAttachment} />,
+    })),
+    {
+      key: '__actions', label: '操作', width: 88, sticky: true,
+      render: (row) => (
+        <Stack direction="row" spacing={0.25} onClick={(event) => event.stopPropagation()}>
+          <IconButton size="small" aria-label="编辑整行" title="编辑整行" onClick={() => { setEditingRecord(row); setRecordOpen(true) }}><Edit fontSize="small" /></IconButton>
+          <IconButton size="small" aria-label="删除" title="删除" color="error" onClick={() => void removeRecord(row)}><Delete fontSize="small" /></IconButton>
+        </Stack>
+      ),
+    },
+  ], [fieldHeader, fields, openAttachment, removeRecord, saveCell, sortableKeys])
+  const clearSort = useCallback(() => { setSorts([]); setPage(1) }, [])
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, p: 2 }}>
-      <PageToolbar sx={{ py: 0.5 }}>
-        {table?.note ? <Box title={table.note} sx={{ color: 'text.secondary', display: 'flex' }}><InfoFilled sx={{ fontSize: 16 }} /></Box> : null}
-        <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>共 {total} 行</Typography>
-        <div className="spacer" />
-        <Button size="small" onClick={() => setFiltersOpen(!filtersOpen)} color={filtersOpen ? 'primary' : undefined}>筛选{filters.length ? `(${filters.length})` : ''}</Button>
-        <Button size="small" startIcon={<Sort fontSize="small" />} onClick={(event: any) => { setSortDraft(sorts.length ? [...sorts] : []); setSortAnchor(event.currentTarget) }}>排序{sortDraft.length ? `(${sortDraft.length})` : sorts.length ? `(${sorts.length})` : ''}</Button>
-        <Button size="small" startIcon={<Tune fontSize="small" />} onClick={(event) => setViewAnchor(event.currentTarget)}>视图</Button>
-        <Button size="small" endIcon={<ChevronDown fontSize="small" />} onClick={(event) => setMoreAnchor(event.currentTarget)}>更多</Button>
-        <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
-          <MenuItem onClick={() => { setMoreAnchor(null); void reload() }}>刷新</MenuItem>
-          <MenuItem onClick={() => { setMoreAnchor(null); setFieldsOpen(true) }}>列设置</MenuItem>
-          <MenuItem onClick={() => { setMoreAnchor(null); setImportOpen(true) }}>批量导入</MenuItem>
-          <MenuItem onClick={() => { setMoreAnchor(null); setExportOpen(true) }}>导出</MenuItem>
-          <MenuItem onClick={() => { setMoreAnchor(null); setAnalysisOpen(true) }}>汇总与透视</MenuItem>
-          <MenuItem onClick={() => { setMoreAnchor(null); navigate(`/visualizations?table=${tableId}`) }}>用于数据可视化</MenuItem>
-          <MenuItem divider onClick={() => { setMoreAnchor(null); setDeleteOpen(true) }} sx={{ color: 'error.main' }}>导出备份后删除表格</MenuItem>
-        </Menu>
-        <Menu anchorEl={viewAnchor} open={Boolean(viewAnchor)} onClose={() => setViewAnchor(null)}>
-          <Box sx={{ px: 1.5, py: 1, width: 236 }}>
-            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.75 }}>行高</Typography>
-            <ToggleButtonGroup size="small" exclusive fullWidth value={density} onChange={(_, value) => value && changeDensity(value)} aria-label="表格行高" sx={{ mb: 1.25 }}>
-              <ToggleButton value="compact" aria-label="窄行高" sx={{ flex: 1, fontSize: 11.5 }}>窄行高</ToggleButton>
-              <ToggleButton value="comfortable" aria-label="宽行高" sx={{ flex: 1, fontSize: 11.5 }}>宽行高</ToggleButton>
-            </ToggleButtonGroup>
-            {[
-              { label: '斑马纹', checked: striped, change: toggleStriped },
-              { label: '水平居中', checked: centerX, change: toggleCenterX },
-              { label: '垂直居中', checked: centerY, change: toggleCenterY },
-            ].map((option) => (
-              <Stack key={option.label} direction="row" alignItems="center" justifyContent="space-between" sx={{ minHeight: 32 }}>
-                <Typography sx={{ fontSize: 12.5 }}>{option.label}</Typography>
-                <Switch size="small" checked={option.checked} onChange={(event) => option.change(event.target.checked)} />
-              </Stack>
-            ))}
-            <Button size="small" fullWidth startIcon={<Tune fontSize="small" />} onClick={() => { setViewAnchor(null); setFieldsOpen(true) }} sx={{ mt: 0.75, justifyContent: 'flex-start' }}>列设置</Button>
-          </Box>
-        </Menu>
-        <Menu anchorEl={sortAnchor} open={Boolean(sortAnchor)} onClose={() => setSortAnchor(null)}>
-          <Box sx={{ p: 1.5, width: 340 }}>
-            <Typography sx={{ fontSize: 13, mb: 0.75 }}>排序（最多 3 列，临时）</Typography>
-            {sortDraft.map((sort, index) => (
-              <Stack key={index} direction="row" spacing={1} sx={{ mb: 0.75 }}>
-                <Select size="small" value={sort.field} onChange={(event) => setSortDraft(sortDraft.map((item, i) => i === index ? { ...item, field: event.target.value } : item))} sx={{ width: 150 }}>
-                  {sortableFields.map((field) => <MenuItem key={field.key} value={field.key}>{field.name}</MenuItem>)}
-                </Select>
-                <Select size="small" value={sort.order} onChange={(event) => setSortDraft(sortDraft.map((item, i) => i === index ? { ...item, order: event.target.value } : item))} sx={{ width: 90 }}>
-                  <MenuItem value="asc">升序</MenuItem>
-                  <MenuItem value="desc">降序</MenuItem>
-                </Select>
-                <IconButton size="small" onClick={() => setSortDraft(sortDraft.filter((_, i) => i !== index))}><Close fontSize="small" /></IconButton>
-              </Stack>
-            ))}
-            <Stack direction="row" spacing={1}>
-              <Button size="small" startIcon={<Plus fontSize="small" />} disabled={sortDraft.length >= 3} onClick={() => {
-                const first = sortableFields[0]
-                if (first) setSortDraft([...sortDraft, { field: first.key, order: 'asc' }])
-              }}>添加排序</Button>
-              <Button size="small" onClick={() => { setSortDraft([]); setSorts([]); setPage(1) }}>清除</Button>
-              <Button size="small" variant="contained" onClick={() => {
-                setSorts(sortDraft.filter((item) => item.field))
-                setSortAnchor(null); setPage(1)
-              }}>应用</Button>
-            </Stack>
-          </Box>
-        </Menu>
-        <Button size="small" startIcon={<AutoAwesome fontSize="small" />} onClick={() => { setAiInitialText(''); setAiOpen(true) }}>AI 填入</Button>
-        <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={openCreate}>添加一行</Button>
-      </PageToolbar>
+      <ModuleToolbar
+        sx={{ py: 0.5 }}
+        info={(
+          <>
+            {table?.note ? <Box title={table.note} sx={{ color: 'text.secondary', display: 'flex' }}><InfoFilled sx={{ fontSize: 16 }} /></Box> : null}
+            <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>共 {total} 行</Typography>
+          </>
+        )}
+        filters={(
+          <>
+            <Button
+              size="small" startIcon={<Plus fontSize="small" />} disabled={fields.length >= 200}
+              onClick={() => { setFieldsOpen(true); setAddFieldRequest((value) => value + 1) }}
+            >添加一列</Button>
+            <Button size="small" onClick={() => setFiltersOpen(!filtersOpen)} color={filtersOpen ? 'primary' : undefined}>筛选{filters.length ? `(${filters.length})` : ''}</Button>
+            <Button size="small" startIcon={<Sort fontSize="small" />} onClick={(event: any) => { setSortDraft(sorts.length ? [...sorts] : []); setSortAnchor(event.currentTarget) }}>排序{sortDraft.length ? `(${sortDraft.length})` : sorts.length ? `(${sorts.length})` : ''}</Button>
+            <Button size="small" startIcon={<Tune fontSize="small" />} onClick={(event) => setViewAnchor(event.currentTarget)}>视图</Button>
+            <Button size="small" startIcon={<AutoAwesome fontSize="small" />} onClick={() => { setAiInitialText(''); setAiOpen(true) }}>AI 填入</Button>
+            <Menu anchorEl={viewAnchor} open={Boolean(viewAnchor)} onClose={() => setViewAnchor(null)}>
+              <Box sx={{ px: 1.5, py: 1, width: 236 }}>
+                <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.75 }}>行高</Typography>
+                <ToggleButtonGroup size="small" exclusive fullWidth value={density} onChange={(_, value) => value && changeDensity(value)} aria-label="表格行高" sx={{ mb: 1.25 }}>
+                  <ToggleButton value="compact" aria-label="窄行高" sx={{ flex: 1, fontSize: 11.5 }}>窄行高</ToggleButton>
+                  <ToggleButton value="comfortable" aria-label="宽行高" sx={{ flex: 1, fontSize: 11.5 }}>宽行高</ToggleButton>
+                </ToggleButtonGroup>
+                {[
+                  { label: '斑马纹', checked: striped, change: toggleStriped },
+                  { label: '水平居中', checked: centerX, change: toggleCenterX },
+                  { label: '垂直居中', checked: centerY, change: toggleCenterY },
+                ].map((option) => (
+                  <Stack key={option.label} direction="row" alignItems="center" justifyContent="space-between" sx={{ minHeight: 32 }}>
+                    <Typography sx={{ fontSize: 12.5 }}>{option.label}</Typography>
+                    <Switch size="small" checked={option.checked} onChange={(event) => option.change(event.target.checked)} />
+                  </Stack>
+                ))}
+                <Button size="small" fullWidth startIcon={<Tune fontSize="small" />} onClick={() => { setViewAnchor(null); setFieldsOpen(true) }} sx={{ mt: 0.75, justifyContent: 'flex-start' }}>列设置</Button>
+              </Box>
+            </Menu>
+            <Menu anchorEl={sortAnchor} open={Boolean(sortAnchor)} onClose={() => setSortAnchor(null)}>
+              <Box sx={{ p: 1.5, width: 340 }}>
+                <Typography sx={{ fontSize: 13, mb: 0.75 }}>排序（最多 3 列，临时）</Typography>
+                {sortDraft.map((sort, index) => (
+                  <Stack key={index} direction="row" spacing={1} sx={{ mb: 0.75 }}>
+                    <Select size="small" value={sort.field} onChange={(event) => setSortDraft(sortDraft.map((item, i) => i === index ? { ...item, field: event.target.value } : item))} sx={{ width: 150 }}>
+                      {sortableFields.map((field) => <MenuItem key={field.key} value={field.key}>{field.name}</MenuItem>)}
+                    </Select>
+                    <Select size="small" value={sort.order} onChange={(event) => setSortDraft(sortDraft.map((item, i) => i === index ? { ...item, order: event.target.value } : item))} sx={{ width: 90 }}>
+                      <MenuItem value="asc">升序</MenuItem>
+                      <MenuItem value="desc">降序</MenuItem>
+                    </Select>
+                    <IconButton size="small" onClick={() => setSortDraft(sortDraft.filter((_, i) => i !== index))}><Close fontSize="small" /></IconButton>
+                  </Stack>
+                ))}
+                <Stack direction="row" spacing={1}>
+                  <Button size="small" startIcon={<Plus fontSize="small" />} disabled={sortDraft.length >= 3} onClick={() => {
+                    const first = sortableFields[0]
+                    if (first) setSortDraft([...sortDraft, { field: first.key, order: 'asc' }])
+                  }}>添加排序</Button>
+                  <Button size="small" onClick={() => { setSortDraft([]); setSorts([]); setPage(1) }}>清除</Button>
+                  <Button size="small" variant="contained" onClick={() => {
+                    setSorts(sortDraft.filter((item) => item.field))
+                    setSortAnchor(null); setPage(1)
+                  }}>应用</Button>
+                </Stack>
+              </Box>
+            </Menu>
+          </>
+        )}
+        onRefresh={() => void reload()}
+        refreshLabel="刷新表格数据"
+        more={(
+          <>
+            <Tooltip title="更多表格操作">
+              <IconButton size="small" aria-label="更多表格操作" onClick={(event) => setMoreAnchor(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
+            </Tooltip>
+            <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
+              <MenuItem onClick={() => { setMoreAnchor(null); setFieldsOpen(true) }}>列设置</MenuItem>
+              <MenuItem onClick={() => { setMoreAnchor(null); setImportOpen(true) }}>批量导入</MenuItem>
+              <MenuItem onClick={() => { setMoreAnchor(null); setExportOpen(true) }}>导出</MenuItem>
+              <MenuItem onClick={() => { setMoreAnchor(null); setAnalysisOpen(true) }}>汇总与透视</MenuItem>
+              <MenuItem onClick={() => { setMoreAnchor(null); navigate(`/visualizations?table=${tableId}`) }}>用于数据可视化</MenuItem>
+              <MenuItem divider onClick={() => { setMoreAnchor(null); setDeleteOpen(true) }} sx={{ color: 'error.main' }}>导出备份后删除表格</MenuItem>
+            </Menu>
+          </>
+        )}
+        primary={<Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={openCreate}>添加一行</Button>}
+      />
 
       {(filtersOpen) ? (
         <Paper variant="outlined" sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', p: 1.25, mb: 1, flexShrink: 0 }}>
@@ -475,39 +470,16 @@ export default function TableView({ tableId }: { tableId: number }) {
                 onColumnWidthsChange={saveColumnWidths}
                 columnVisibility={columnVisibility}
                 onColumnVisibilityChange={saveColumnVisibility}
+                pinnedLeft={pinnedLeft}
                 size={density === 'compact' ? 'small' : 'medium'}
-                rowKey={(row) => row.id}
+                checkboxSelection
+                rowSelectionModel={rowSelectionModel}
+                onRowSelectionModelChange={setRowSelectionModel}
                 sortKey={headerSort?.field}
                 sortDirection={headerSort?.order === 'desc' ? 'desc' : 'asc'}
                 onSort={toggleSort}
-                onSortClear={() => { setSorts([]); setPage(1) }}
-                columns={[
-                  {
-                    key: '__select', label: '', width: 42,
-                    headerRender: <Checkbox size="small" checked={allVisibleSelected} indeterminate={someVisibleSelected} onChange={(event) => toggleVisibleSelection(event.target.checked)} inputProps={{ 'aria-label': '全选当前页' }} />,
-                    render: (row) => (
-                      <Checkbox
-                        size="small" checked={selection.includes(row.id)} onClick={(event) => event.stopPropagation()}
-                        onChange={(event) => setSelection((prev) => event.target.checked ? [...prev, row.id] : prev.filter((id) => id !== row.id))}
-                      />
-                    ),
-                  },
-                  ...fields.map((field) => ({
-                    key: field.key, label: field.name, width: field.type === 'long_text' ? 220 : field.type === 'url' ? 200 : field.type === 'number' ? 110 : 130,
-                    ellipsis: true, sortable: sortableFields.some((item) => item.key === field.key),
-                    render: (row: any) => renderCell(field, row),
-                  })),
-                  {
-                    key: '__actions', label: '操作', width: 88, sticky: true,
-                    render: (row) => (
-                      <Stack direction="row" spacing={0.25} onClick={(event) => event.stopPropagation()}>
-                        <IconButton size="small" aria-label="编辑整行" title="编辑整行" onClick={() => { setEditingRecord(row); setRecordOpen(true) }}><Edit fontSize="small" /></IconButton>
-                        <IconButton size="small" aria-label="删除" title="删除" color="error" onClick={() => void removeRecord(row)}><Delete fontSize="small" /></IconButton>
-                      </Stack>
-                    ),
-                  },
-                ]}
-                sx={{ '& .MuiDataGrid-cell[data-field="__select"]': { fontSize: 0 } }}
+                onSortClear={clearSort}
+                columns={columns}
               />
             </Box>
             <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 0.5 }}>
@@ -521,7 +493,7 @@ export default function TableView({ tableId }: { tableId: number }) {
       </PageBody>
 
       <RecordDrawer open={recordOpen} tableId={tableId} fields={fields} record={editingRecord} onClose={() => setRecordOpen(false)} onSaved={() => void loadRecords()} />
-      <FieldManager open={fieldsOpen} tableId={tableId} fields={fields} onClose={() => setFieldsOpen(false)} onUpdated={() => void reload()} />
+      <FieldManager open={fieldsOpen} tableId={tableId} fields={fields} addRequest={addFieldRequest} onClose={() => setFieldsOpen(false)} onUpdated={() => void reload()} />
       <ImportWizard open={importOpen} tableId={tableId} existingFields={fields} onClose={() => setImportOpen(false)} onDone={() => void reload()} />
       <DeleteTableDialog open={deleteOpen} table={table ? { id: tableId, name: table.name } : null} onClose={() => setDeleteOpen(false)} onDeleted={() => navigate('/data')} />
       <TableAnalysisDialog open={analysisOpen} tableId={tableId} onClose={() => setAnalysisOpen(false)} />

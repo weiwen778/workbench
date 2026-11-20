@@ -58,7 +58,7 @@ export default function ModuleTabs({
       >
         <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</Box>
       </Button>
-      <Typography sx={{ fontSize: 11.5, color: 'text.disabled' }}>
+      <Typography sx={{ fontSize: 12, color: 'text.disabled' }}>
         {group.items.length ? `${group.items.length} 个${({
           data: '表格', visualizations: '看板', todos: '清单', checkin: '打卡项目',
           notes: '文件夹', memos: '分类', bookmarks: '分类',
@@ -83,7 +83,7 @@ export default function ModuleTabs({
             <MenuItem key={item.path} selected={active} onClick={() => { setAnchor(null); go(item.path) }}>
               <ListItemText primary={item.label} primaryTypographyProps={{ noWrap: true, fontSize: 13 }} />
               {item.count ? (
-                <Typography sx={{ fontSize: 11, color: 'text.secondary', fontFamily: '"IBM Plex Mono", monospace', ml: 1.5 }}>
+                <Typography sx={{ fontSize: 11.5, color: 'text.secondary', fontFamily: '"IBM Plex Mono", monospace', ml: 1.5 }}>
                   {item.count}
                 </Typography>
               ) : null}

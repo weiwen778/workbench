@@ -6,6 +6,7 @@ import time
 from html.parser import HTMLParser
 from urllib.parse import urlsplit, urljoin
 
+from ..config import settings
 from .public_http import is_public_ip
 
 KNOWN = {'douyin.com': '抖音', 'bilibili.com': '哔哩哔哩', 'github.com': 'GitHub', 'taobao.com': '淘宝', 'jd.com': '京东', 'xiaohongshu.com': '小红书'}
@@ -18,7 +19,9 @@ def public_target(url):
     if port not in (80, 443):
         raise ValueError('Only public web ports are supported')
     addresses = socket.getaddrinfo(p.hostname, port, type=socket.SOCK_STREAM)
-    if not addresses or any(not is_public_ip(a[4][0]) for a in addresses):
+    if not addresses or any(
+        not is_public_ip(a[4][0], allow_fake_ip=settings.allow_fake_ip_upstream) for a in addresses
+    ):
         raise ValueError('Private network address')
     return p, port, addresses[0][4][0]
 

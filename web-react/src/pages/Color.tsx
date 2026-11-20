@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Alert, Box, Button, Chip, IconButton, Paper, Slider, Stack, TextField, Typography,
+  Alert, Box, Button, Chip, IconButton, Paper, Slider, Stack, Typography,
 } from '@mui/material'
 import { Lock, LockOpen, Picture, Upload } from '@/icons'
 import { copyText } from '@/api/client'
 import ColorFormats from '@/components/ColorFormats'
-import { EmptyHint, Page, PageBody, PageToolbar } from '@/ui/common'
+import { EmptyHint, ModuleToolbar, Page, PageBody } from '@/ui/common'
 import { toast } from '@/ui/feedback'
 import { decodeImageFile } from '@/convert/image'
 import { rgbToHsl, toHex, toHslString, toRgbaString, type RGBA } from '@/color/color'
@@ -128,14 +128,15 @@ export default function ColorPage() {
 
   return (
     <Page variant="dense">
-      <PageToolbar>
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Button size="small" variant="contained" startIcon={<Picture fontSize="small" />} onClick={() => fileInput.current?.click()} disabled={loading}>选择图片</Button>
-          <Typography sx={{ fontSize: 12, color: 'text.secondary' }}><Picture sx={{ fontSize: 14, verticalAlign: -2, mr: 0.5 }} />本地处理 · 图片不上传</Typography>
-        </Stack>
-        <div className="spacer" />
-        <Chip size="small" variant="outlined" label="sRGB · HEX / RGB / HSL / HSV / CMYK" />
-      </PageToolbar>
+      <ModuleToolbar
+        info={(
+          <>
+            <Typography sx={{ fontSize: 12, color: 'text.secondary' }}><Picture sx={{ fontSize: 14, verticalAlign: -2, mr: 0.5 }} />本地处理 · 图片不上传</Typography>
+            <Chip size="small" variant="outlined" label="sRGB · HEX / RGB / HSL / HSV / CMYK" />
+          </>
+        )}
+        primary={<Button size="small" variant="contained" startIcon={<Picture fontSize="small" />} onClick={() => fileInput.current?.click()} disabled={loading}>选择图片</Button>}
+      />
       <PageBody>
         <Box className="scroll-area" sx={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(0,1fr) 430px' }, gridAutoRows: 'max-content', gap: 1.25, alignItems: 'start' }}>
           <input ref={fileInput} type="file" accept="image/*,.heic,.heif" hidden onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void loadFile(file) }} />

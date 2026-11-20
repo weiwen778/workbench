@@ -46,6 +46,8 @@ export default function DeleteTableDialog({ open, table, onClose, onDeleted }: {
       document.body.appendChild(link); link.click(); link.remove()
       setTimeout(() => URL.revokeObjectURL(url), 60000)
       setDownloaded(true); setProgress('')
+      // 导出完成后直接勾选确认，少一步；用户仍可取消勾选。
+      setSaved(true)
       toast.success('备份已开始下载，请确认文件已保存后再删除')
     } catch (cause) {
       setError(cause instanceof Error && !('response' in (cause as any)) ? cause.message : apiError(cause).message)
@@ -78,6 +80,9 @@ export default function DeleteTableDialog({ open, table, onClose, onDeleted }: {
           control={<Checkbox checked={saved} disabled={!downloaded || busy} onChange={(event) => setSaved(event.target.checked)} />}
           label="我已确认备份文件保存到电脑，可以删除表格"
         />
+        <Typography sx={{ fontSize: 12, color: downloaded ? 'success.main' : 'text.secondary', mt: 0.5 }}>
+          {downloaded ? '备份已下载。确认无误后即可删除。' : '删除前必须先导出并下载整表备份，下载完成后上面的确认项会自动勾选。'}
+        </Typography>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button size="small" disabled={busy || deleting} onClick={onClose}>取消</Button>

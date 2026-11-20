@@ -4,11 +4,10 @@ import {
   Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl,
   IconButton, InputLabel, LinearProgress, MenuItem, Select, Stack, Tab, Tabs, TextField, Tooltip, Typography,
 } from '@mui/material'
-import { Divider } from '@mui/material'
 import Star from '@mui/icons-material/Star'
 import { CopyDocument, Delete, Direction, DocumentCopy, Favorite, Keyboard, Promotion, Refresh, Search, Switch } from '@/icons'
 import { apiError, copyText, http } from '@/api/client'
-import { Page, PageToolbar, EmptyHint } from '@/ui/common'
+import { ModuleToolbar, Page, EmptyHint } from '@/ui/common'
 import { confirmDialog, toast } from '@/ui/feedback'
 import { readTranslationPreferences, translationFont, type TranslationPreferences } from '@/utils/translation-preferences'
 
@@ -314,39 +313,44 @@ export default function TranslatePage() {
 
   return (
     <Page variant="dense" scroll>
-      <PageToolbar sx={{ rowGap: 1 }}>
-        <Stack direction="row" spacing={0.75} alignItems="center" useFlexGap sx={{ width: { xs: '100%', sm: 'auto' } }}>
-          <FormControl size="small" sx={{ width: { sm: 138 }, flex: { xs: 1, sm: 'none' }, minWidth: 0 }}>
-            <InputLabel shrink>原文语言</InputLabel>
-            <Select label="原文语言" value={sourceLang} onChange={(event) => changeSourceLang(event.target.value)}>
-              <MenuItem value="auto">自动检测</MenuItem>
-              {supportedLangs.map((language) => <MenuItem key={language.code} value={language.code}>{language.name}</MenuItem>)}
-            </Select>
-          </FormControl>
-          <Tooltip title="交换语言（Alt+S）">
-            <IconButton size="small" aria-label="交换语言" onClick={swap}><Switch sx={{ fontSize: 18 }} /></IconButton>
-          </Tooltip>
-          <FormControl size="small" sx={{ width: { sm: 138 }, flex: { xs: 1, sm: 'none' }, minWidth: 0 }}>
-            <InputLabel shrink>译文语言</InputLabel>
-            <Select label="译文语言" value={targetLang} onChange={(event) => setTargetLang(event.target.value)}>
-              {supportedLangs.map((language) => <MenuItem key={language.code} value={language.code}>{language.name}</MenuItem>)}
-            </Select>
-          </FormControl>
-        </Stack>
-        <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', sm: 'block' }, mx: 0.5, my: 0.5 }} />
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
+      <ModuleToolbar
+        info={(
+          <Stack direction="row" spacing={0.75} alignItems="center" useFlexGap sx={{ width: { xs: '100%', sm: 'auto' } }}>
+            <FormControl size="small" sx={{ width: { sm: 138 }, flex: { xs: 1, sm: 'none' }, minWidth: 0 }}>
+              <InputLabel shrink>原文语言</InputLabel>
+              <Select label="原文语言" value={sourceLang} onChange={(event) => changeSourceLang(event.target.value)}>
+                <MenuItem value="auto">自动检测</MenuItem>
+                {supportedLangs.map((language) => <MenuItem key={language.code} value={language.code}>{language.name}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <Tooltip title="交换语言（Alt+S）">
+              <IconButton size="small" aria-label="交换语言" onClick={swap}><Switch sx={{ fontSize: 18 }} /></IconButton>
+            </Tooltip>
+            <FormControl size="small" sx={{ width: { sm: 138 }, flex: { xs: 1, sm: 'none' }, minWidth: 0 }}>
+              <InputLabel shrink>译文语言</InputLabel>
+              <Select label="译文语言" value={targetLang} onChange={(event) => setTargetLang(event.target.value)}>
+                {supportedLangs.map((language) => <MenuItem key={language.code} value={language.code}>{language.name}</MenuItem>)}
+              </Select>
+            </FormControl>
+          </Stack>
+        )}
+        filters={(
+          <>
+            <Typography sx={{ fontSize: 11.5, color: 'text.disabled' }}>Ctrl / ⌘ + Enter</Typography>
+            <Tooltip title="查看快捷键">
+              <IconButton size="small" aria-label="查看快捷键" onClick={() => setShortcutsOpen(true)}><Keyboard sx={{ fontSize: 17 }} /></IconButton>
+            </Tooltip>
+          </>
+        )}
+        primary={(
           <Button
             size="small" variant="contained" startIcon={translating ? <CircularProgress size={13} color="inherit" /> : <Promotion fontSize="small" />}
             disabled={translating || !currentReady || overLimit || !sourceText.trim()} onClick={() => void translate()}
           >
             {translating ? '翻译中…' : '翻译'}
           </Button>
-          <Typography sx={{ fontSize: 11.5, color: 'text.disabled' }}>Ctrl / ⌘ + Enter</Typography>
-          <Tooltip title="查看快捷键">
-            <IconButton size="small" aria-label="查看快捷键" onClick={() => setShortcutsOpen(true)}><Keyboard sx={{ fontSize: 17 }} /></IconButton>
-          </Tooltip>
-        </Stack>
-      </PageToolbar>
+        )}
+      />
 
       <Stack spacing={1}>
         {connections.length && !enabledConnections.length ? (
@@ -402,20 +406,28 @@ export default function TranslatePage() {
                   <IconButton size="small" aria-label="复制译文" onClick={() => void copyResult()}><CopyDocument sx={{ fontSize: 15 }} /></IconButton>
                 </Tooltip>
               ) : null}
+              {result ? (
+                <Tooltip title={resultFavorited ? '已收藏' : '收藏译文（Alt+B）'}>
+                  <span>
+                    <IconButton size="small" aria-label="收藏译文" disabled={resultFavorited} onClick={() => void saveFavorite(result)}><Favorite sx={{ fontSize: 15 }} /></IconButton>
+                  </span>
+                </Tooltip>
+              ) : null}
             </Stack>
             {result ? <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>{result.provider_name} · {result.duration_ms} ms</Typography> : null}
           </Stack>
+          {translating ? <LinearProgress sx={{ height: 2 }} /> : null}
           <Box sx={{ flex: 1, overflow: 'auto', p: 1.5, fontSize: translationFont(result?.target_text || '', preferences), lineHeight: 1.7 }}>
             {result ? (
               <Typography sx={{ fontSize: 'inherit', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{result.target_text}</Typography>
             ) : (
               <Box sx={{ height: '100%', minHeight: 160, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'text.secondary', textAlign: 'center' }}>
-                <Typography sx={{ fontSize: 13 }}>{translating ? '正在翻译…' : '译文会显示在这里'}</Typography>
+                <Typography sx={{ fontSize: 13 }}>{translating ? '正在翻译，请稍候…' : '译文会显示在这里'}</Typography>
                 <Typography sx={{ fontSize: 11.5, color: 'text.disabled', mt: 0.75 }}>Ctrl / ⌘ + Enter 翻译</Typography>
               </Box>
             )}
           </Box>
-          <Stack direction="row" spacing={0.5} sx={{ px: 1, py: 0.5, borderTop: 1, ...separatorSx }}>
+          <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap" sx={{ px: 1, py: 0.5, borderTop: 1, flexShrink: 0, ...separatorSx }}>
             <Button size="small" startIcon={<Favorite fontSize="small" />} title="收藏译文（Alt+B）" disabled={!result || resultFavorited} onClick={() => result && !resultFavorited && void saveFavorite(result)}>{resultFavorited ? '已收藏' : '收藏'}</Button>
             <Button size="small" startIcon={<CopyDocument fontSize="small" />} title="复制译文（Alt+C）" disabled={!result} onClick={() => void copyResult()}>复制译文</Button>
             <Button size="small" startIcon={<Delete fontSize="small" />} disabled={!result} onClick={() => setResult(null)}>清空译文</Button>

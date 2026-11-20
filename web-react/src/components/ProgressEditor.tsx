@@ -31,7 +31,7 @@ export function ProgressConditionRow({ value, fields, label, onChange }: {
       <Select size="small" displayEmpty value={value.field} onChange={(event) => {
         const key = event.target.value
         const next = fields.find((item) => item.key === key)
-        onChange({ field: key, op: 'eq', value: next?.type === 'checkbox' ? true : next?.type === 'select' ? next.options?.[0]?.id || '' : '' })
+        onChange({ field: key, op: 'eq', value: next?.type === 'checkbox' ? true : '' })
       }} inputProps={{ 'aria-label': `${label}字段` }}>
         <MenuItem value="" disabled>选择字段</MenuItem>
         {fields.map((item) => <MenuItem key={item.key} value={item.key}>{item.name}</MenuItem>)}
@@ -39,7 +39,7 @@ export function ProgressConditionRow({ value, fields, label, onChange }: {
       <Select size="small" value={value.op} onChange={(event) => set('op', event.target.value)} inputProps={{ 'aria-label': `${label}比较方式` }}>
         {operatorsFor(field?.type).map((op) => <MenuItem key={op.value} value={op.value}>{op.label}</MenuItem>)}
       </Select>
-      {!['empty', 'not_empty'].includes(value.op) ? (
+      {!['empty', 'not_empty'].includes(value.op) && value.field ? (
         field?.type === 'select' ? (
           <Select size="small" displayEmpty value={value.value ?? ''} onChange={(event) => set('value', event.target.value)} inputProps={{ 'aria-label': `${label}比较值` }}>
             <MenuItem value="" disabled>选择选项</MenuItem>
@@ -67,6 +67,14 @@ export default function ProgressEditor({ value, fields, grouped, onChange }: {
   const numeric = fields.filter((field) => ['number', 'formula', 'rollup'].includes(field.type))
   const dates = fields.filter((field) => field.type === 'date')
   const conditionFields = fields.filter((field) => ['short_text', 'long_text', 'number', 'formula', 'rollup', 'select', 'checkbox', 'date'].includes(field.type))
+  const rank = (type: string) => type === 'checkbox' ? 0 : type === 'select' ? 1 : 2
+  const currentCompletion = value.completed?.field ? fields.find((field) => field.key === value.completed?.field) : null
+  const completionFields = fields
+    .filter((field) => ['checkbox', 'select', 'short_text', 'long_text'].includes(field.type))
+    .sort((a, b) => rank(a.type) - rank(b.type))
+  if (currentCompletion && !completionFields.some((field) => field.key === currentCompletion.key)) completionFields.unshift(currentCompletion)
+  const hasStatusField = fields.some((field) => ['checkbox', 'select'].includes(field.type))
+  const completionIsText = ['short_text', 'long_text'].includes(currentCompletion?.type || '')
   const set = (patch: Partial<ProgressConfig>) => onChange({ ...value, ...patch })
   const addFilter = () => {
     if (value.filters.length >= 7) return
@@ -91,10 +99,15 @@ export default function ProgressEditor({ value, fields, grouped, onChange }: {
         <ToggleButton value="quantity">按数值累计</ToggleButton>
       </ToggleButtonGroup>
 
-      {value.mode === 'tasks' && value.completed ? (
+      {value.mode === 'tasks' ? (
         <>
-          <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 0.5 }}>哪些记录算完成？</Typography>
-          <ProgressConditionRow value={value.completed} fields={conditionFields} label="完成条件" onChange={(completed) => set({ completed })} />
+          <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 0.5 }}>
+            哪些记录算完成？<Box component="span" sx={{ color: 'error.main' }}> *</Box>
+          </Typography>
+          <ProgressConditionRow value={value.completed || { field: '', op: 'eq', value: null }} fields={completionFields} label="完成条件" onChange={(completed) => set({ completed })} />
+          {!value.completed?.field ? <Typography sx={{ fontSize: 12, color: 'warning.main', mt: 0.75 }}>请选择完成条件后保存。</Typography> : null}
+          {!hasStatusField ? <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 0.75 }}>当前表格没有勾选或单选状态列；若无法补充状态列，建议改用「按数值累计」。</Typography> : null}
+          {completionIsText ? <Typography sx={{ fontSize: 12, color: 'warning.main', mt: 0.75 }}>该列是文本列，请确认它的取值能可靠表示「完成」。</Typography> : null}
         </>
       ) : null}
 

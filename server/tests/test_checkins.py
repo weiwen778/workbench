@@ -409,3 +409,22 @@ def test_unified_projects_keep_periods_and_target_statistics(auth):
         assert history["items"][0]["period_type"] == period
     assert len(all_items(list_today(auth, kind="shop"))) == 1
     assert len(all_items(list_today(auth, kind="social"))) == 1
+
+
+def test_single_instance_returns_latest_note_for_note_popover(auth):
+    target = make_target(auth)
+    group = make_group(auth)
+    make_rule(auth, target["id"], group["id"])
+    item = all_items(list_today(auth))[0]
+
+    patched = auth.patch(f"/api/v1/checkin-instances/{item['id']}", json={"note": "今天的备注"})
+    assert patched.status_code == 200
+    assert patched.json()["note"] == "今天的备注"
+
+    latest = auth.get(f"/api/v1/checkin-instances/{item['id']}")
+    assert latest.status_code == 200
+    assert latest.json()["note"] == "今天的备注"
+    assert latest.json()["id"] == item["id"]
+
+    missing = auth.get("/api/v1/checkin-instances/999999")
+    assert missing.status_code == 404

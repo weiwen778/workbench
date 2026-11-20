@@ -4,10 +4,10 @@ import {
   Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, MenuItem, Select,
   Stack, TextField, Typography,
 } from '@mui/material'
-import { ArrowLeft, Plus, Refresh } from '@/icons'
+import { ArrowLeft, Plus } from '@/icons'
 import { apiError, http } from '@/api/client'
 import { confirmDialog, toast } from '@/ui/feedback'
-import { DataTable, FieldRow, LoadingBlock, Page, PageBody, PageToolbar } from '@/ui/common'
+import { DataTable, FieldRow, LoadingBlock, ModuleToolbar, Page, PageBody } from '@/ui/common'
 
 export default function TargetDetailPage() {
   const params = useParams()
@@ -109,16 +109,18 @@ export default function TargetDetailPage() {
 
   return (
     <Page>
-      <PageToolbar>
-        <Button size="small" startIcon={<ArrowLeft fontSize="small" />} onClick={() => navigate(`/checkins/items/${targetId}`)}>返回打卡</Button>
-        <Typography sx={{ fontSize: 15, fontWeight: 600 }}>{target?.name || '资料'}</Typography>
-        {target?.status === 'archived' ? <Typography sx={{ fontSize: 11.5, color: 'text.secondary', border: 1, borderColor: 'divider', borderRadius: 0.5, px: 0.75 }}>已暂停</Typography> : null}
-        <div className="spacer" />
-        <Stack direction="row" spacing={0.75}>
-          <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => openRule()}>添加任务</Button>
-          <Button size="small" startIcon={<Refresh fontSize="small" />} onClick={() => void loadAll()}>刷新</Button>
-        </Stack>
-      </PageToolbar>
+      <ModuleToolbar
+        info={(
+          <>
+            <Button size="small" startIcon={<ArrowLeft fontSize="small" />} onClick={() => navigate(`/checkins/items/${targetId}`)}>返回打卡</Button>
+            <Typography sx={{ fontSize: 15, fontWeight: 600 }}>{target?.name || '资料'}</Typography>
+            {target?.status === 'archived' ? <Typography sx={{ fontSize: 11.5, color: 'text.secondary', border: 1, borderColor: 'divider', borderRadius: 0.5, px: 0.75 }}>已暂停</Typography> : null}
+          </>
+        )}
+        onRefresh={() => void loadAll()}
+        refreshLabel="刷新资料与任务"
+        primary={<Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => openRule()}>添加任务</Button>}
+      />
 
       <PageBody sx={{ overflow: 'auto' }}>
         <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 2, mb: 1.5 }}>

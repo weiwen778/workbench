@@ -1,12 +1,12 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
-  AppBar, Badge, Box, Button, CircularProgress, IconButton, Paper, Stack, Toolbar, Tooltip,
+  AppBar, Badge, Box, Button, IconButton, Paper, Stack, Toolbar, Tooltip,
   Typography,
 } from '@mui/material'
 import {
   ChecklistRtl, DarkModeOutlined, EventAvailable, LightModeOutlined, List as ListIcon, MoreHoriz,
-  Search, Settings, TableChart, TaskAlt, BugReportOutlined,
+  Search, TableChart, TaskAlt, BugReportOutlined,
 } from '@mui/icons-material'
 import AppRail from './AppRail'
 import ModuleTabs from './ModuleTabs'

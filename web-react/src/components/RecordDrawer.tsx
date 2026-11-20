@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
-  Alert, Box, Button, Checkbox, DialogActions, DialogContent, DialogTitle,
-  FormControl, FormControlLabel, IconButton, InputLabel, MenuItem, Select, Stack, TextField, Typography,
+  Alert, Box, Button, Checkbox,
+  FormControl, FormControlLabel, InputLabel, MenuItem, Select, Stack, TextField, Typography,
 } from '@mui/material'
 import SpringDrawer from '@/motion/components/SpringDrawer'
 import { Paperclip, Upload } from '@/icons'
@@ -28,10 +28,12 @@ export default function RecordDrawer({
   const [conflict, setConflict] = useState(false)
   const [version, setVersion] = useState<number | null>(null)
   const [preview, setPreview] = useState<any | null>(null)
+  const [errors, setErrors] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (!open) return
     setConflict(false)
+    setErrors({})
     setVersion(record?.version ?? null)
     const next: Record<string, any> = {}
     const info: Record<string, any> = {}
@@ -60,6 +62,40 @@ export default function RecordDrawer({
     finally { setUploading(null) }
   }
 
+  const isEmptyValue = (field: any, value: any) => {
+    if (field.type === 'checkbox') return value !== true
+    if (value === null || value === undefined) return true
+    if (typeof value === 'string') return value.trim() === ''
+    if (Array.isArray(value)) return value.length === 0
+    return false
+  }
+
+  const validate = () => {
+    const next: Record<string, string> = {}
+    const missing: string[] = []
+    let filled = false
+    for (const field of fields) {
+      if (READONLY.includes(field.type)) continue
+      const empty = isEmptyValue(field, data[field.key])
+      if (!empty) filled = true
+      if (field.required && empty) {
+        next[field.key] = '请填写'
+        missing.push(field.name)
+      }
+    }
+    // 至少一列有内容，避免误点保存后埋下一条看不见的空行。
+    if (!filled) next._row = '请至少填写一列内容后再保存'
+    setErrors(next)
+    if (missing.length) toast.error(`请填写：${missing.join('、')}`)
+    else if (next._row) toast.error(next._row)
+    return Object.keys(next).length === 0
+  }
+
+  // 用户重新输入后清除上一次的校验提示。
+  useEffect(() => {
+    setErrors((prev) => (Object.keys(prev).length ? {} : prev))
+  }, [data])
+
   const buildPayload = () => {
     const payload: Record<string, any> = {}
     for (const field of fields) {
@@ -72,6 +108,7 @@ export default function RecordDrawer({
 
   const save = async (force = false) => {
     if (uploading || saving) return
+    if (!validate()) return
     setSaving(true)
     try {
       if (record) {
@@ -111,6 +148,11 @@ export default function RecordDrawer({
       <Box sx={{ p: 2.5, display: 'flex', flexDirection: 'column', height: '100%' }}>
         <Typography sx={{ fontSize: 16, fontWeight: 600, mb: 2 }}>{record ? '编辑这一行' : '添加一行'}</Typography>
         <Box sx={{ flex: 1, overflow: 'auto', pt: 1.25, mt: -1.25 }}>
+          {Object.keys(errors).length ? (
+            <Alert severity="error" sx={{ mb: 1.5 }}>
+              {errors._row || `请填写：${fields.filter((field) => errors[field.key]).map((field) => field.name).join('、')}`}
+            </Alert>
+          ) : null}
           {fields.map((field) => {
             const value = data[field.key]
             const externalLabel = READONLY.includes(field.type) || field.type === 'checkbox' || field.type === 'attachment'

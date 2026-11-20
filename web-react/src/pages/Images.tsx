@@ -1,10 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
 import {
   Box, Button, Checkbox, FormControl, IconButton, InputLabel, MenuItem, Select,
   Stack, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material'
-import { Divider } from '@mui/material'
 import {
   DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
 } from '@dnd-kit/core'
@@ -18,7 +16,7 @@ import { confirmDialog, toast } from '@/ui/feedback'
 import WhiteboardPicker from '@/components/WhiteboardPicker'
 import type { InsertItem } from '@/whiteboard/insert'
 import { insertFileId } from '@/whiteboard/scene'
-import {  } from '@/ui/common'
+import { ModuleToolbar } from '@/ui/common'
 import {
   clone, collageSize, defaults, download, encodeImage, extension, orientedSize, outputSize,
   renderCollage, renderImage, safeName, validateSize, zipImages, type CollageOptions, type ExportOptions,
@@ -136,7 +134,6 @@ function ToolSection({ icon, title, defaultOpen = false, children }: {
 const imageCache: { assets: ImageAsset[]; selectedId: number } = { assets: [], selectedId: 0 }
 
 export default function ImagesPage() {
-  const navigate = useNavigate()
   const [assets, setAssets] = useState<ImageAsset[]>(() => imageCache.assets)
   const [selectedId, setSelectedId] = useState(() => (
     imageCache.assets.some((asset) => asset.id === imageCache.selectedId) ? imageCache.selectedId : imageCache.assets[0]?.id || 0
@@ -432,7 +429,7 @@ export default function ImagesPage() {
     paintOverlay(drawing.current.points)
   }
 
-  const finishMark = (event: React.PointerEvent<HTMLCanvasElement>) => {
+  const finishMark = () => {
     if (!drawing.current || !active) return
     const points = drawing.current.points
     drawing.current = null
@@ -664,8 +661,12 @@ export default function ImagesPage() {
 
   if (!assets.length) {
     return (
-      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', p: 2 }}>
+      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', p: 2, gap: 1 }}>
         <input ref={fileInput} type="file" accept={IMAGE_ACCEPT} multiple hidden onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ''; void addFiles(files) }} />
+        <ModuleToolbar
+          info={<Typography sx={{ fontSize: 12, color: 'text.secondary' }}><Picture sx={{ fontSize: 14, verticalAlign: -2, mr: 0.5 }} />本地处理 · 图片不上传</Typography>}
+          primary={<Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => fileInput.current?.click()}>选择图片</Button>}
+        />
         <Box
           onDragOver={(event) => { event.preventDefault(); setDragOver(true) }}
           onDragLeave={() => setDragOver(false)}
@@ -674,8 +675,8 @@ export default function ImagesPage() {
           sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1.5, border: '1px dashed', borderColor: dragOver ? 'primary.main' : 'divider', borderRadius: 1.5, cursor: 'pointer', textAlign: 'center', p: 3 }}
         >
           <Picture sx={{ fontSize: 52, color: 'text.secondary' }} />
-          <Typography sx={{ fontSize: 23, fontWeight: 500 }}>拖入图片开始处理</Typography>
-          <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>选择文件，或按 Ctrl / Command + V 粘贴</Typography>
+          <Typography sx={{ fontSize: 23, fontWeight: 500 }}>拖入或点击选择图片</Typography>
+          <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>也可以按 Ctrl / Command + V 粘贴</Typography>
           <Button size="small" variant="contained" onClick={(event) => { event.stopPropagation(); fileInput.current?.click() }}>选择图片</Button>
           <Typography sx={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.9 }}>JPG / PNG / WebP / GIF / BMP / SVG / AVIF / ICO · 单次最多 30 张、100 MB<br />本地处理，图片不上传；素材切页保留，刷新后清空</Typography>
         </Box>
@@ -685,25 +686,20 @@ export default function ImagesPage() {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflow: 'hidden', p: 1.5, gap: 1 }}>
-      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ flexShrink: 0 }}>
-        <input ref={fileInput} type="file" accept={IMAGE_ACCEPT} multiple hidden onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ''; void addFiles(files) }} />
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} disabled={busy} onClick={() => fileInput.current?.click()}>添加图片</Button>
-          <Button size="small" startIcon={<Brush fontSize="small" />} disabled={(!active && checked.length === 0) || busy || sending} onClick={() => void sendToWhiteboard()}>发送到白板</Button>
-          <Typography sx={{ fontSize: 12, color: 'text.secondary' }}><Picture sx={{ fontSize: 14, verticalAlign: -2, mr: 0.5 }} />本地处理 · 图片不上传</Typography>
-        </Stack>
-        <div className="spacer" />
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Button size="small" disabled={!active || busy || !canUndo} onClick={undo}>撤销</Button>
-          <Button size="small" disabled={!active || busy || !canRedo} onClick={redo}>重做</Button>
-        </Stack>
-        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Button size="small" disabled={!active || busy} onClick={resetCurrent}>重置当前图片</Button>
-        </Stack>
-        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
-        <Button size="small" variant="contained" startIcon={<Download fontSize="small" />} disabled={!active || busy} onClick={() => void exportCurrent()}>导出当前图片</Button>
-      </Stack>
+      <input ref={fileInput} type="file" accept={IMAGE_ACCEPT} multiple hidden onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ''; void addFiles(files) }} />
+      <ModuleToolbar
+        info={<Typography sx={{ fontSize: 12, color: 'text.secondary' }}><Picture sx={{ fontSize: 14, verticalAlign: -2, mr: 0.5 }} />本地处理 · 图片不上传</Typography>}
+        filters={(
+          <>
+            <Button size="small" variant="outlined" startIcon={<Plus fontSize="small" />} disabled={busy} onClick={() => fileInput.current?.click()}>添加图片</Button>
+            <Button size="small" startIcon={<Brush fontSize="small" />} disabled={(!active && checked.length === 0) || busy || sending} onClick={() => void sendToWhiteboard()}>发送到白板</Button>
+            <Button size="small" disabled={!active || busy || !canUndo} onClick={undo}>撤销</Button>
+            <Button size="small" disabled={!active || busy || !canRedo} onClick={redo}>重做</Button>
+            <Button size="small" disabled={!active || busy} onClick={resetCurrent}>重置当前图片</Button>
+          </>
+        )}
+        primary={<Button size="small" variant="contained" startIcon={<Download fontSize="small" />} disabled={!active || busy} onClick={() => void exportCurrent()}>导出当前图片</Button>}
+      />
 
       <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, flex: 1, minHeight: 0, border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
         <Box sx={{

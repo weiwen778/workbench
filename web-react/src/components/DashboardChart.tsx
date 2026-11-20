@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { Box, Button, LinearProgress, Typography, useTheme } from '@mui/material'
 import { Direction } from '@/icons'
 import { useNavigate } from 'react-router-dom'
-import { aggregationLabels, chartPalette, formatDashboardNumber, isHexColor, type DashboardResult, type DashboardWidget, type ProgressValue } from '@/dashboard'
+import { aggregationLabels, CHART_COLORS, formatDashboardNumber, isHexColor, type DashboardResult, type DashboardWidget, type ProgressValue } from '@/dashboard'
 import { useSession } from '@/session'
 import { BarChart, LineChart, PieChart } from '@mui/x-charts'
 import ChartFrame, { useChartSkipAnimation } from '@/motion/components/ChartFrame'
@@ -54,12 +54,10 @@ export default memo(function DashboardChart({ widget, result }: { widget: Dashbo
   }
 
   const border = theme.palette.divider
-  const primary = theme.palette.primary.main
   const shortLabel = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) ? value.slice(2) : Array.from(value).length > 8 ? Array.from(value).slice(0, 7).join('') + '…' : value
   const compact = (value: number) => Math.abs(value) >= 1e8 ? `${formatDashboardNumber(value / 1e8, 1)}亿` : Math.abs(value) >= 1e4 ? `${formatDashboardNumber(value / 1e4, 1)}万` : formatDashboardNumber(value, 1)
   const format = (value: string | number | null | undefined) => formatDashboardNumber(value, widget.decimals)
-  const palette = chartPalette(primary)
-  const pickColor = (index: number) => customColors[index] || palette[index % palette.length]
+  const pickColor = (index: number) => customColors[index] || CHART_COLORS[index % CHART_COLORS.length]
   const seriesColors = seriesData.map((_, index) => pickColor(index))
   const pieColors = labels.map((_, index) => pickColor(index))
   const seriesKeys = seriesData.map((_, index) => `series${index}`)
@@ -179,9 +177,9 @@ function TaskProgress({ widget, result }: { widget: DashboardWidget; result: Das
             {widget.progress?.mode === 'tasks' && widget.progress.due_field ? ` · 逾期未完成 ${progress.overdue_rows} 项` : ''}
           </Typography>
         </Box>
-        {widget.progress?.display !== 'circle' ? <Typography sx={{ fontSize: 25, fontWeight: 600, color: accent || 'primary.main' }}>{percent(progress)}</Typography> : null}
+        {widget.progress?.display !== 'circle' ? <Typography sx={{ fontSize: 25, fontWeight: 600, color: accent || CHART_COLORS[0] }}>{percent(progress)}</Typography> : null}
       </Box>
-      <LinearProgress variant="determinate" value={clamped(progress)} sx={{ height: 12, borderRadius: 6, bgcolor: 'action.hover', ...(accent ? { '& .MuiLinearProgress-bar': { bgcolor: accent } } : {}) }} />
+      <LinearProgress variant="determinate" value={clamped(progress)} sx={{ height: 12, borderRadius: 6, bgcolor: 'action.hover', '& .MuiLinearProgress-bar': { bgcolor: accent || CHART_COLORS[0] } }} />
       {result.progress_groups?.length ? (
         <Box sx={{ display: 'grid', gap: 2, borderTop: 1, borderColor: 'divider', pt: 2.25, mt: 2.75 }}>
           {result.progress_groups.map((group, index) => (
@@ -192,7 +190,7 @@ function TaskProgress({ widget, result }: { widget: DashboardWidget; result: Das
                   {format(group.actual)} / {format(group.target)} {unit} · {percent(group)} <Direction sx={{ fontSize: 14 }} />
                 </Box>
               </Box>
-              <LinearProgress variant="determinate" value={clamped(group)} sx={{ height: 7, borderRadius: 4, bgcolor: 'action.hover', ...(accent ? { '& .MuiLinearProgress-bar': { bgcolor: accent } } : {}) }} />
+              <LinearProgress variant="determinate" value={clamped(group)} sx={{ height: 7, borderRadius: 4, bgcolor: 'action.hover', '& .MuiLinearProgress-bar': { bgcolor: accent || CHART_COLORS[0] } }} />
             </Box>
           ))}
         </Box>

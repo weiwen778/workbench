@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Box, CircularProgress, Tab, Tabs, Typography } from '@mui/material'
-import { Page, PageToolbar } from '@/ui/common'
+import { ModuleToolbar, Page } from '@/ui/common'
 
 const PdfEditor = lazy(() => import('@/docs/pdf/PdfEditor'))
 const SheetEditor = lazy(() => import('@/docs/sheet/WorkbookEditor'))
@@ -73,18 +73,20 @@ export default function DocsPage() {
   }
   return (
     <Page variant="bleed" sx={{ minHeight: 0 }}>
-      <PageToolbar sx={{ px: 2, py: 0.6, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
-        <Tabs
-          value={module}
-          onChange={(_, value: ModuleKey) => select(value)}
-          variant="scrollable"
-          allowScrollButtonsMobile
-          sx={{ minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0, fontSize: 13 } }}
-        >
-          {TABS.map((item) => <Tab key={item.key} value={item.key} label={item.label} onMouseEnter={() => { void loaders[item.key]() }} onFocus={() => { void loaders[item.key]() }} />)}
-        </Tabs>
-        <Box sx={{ flex: 1 }} />
-      </PageToolbar>
+      <ModuleToolbar
+        sx={{ px: 2, py: 0.6, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
+        info={(
+          <Tabs
+            value={module}
+            onChange={(_, value: ModuleKey) => select(value)}
+            variant="scrollable"
+            allowScrollButtonsMobile
+            sx={{ minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0, fontSize: 13 } }}
+          >
+            {TABS.map((item) => <Tab key={item.key} value={item.key} label={item.label} onMouseEnter={() => { void loaders[item.key]() }} onFocus={() => { void loaders[item.key]() }} />)}
+          </Tabs>
+        )}
+      />
       <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>
         {panel('pdf', <PdfEditor />)}
         {panel('sheet', <SheetEditor active={module === 'sheet'} />)}

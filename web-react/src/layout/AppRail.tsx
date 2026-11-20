@@ -50,16 +50,16 @@ export default function AppRail({ mode, pinned, groups, onToggleMode }: AppRailP
   }
 
   const itemSx = (active: boolean) => ({
-    width: wide ? '100%' : 86,
-    minHeight: wide ? 40 : 51,
-    px: wide ? 1.4 : 0,
-    py: wide ? 0.3 : 0.45,
+    width: wide ? '100%' : 82,
+    minHeight: wide ? 38 : 48,
+    px: wide ? 1.3 : 0,
+    py: wide ? 0.26 : 0.42,
     display: 'flex',
     flexDirection: wide ? 'row' : 'column',
     alignItems: 'center',
     justifyContent: wide ? 'flex-start' : 'center',
-    gap: wide ? 1.1 : 0.33,
-    borderRadius: 1.1,
+    gap: wide ? 1.05 : 0.32,
+    borderRadius: 1.05,
     cursor: 'pointer',
     userSelect: 'none',
     overflow: 'hidden',
@@ -91,13 +91,13 @@ export default function AppRail({ mode, pinned, groups, onToggleMode }: AppRailP
         onMouseEnter={() => preloadPath(item.path)}
         onFocus={() => preloadPath(item.path)}
         onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate() } }}
-        sx={{ ...itemSx(active), ...(hasSub ? { pr: 2.8 } : {}) }}
+        sx={{ ...itemSx(active), ...(hasSub ? { pr: 2.6 } : {}) }}
       >
-        <Icon sx={{ fontSize: wide ? 22 : 21, flexShrink: 0 }} />
+        <Icon sx={{ fontSize: wide ? 21 : 20, flexShrink: 0 }} />
         <Typography
           component="span"
           sx={{
-            fontSize: wide ? 14.3 : 13.2,
+            fontSize: wide ? 13.65 : 12.6,
             lineHeight: 1.15,
             whiteSpace: 'nowrap',
             overflow: 'hidden',
@@ -110,7 +110,7 @@ export default function AppRail({ mode, pinned, groups, onToggleMode }: AppRailP
         </Typography>
         {hasSub ? (
           <ChevronRight sx={{
-            fontSize: 16.5, flexShrink: 0, color: active ? 'primary.contrastText' : 'text.disabled',
+            fontSize: 15.8, flexShrink: 0, color: active ? 'primary.contrastText' : 'text.disabled',
             transition: 'transform 160ms ease', transform: openKey === item.key ? 'rotate(90deg)' : 'none',
             pointerEvents: 'none',
           }} />
@@ -130,7 +130,7 @@ export default function AppRail({ mode, pinned, groups, onToggleMode }: AppRailP
       sx={itemSx(active)}
     >
       {icon}
-      <Typography component="span" sx={{ fontSize: wide ? 14.3 : 13.2, lineHeight: 1.15, whiteSpace: 'nowrap' }}>{label}</Typography>
+      <Typography component="span" sx={{ fontSize: wide ? 13.65 : 12.6, lineHeight: 1.15, whiteSpace: 'nowrap' }}>{label}</Typography>
     </Box>
   )
 
@@ -139,7 +139,7 @@ export default function AppRail({ mode, pinned, groups, onToggleMode }: AppRailP
       component="nav"
       aria-label="主导航"
       sx={{
-        width: wide ? 252 : 106,
+        width: wide ? 240 : 101,
         flexShrink: 0,
         bgcolor: theme.palette.mode === 'dark' ? '#11181B' : '#FBFCFB',
         borderRight: 1,
@@ -148,13 +148,13 @@ export default function AppRail({ mode, pinned, groups, onToggleMode }: AppRailP
         flexDirection: 'column',
         alignItems: 'center',
         overflow: 'hidden',
-        py: 1.1,
-        gap: 0.55,
+        py: 1.05,
+        gap: 0.53,
         transition: 'width 160ms ease',
         '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
       }}
     >
-      <Box sx={{ position: 'relative', width: '100%', height: 48, px: wide ? 1.4 : 0.55, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      <Box sx={{ position: 'relative', width: '100%', height: 46, px: wide ? 1.3 : 0.53, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
         <Tooltip title="回到首页">
           <Box
             role="button"
@@ -190,9 +190,9 @@ export default function AppRail({ mode, pinned, groups, onToggleMode }: AppRailP
           </Box>
         </Tooltip>
       </Box>
-      <Divider sx={{ width: wide ? 'calc(100% - 22px)' : 35, mb: 0.55 }} />
+      <Divider sx={{ width: wide ? 'calc(100% - 21px)' : 34, mb: 0.53 }} />
 
-      <Box sx={{ width: '100%', flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', px: wide ? 0.85 : 0.55, pb: 0.55, display: 'flex', flexDirection: 'column', alignItems: wide ? 'stretch' : 'center', gap: 0.55, scrollbarWidth: 'thin' }}>
+      <Box sx={{ width: '100%', flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', px: wide ? 0.79 : 0.53, pb: 0.53, display: 'flex', flexDirection: 'column', alignItems: wide ? 'stretch' : 'center', gap: 0.53, scrollbarWidth: 'thin' }}>
         {items.map((item) => {
           if (!item) return null
           const group = groups.find((entry) => entry.key === item.key)
@@ -214,9 +214,9 @@ export default function AppRail({ mode, pinned, groups, onToggleMode }: AppRailP
                     <Box
                       aria-label={`${item.label}二级导航`}
                       sx={{
-                        width: '100%', maxHeight: 'min(42vh, 374px)', overflowY: 'auto', overflowX: 'hidden',
-                        display: 'flex', flexDirection: 'column', gap: '3.3px', py: 0.28,
-                        mt: 0.28, mb: 0.55, pl: 2.8, pr: 0.55,
+                        width: '100%', maxHeight: 'min(42vh, 357px)', overflowY: 'auto', overflowX: 'hidden',
+                        display: 'flex', flexDirection: 'column', gap: '3.2px', py: 0.26,
+                        mt: 0.26, mb: 0.53, pl: 2.6, pr: 0.53,
                         borderLeft: '1px solid', borderColor: 'divider',
                       }}
                     >
@@ -234,16 +234,16 @@ export default function AppRail({ mode, pinned, groups, onToggleMode }: AppRailP
                               type="button"
                               onClick={(event) => { event.stopPropagation(); go(sub.path) }}
                               sx={{
-                                width: '100%', minHeight: 31, display: 'flex', alignItems: 'center', gap: 0.85,
-                                border: 0, borderRadius: 0.85, bgcolor: active ? 'action.selected' : 'transparent',
-                                color: active ? 'primary.main' : 'text.secondary', px: 0.85, py: 0.55,
+                                width: '100%', minHeight: 29, display: 'flex', alignItems: 'center', gap: 0.79,
+                                border: 0, borderRadius: 0.79, bgcolor: active ? 'action.selected' : 'transparent',
+                                color: active ? 'primary.main' : 'text.secondary', px: 0.79, py: 0.53,
                                 textAlign: 'left', cursor: 'pointer',
                                 '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
                               }}
                             >
-                              <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: 13.2, fontWeight: active ? 600 : 400 }}>{sub.label}</Typography>
+                              <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: 12.6, fontWeight: active ? 600 : 400 }}>{sub.label}</Typography>
                               {typeof sub.count === 'number' && sub.count > 0 ? (
-                                <Typography component="span" sx={{ fontSize: 12.7, color: 'text.disabled' }}>{sub.count}</Typography>
+                                <Typography component="span" sx={{ fontSize: 12.1, color: 'text.disabled' }}>{sub.count}</Typography>
                               ) : null}
                             </Box>
                           </motion.div>
@@ -258,12 +258,12 @@ export default function AppRail({ mode, pinned, groups, onToggleMode }: AppRailP
         })}
       </Box>
 
-      <Divider sx={{ width: wide ? 'calc(100% - 22px)' : 35, my: 0.55 }} />
-      <Box sx={{ width: '100%', px: wide ? 0.85 : 0.55, display: 'flex', flexDirection: 'column', alignItems: wide ? 'stretch' : 'center', gap: 0.28 }}>
-        {bottomItem('设置', <Settings sx={{ fontSize: wide ? 22 : 21 }} />, location.pathname.startsWith('/settings'), () => go('/settings'))}
+      <Divider sx={{ width: wide ? 'calc(100% - 21px)' : 34, my: 0.53 }} />
+      <Box sx={{ width: '100%', px: wide ? 0.79 : 0.53, display: 'flex', flexDirection: 'column', alignItems: wide ? 'stretch' : 'center', gap: 0.26 }}>
+        {bottomItem('设置', <Settings sx={{ fontSize: wide ? 21 : 20 }} />, location.pathname.startsWith('/settings'), () => go('/settings'))}
         {bottomItem(
           wide ? '收起侧栏' : '展开侧栏',
-          wide ? <ChevronLeft sx={{ fontSize: 21 }} /> : <ChevronRight sx={{ fontSize: 21 }} />,
+          wide ? <ChevronLeft sx={{ fontSize: 20 }} /> : <ChevronRight sx={{ fontSize: 20 }} />,
           false,
           onToggleMode,
         )}

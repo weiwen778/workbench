@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Box, Button, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
-import { Refresh } from '@/icons'
 import { apiError, http } from '@/api/client'
-import { DataTable, EmptyHint, Page, PageBody, PageToolbar } from '@/ui/common'
+import { ModuleToolbar, DataTable, EmptyHint, Page, PageBody } from '@/ui/common'
 import { confirmDialog, toast } from '@/ui/feedback'
 
 export default function TrashView({ embedded = false }: { embedded?: boolean }) {
@@ -56,23 +55,24 @@ export default function TrashView({ embedded = false }: { embedded?: boolean }) 
 
   const content = (
     <>
-      <PageToolbar>
-        <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>删除后保留 30 天，到期不可恢复</Typography>
-        <div className="spacer" />
-        <Stack direction="row" spacing={0.75}>
-          <Button size="small" startIcon={<Refresh fontSize="small" />} onClick={() => void load()}>刷新</Button>
-          <Button size="small" onClick={purgeExpired}>清理已到期</Button>
-        </Stack>
-      </PageToolbar>
-      <ToggleButtonGroup size="small" exclusive value={kind} onChange={(_, value) => value !== null && setKind(value)} sx={{ mb: 1.5, flexWrap: 'wrap' }}>
-        <ToggleButton value="">全部</ToggleButton>
-        <ToggleButton value="table">表格</ToggleButton>
-        <ToggleButton value="record">表格行</ToggleButton>
-        <ToggleButton value="note">笔记</ToggleButton>
-        <ToggleButton value="memo">便利贴</ToggleButton>
-        <ToggleButton value="todo">待办</ToggleButton>
-        <ToggleButton value="todo_list">待办清单</ToggleButton>
-      </ToggleButtonGroup>
+      <ModuleToolbar
+        info={<Typography sx={{ fontSize: 12, color: 'text.secondary' }}>删除后保留 30 天，到期不可恢复</Typography>}
+        filters={(
+          <ToggleButtonGroup size="small" exclusive value={kind} onChange={(_, value) => value !== null && setKind(value)} sx={{ flexWrap: 'wrap' }}>
+            <ToggleButton value="">全部</ToggleButton>
+            <ToggleButton value="table">表格</ToggleButton>
+            <ToggleButton value="record">表格行</ToggleButton>
+            <ToggleButton value="note">笔记</ToggleButton>
+            <ToggleButton value="memo">便利贴</ToggleButton>
+            <ToggleButton value="todo">待办</ToggleButton>
+            <ToggleButton value="todo_list">待办清单</ToggleButton>
+          </ToggleButtonGroup>
+        )}
+        onRefresh={() => void load()}
+        refreshLabel="刷新回收站"
+        refreshDisabled={loading}
+        primary={<Button size="small" color="error" variant="contained" onClick={purgeExpired}>清理已到期</Button>}
+      />
       <PageBody>
         <DataTable
           rows={items}

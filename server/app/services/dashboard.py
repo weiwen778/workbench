@@ -322,8 +322,8 @@ def _aggregate_single(db, widgets: list[Widget], dates: DateRange, all_groups=fr
                     points.sort(key=lambda p: p[0])
                 else:
                     points.sort(key=lambda p: (p[1] is None, -(p[1] or Decimal(0)), p[0]))
-                # Preserve chronological order for a date trend after selecting its displayed range.
-                if w.kind == 'line' and fields[w.group_field].type == 'date':
+                # 时间分组一律按时间顺序，并取最近 limit 组；排序只对非时间维度生效。
+                if w.kind in {'bar', 'line'} and fields[w.group_field].type == 'date':
                     points.sort(key=lambda p: p[0])
                     shown = points[-w.limit:]
                 else:
@@ -392,7 +392,7 @@ def aggregate(db, widgets: list[Widget], dates: DateRange):
             continue
         first = calculated[children[0][0]]
         points = first['points']
-        shown = points[-widget.limit:] if widget.kind == 'line' and first['group_type'] == 'date' else points[:widget.limit]
+        shown = points[-widget.limit:] if widget.kind in {'bar', 'line'} and first['group_type'] == 'date' else points[:widget.limit]
         labels = [point['label'] for point in shown]
         series = []
         for id, key, name in children:

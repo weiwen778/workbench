@@ -8,10 +8,10 @@ import { Excalidraw, convertToExcalidrawElements, exportToBlob, exportToClipboar
 import '@excalidraw/excalidraw/index.css'
 import type { BinaryFiles, ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types'
-import { ArrowLeft, Check, Download, MoreFilled } from '@/icons'
+import { ArrowLeft, Check, MoreFilled } from '@/icons'
 import { apiError } from '@/api/client'
 import { useSession } from '@/session'
-import { LoadingBlock, LoadingBar } from '@/ui/common'
+import { LoadingBlock, LoadingBar, ModuleToolbar } from '@/ui/common'
 import { confirmDialog, toast } from '@/ui/feedback'
 import { downloadBlob } from '@/convert/files'
 import {
@@ -569,41 +569,45 @@ export default function WhiteboardEditorPage() {
 
   return (
     <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-      <Stack
-        direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap
-        sx={{ px: 1.25, py: 0.75, borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper', flexShrink: 0 }}
-      >
-        <Tooltip title="返回白板列表">
-          <IconButton size="small" aria-label="返回白板列表" onClick={() => void goBack()}><ArrowLeft fontSize="small" /></IconButton>
-        </Tooltip>
-        <TextField
-          size="small" value={titleDraft} aria-label="白板标题"
-          onChange={(event) => setTitleDraft(event.target.value)}
-          onBlur={() => void commitTitle()}
-          onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); (event.target as HTMLInputElement).blur() } }}
-          inputProps={{ maxLength: 120 }}
-          sx={{ width: { xs: 150, sm: 260 }, '& .MuiInputBase-input': { fontSize: 14, fontWeight: 600, py: 0.5 } }}
-        />
-        <Chip size="small" variant="outlined" color={statusMeta.color} label={statusMeta.label} sx={{ fontSize: 11.5 }} />
-        <Box sx={{ flex: 1 }} />
-        <Button
-          size="small" variant="contained" startIcon={<SaveIcon fontSize="small" />}
-          disabled={saving.current || conflict}
-          onClick={() => void saveNow(true)}
-        >
-          保存
-        </Button>
-        <Button
-          size="small" variant="outlined" startIcon={<Download fontSize="small" />} endIcon={<MoreFilled fontSize="small" />}
-          aria-label="导出白板" onClick={(event) => setMenuAnchor(event.currentTarget)}
-        >
-          导出
-        </Button>
-        <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
-          <MenuItem onClick={() => void copySelection()}>复制选区为图片</MenuItem>
-          <MenuItem onClick={() => void exportBoard()}>导出整板 PNG</MenuItem>
-        </Menu>
-      </Stack>
+      <ModuleToolbar
+        sx={{ px: 1.25, py: 0.75, borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper' }}
+        info={(
+          <>
+            <Tooltip title="返回白板列表">
+              <IconButton size="small" aria-label="返回白板列表" onClick={() => void goBack()}><ArrowLeft fontSize="small" /></IconButton>
+            </Tooltip>
+            <TextField
+              size="small" value={titleDraft} aria-label="白板标题"
+              onChange={(event) => setTitleDraft(event.target.value)}
+              onBlur={() => void commitTitle()}
+              onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); (event.target as HTMLInputElement).blur() } }}
+              inputProps={{ maxLength: 120 }}
+              sx={{ width: { xs: 150, sm: 260 }, '& .MuiInputBase-input': { fontSize: 14, fontWeight: 600, py: 0.5 } }}
+            />
+            <Chip size="small" variant="outlined" color={statusMeta.color} label={statusMeta.label} sx={{ fontSize: 11.5 }} />
+          </>
+        )}
+        more={(
+          <>
+            <Tooltip title="白板操作">
+              <IconButton size="small" aria-label="白板操作" onClick={(event) => setMenuAnchor(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
+            </Tooltip>
+            <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
+              <MenuItem onClick={() => { setMenuAnchor(null); void copySelection() }}>复制选区为图片</MenuItem>
+              <MenuItem onClick={() => { setMenuAnchor(null); void exportBoard() }}>导出整板 PNG</MenuItem>
+            </Menu>
+          </>
+        )}
+        primary={(
+          <Button
+            size="small" variant="contained" startIcon={<SaveIcon fontSize="small" />}
+            disabled={saving.current || conflict}
+            onClick={() => void saveNow(true)}
+          >
+            保存
+          </Button>
+        )}
+      />
       <LoadingBar active={status === 'saving'} />
 
       {conflict ? (
