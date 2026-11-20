@@ -12,8 +12,11 @@ import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, v
 import { CSS } from '@dnd-kit/utilities'
 import { useSession } from '@/session'
 import { DragIndicator, Search } from '@/icons'
-import { APP_NAV_GROUPS, APP_NAV_ITEMS, DEFAULT_PINNED_KEYS, appNavItem, type AppNavItem } from '@/layout/app-nav'
-import { readPinnedKeys, readSidebarMode, writePinnedKeys, writeSidebarMode, type SidebarMode } from '@/layout/sidebar-order'
+import { APP_NAV_GROUPS, APP_NAV_ITEMS, APP_NAV_KEYS, DEFAULT_PINNED_KEYS, appNavItem, type AppNavItem } from '@/layout/app-nav'
+import {
+  SIDEBAR_MODE_EVENT, SIDEBAR_ORDER_EVENT,
+  readPinnedKeys, readSidebarMode, writePinnedKeys, writeSidebarMode, type SidebarMode,
+} from '@/layout/sidebar-order'
 import { Card } from '../SettingsSections'
 
 function matches(query: string, label: string) {
@@ -69,7 +72,7 @@ export default function NavigationSection() {
   const navigate = useNavigate()
   const userId = session.user?.id
   const [mode, setMode] = useState<SidebarMode>(() => readSidebarMode(userId))
-  const [pinned, setPinned] = useState<string[]>(() => readPinnedKeys(userId, DEFAULT_PINNED_KEYS, APP_NAV_ITEMS.map((item) => item.key)))
+  const [pinned, setPinned] = useState<string[]>(() => readPinnedKeys(userId, DEFAULT_PINNED_KEYS, APP_NAV_KEYS))
   const [query, setQuery] = useState('')
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -77,11 +80,21 @@ export default function NavigationSection() {
   )
 
   useEffect(() => {
-    setMode(readSidebarMode(userId))
-    setPinned(readPinnedKeys(userId, DEFAULT_PINNED_KEYS, APP_NAV_ITEMS.map((item) => item.key)))
+    const sync = () => {
+      setMode(readSidebarMode(userId))
+      setPinned(readPinnedKeys(userId, DEFAULT_PINNED_KEYS, APP_NAV_KEYS))
+    }
+    sync()
+    window.addEventListener(SIDEBAR_ORDER_EVENT, sync)
+    window.addEventListener(SIDEBAR_MODE_EVENT, sync)
+    return () => {
+      window.removeEventListener(SIDEBAR_ORDER_EVENT, sync)
+      window.removeEventListener(SIDEBAR_MODE_EVENT, sync)
+    }
   }, [userId])
 
   const pinnedItems = pinned.map((key) => appNavItem(key)).filter((item): item is AppNavItem => Boolean(item))
+  const pinnedMatch = pinnedItems.some((item) => matches(query, item.label))
   const groups = useMemo(() => APP_NAV_GROUPS.map((group) => ({
     ...group,
     items: APP_NAV_ITEMS.filter((item) => item.group === group.key && !pinned.includes(item.key) && matches(query, item.label)),
@@ -96,18 +109,21 @@ export default function NavigationSection() {
     setPinned(keys)
     writePinnedKeys(userId, keys)
   }
+  const latestPinned = () => readPinnedKeys(userId, DEFAULT_PINNED_KEYS, APP_NAV_KEYS)
   const pin = (key: string) => {
-    if (pinned.includes(key)) return
-    changePinned([...pinned, key])
+    const current = latestPinned()
+    if (current.includes(key)) return
+    changePinned([...current, key])
   }
-  const unpin = (key: string) => changePinned(pinned.filter((value) => value !== key))
+  const unpin = (key: string) => changePinned(latestPinned().filter((value) => value !== key))
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
     if (!over || active.id === over.id) return
-    const oldIndex = pinned.indexOf(String(active.id))
-    const newIndex = pinned.indexOf(String(over.id))
+    const current = latestPinned()
+    const oldIndex = current.indexOf(String(active.id))
+    const newIndex = current.indexOf(String(over.id))
     if (oldIndex < 0 || newIndex < 0) return
-    changePinned(arrayMove(pinned, oldIndex, newIndex))
+    changePinned(arrayMove(current, oldIndex, newIndex))
   }
   const reset = () => {
     setMode('narrow')
@@ -185,10 +201,11 @@ export default function NavigationSection() {
             </List>
           </Box>
         ))}
-        {!groups.length ? (
-          <Typography sx={{ p: 2, fontSize: 12, color: 'text.secondary' }}>
-            {query.trim() ? '没有匹配的功能' : '全部模块都已固定'}
-          </Typography>
+        {!groups.length && !query.trim() ? (
+          <Typography sx={{ p: 2, fontSize: 12, color: 'text.secondary' }}>全部模块都已固定</Typography>
+        ) : null}
+        {!groups.length && query.trim() && !pinnedMatch ? (
+          <Typography sx={{ p: 2, fontSize: 12, color: 'text.secondary' }}>没有匹配的功能</Typography>
         ) : null}
       </Card>
     </Stack>
