@@ -45,7 +45,7 @@ const railMetrics = await rail.evaluate((element) => ({
 }))
 expect(['visible', 'hidden'].includes(railMetrics.overflow), '主导航不应使用滚动容器')
 expect(railMetrics.scrollHeight <= railMetrics.clientHeight + 1, '主导航出现滚动')
-expect((await rail.innerText()).includes('全部功能'), '主导航缺少全部功能入口')
+expect(!(await rail.innerText()).includes('全部功能'), '主导航不应再显示全部功能入口')
 
 // 宽窄切换并持久化
 await page.getByRole('button', { name: '展开侧栏', exact: true }).click()
@@ -199,6 +199,13 @@ await page.getByRole('button', { name: '展开设置目录' }).click()
 await page.waitForTimeout(300)
 expect((await page.getByLabel('设置分类', { exact: true }).evaluate((element) => element.clientWidth)) >= 200, '设置目录没有展开')
 await page.screenshot({ path: '../.run/ui-consistency-settings-content.png' })
+
+// 移动端设置 → 导航：全部功能长列表可滚动到最后一项
+await page.setViewportSize({ width: 390, height: 844 })
+await page.goto(`${base}/settings/navigation`, { waitUntil: 'networkidle' })
+const lastModule = page.getByRole('button', { name: '打开白板' })
+await lastModule.scrollIntoViewIfNeeded()
+expect(await lastModule.isVisible(), '设置页全部功能长列表无法滚动到末尾')
 
 // 移动端：不再出现双列导航
 await page.setViewportSize({ width: 390, height: 844 })

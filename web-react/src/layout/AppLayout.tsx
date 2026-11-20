@@ -53,7 +53,6 @@ export default function AppLayout() {
   const location = useLocation()
   const [narrow, setNarrow] = useState(() => window.innerWidth < 900)
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [allNavOpen, setAllNavOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [toolsOpen, setToolsOpen] = useState(false)
   const [toolsView, setToolsView] = useState<'tasks' | 'activity'>('tasks')
@@ -288,7 +287,6 @@ export default function AppLayout() {
           pinned={pinned}
           groups={groups}
           onToggleMode={toggleNavMode}
-          onOpenAll={() => setAllNavOpen(true)}
         />
       ) : null}
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', flex: 1, minWidth: 0 }}>
@@ -373,8 +371,8 @@ export default function AppLayout() {
       </Box>
 
       <NavAllDrawer
-        open={drawerOpen || allNavOpen}
-        onClose={() => { setDrawerOpen(false); setAllNavOpen(false) }}
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
         pinned={pinned}
         onTogglePin={togglePin}
       />
