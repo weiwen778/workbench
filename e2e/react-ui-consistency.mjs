@@ -7,7 +7,10 @@ const page = await context.newPage()
 const errors = []
 page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`))
 page.on('console', (message) => {
-  if (message.type() === 'error' && !message.text().includes('401')) errors.push(`console: ${message.text()}`)
+  if (message.type() !== 'error' || message.text().includes('401')) return
+  // 网址导航会加载第三方 favicon；外网不可达时浏览器会报资源错误，与本地功能无关。
+  if ((message.location()?.url || '').includes('favicon')) return
+  errors.push(`console: ${message.text()}`)
 })
 
 function expect(condition, message) {
@@ -62,13 +65,13 @@ await page.getByLabel('打卡二级导航').waitFor()
 
 // 设置 → 导航：搜索、打开、拖动排序、取消固定、重新固定、恢复默认
 await page.goto(`${base}/settings/navigation`, { waitUntil: 'networkidle' })
-await page.getByLabel('搜索功能').fill('白板')
-expect(await page.getByRole('button', { name: '打开白板' }).count() === 1, '设置页全部功能搜索失效')
+await page.getByLabel('搜索功能').fill('翻译')
+expect(await page.getByRole('button', { name: '打开翻译' }).count() === 1, '设置页全部功能搜索失效')
 await page.getByLabel('搜索功能').fill('不存在的模块')
 await page.getByText('没有匹配的功能').waitFor()
 await page.getByLabel('搜索功能').fill('')
-await page.getByRole('button', { name: '打开白板' }).click()
-await page.waitForURL('**/whiteboards')
+await page.getByRole('button', { name: '打开翻译' }).click()
+await page.waitForURL('**/translate')
 await page.goBack()
 await page.getByLabel('搜索功能').waitFor()
 await page.waitForTimeout(300)
