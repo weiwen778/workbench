@@ -385,16 +385,13 @@ export default function TodosPage() {
 
   return (
     <Box className="todos-layout">
-      <Box className="task-pane" sx={{ p: 1.5, gap: 1 }}>
+      <Box className="task-pane" sx={{ p: 2.5, gap: 2 }}>
         <ModuleToolbar
           info={(
-            <>
-              <Typography variant="caption" color="text.secondary">未完成 {counts.nodes_pending} / 全部 {counts.nodes_total}</Typography>
-              <ToggleButtonGroup size="small" exclusive value={sortMode} disabled={!currentList} onChange={(_, value) => value && void changeSortMode(value)}>
-                <ToggleButton value="auto">按截止时间</ToggleButton>
-                <ToggleButton value="manual">手动排序</ToggleButton>
-              </ToggleButtonGroup>
-            </>
+            <ToggleButtonGroup size="small" exclusive value={sortMode} disabled={!currentList} onChange={(_, value) => value && void changeSortMode(value)}>
+              <ToggleButton value="auto">按截止时间</ToggleButton>
+              <ToggleButton value="manual">手动排序</ToggleButton>
+            </ToggleButtonGroup>
           )}
           onRefresh={() => void load()}
           refreshLabel="刷新待办"
@@ -409,7 +406,7 @@ export default function TodosPage() {
               </Menu>
             </>
           ) : null}
-          primary={<Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => void createList()}>新建清单</Button>}
+          primary={<Button variant="contained" size="small" startIcon={<Plus />} onClick={() => void createList()} sx={{ height: 36 }}>新建清单</Button>}
         />
 
         <Paper variant="outlined" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1.25, mb: 1 }}>

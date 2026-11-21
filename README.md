@@ -314,7 +314,7 @@ web-react/
   src/
     App.tsx             路由与登录守卫
     pages/              页面（打卡、表格、看板、待办、笔记等）
-    layout/             侧栏、模块下拉、导航顺序
+    layout/             侧栏、导航顺序
     components/         共享组件（DataTable、TableView、RecordDrawer、导入向导等）
     docs/               PDF / 工作簿 / Markdown 文档
     docs/sheet/         Univer 工作簿 + SheetJS 桥接

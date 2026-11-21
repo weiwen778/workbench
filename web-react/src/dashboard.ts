@@ -85,7 +85,7 @@ export const chartLabels: Record<string, string> = {
 }
 
 /** 图表默认配色：独立于工作台主题色，改主题色不会改变图表默认外观。 */
-export const CHART_COLORS = ['#448361', '#d9730d', '#9065b0', '#c14c8a', '#cb912f', '#9f6b53', '#787774', '#3f7f9e']
+export const CHART_COLORS = ['#18181B', '#52525B', '#A1A1AA', '#D4D4D8', '#E4E4E7', '#71717A', '#3F3F46', '#FAFAFA']
 export const isHexColor = (value: string) => /^#[0-9a-fA-F]{6}$/.test(value)
 
 function hslToHex(hue: number, saturation: number, lightness: number) {
@@ -121,22 +121,10 @@ function contrastRatio(a: string, b: string) {
  */
 export function randomChartColors(count: number, mode: 'light' | 'dark' = 'light') {
   const total = Math.max(1, Math.min(30, Math.round(count) || 1))
-  const start = Math.random() * 360
-  const step = 137.508
-  const baseSaturation = mode === 'dark' ? 55 : 52
-  const baseLightness = mode === 'dark' ? 64 : 42
-  const background = mode === 'dark' ? '#171F22' : '#FFFFFF'
-  return Array.from({ length: total }, (_, index) => {
-    const hue = start + index * step + (Math.random() * 10 - 5)
-    const saturation = baseSaturation + (Math.random() * 10 - 5)
-    let lightness = baseLightness + (Math.random() * 8 - 4)
-    let color = hslToHex(hue, saturation, lightness)
-    while (contrastRatio(color, background) < 3 && (mode === 'dark' ? lightness < 82 : lightness > 18)) {
-      lightness += mode === 'dark' ? 2 : -2
-      color = hslToHex(hue, saturation, lightness)
-    }
-    return color
-  })
+  const palette = mode === 'dark'
+    ? ['#FAFAFA', '#D4D4D8', '#A1A1AA', '#71717A', '#52525B']
+    : ['#18181B', '#3F3F46', '#71717A', '#A1A1AA', '#D4D4D8']
+  return Array.from({ length: total }, (_, index) => palette[index % palette.length])
 }
 
 export const aggregationLabels: Record<string, string> = {

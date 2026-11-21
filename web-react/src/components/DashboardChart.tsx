@@ -2,8 +2,7 @@ import { memo } from 'react'
 import { Box, Button, LinearProgress, Typography, useTheme } from '@mui/material'
 import { Direction } from '@/icons'
 import { useNavigate } from 'react-router-dom'
-import { aggregationLabels, CHART_COLORS, formatDashboardNumber, isHexColor, type DashboardResult, type DashboardWidget, type ProgressValue } from '@/dashboard'
-import { useSession } from '@/session'
+import { aggregationLabels, formatDashboardNumber, isHexColor, type DashboardResult, type DashboardWidget, type ProgressValue } from '@/dashboard'
 import { BarChart, LineChart, PieChart } from '@mui/x-charts'
 import ChartFrame, { useChartSkipAnimation } from '@/motion/components/ChartFrame'
 import CountUp from '@/motion/components/CountUp'
@@ -20,7 +19,7 @@ export default memo(function DashboardChart({ widget, result }: { widget: Dashbo
     return (
       <Box sx={{ pt: 1.75 }}>
         <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, overflowWrap: 'anywhere' }}>
-          <Box component="strong" sx={{ fontSize: 'clamp(24px, 11cqw, 40px)', whiteSpace: 'nowrap', fontWeight: 600, fontVariantNumeric: 'tabular-nums', ...(customColors[0] ? { color: customColors[0] } : {}) }}>
+          <Box component="strong" sx={{ fontSize: { xs: 24, md: 28 }, whiteSpace: 'nowrap', fontWeight: 600, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums', ...(customColors[0] ? { color: customColors[0] } : {}) }}>
             {/* 刷新/切换周期时数值滚动；首屏不动，避免与既有断言抢时序 */}
             <CountUp
               value={Number(result.value ?? 0)}
@@ -57,8 +56,12 @@ export default memo(function DashboardChart({ widget, result }: { widget: Dashbo
   const shortLabel = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) ? value.slice(2) : Array.from(value).length > 8 ? Array.from(value).slice(0, 7).join('') + '…' : value
   const compact = (value: number) => Math.abs(value) >= 1e8 ? `${formatDashboardNumber(value / 1e8, 1)}亿` : Math.abs(value) >= 1e4 ? `${formatDashboardNumber(value / 1e4, 1)}万` : formatDashboardNumber(value, 1)
   const format = (value: string | number | null | undefined) => formatDashboardNumber(value, widget.decimals)
-  const pickColor = (index: number) => customColors[index] || CHART_COLORS[index % CHART_COLORS.length]
+  const defaultColors = theme.palette.mode === 'dark'
+    ? ['#FAFAFA', '#A1A1AA', '#71717A', '#D4D4D8', '#52525B', '#E4E4E7']
+    : ['#18181B', '#52525B', '#A1A1AA', '#D4D4D8', '#E4E4E7', '#71717A']
+  const pickColor = (index: number) => customColors[index] || defaultColors[index % defaultColors.length]
   const seriesColors = seriesData.map((_, index) => pickColor(index))
+  const barColors = seriesData.map((_, index) => customColors[index] || ['#A1A1AA', '#71717A', '#D4D4D8', '#52525B'][index % 4])
   const pieColors = labels.map((_, index) => pickColor(index))
   const seriesKeys = seriesData.map((_, index) => `series${index}`)
   const dataset = labels.map((label, index) => ({
@@ -98,7 +101,7 @@ export default memo(function DashboardChart({ widget, result }: { widget: Dashbo
       yAxis={[{ valueFormatter: compact }]}
       series={seriesData.map((series, index) => ({ dataKey: seriesKeys[index], label: series.name, valueFormatter }))}
       height={300}
-      colors={seriesColors}
+      colors={barColors}
       grid={{ horizontal: true }}
       legend={legend}
       skipAnimation={skipChartAnimation}
@@ -147,7 +150,7 @@ export default memo(function DashboardChart({ widget, result }: { widget: Dashbo
 
 function TaskProgress({ widget, result }: { widget: DashboardWidget; result: DashboardResult }) {
   const navigate = useNavigate()
-  const session = useSession()
+  const theme = useTheme()
   if (!result.progress) return null
   const progress = result.progress
   const accent = (widget.colors || []).find(isHexColor)
@@ -177,9 +180,9 @@ function TaskProgress({ widget, result }: { widget: DashboardWidget; result: Das
             {widget.progress?.mode === 'tasks' && widget.progress.due_field ? ` · 逾期未完成 ${progress.overdue_rows} 项` : ''}
           </Typography>
         </Box>
-        {widget.progress?.display !== 'circle' ? <Typography sx={{ fontSize: 25, fontWeight: 600, color: accent || CHART_COLORS[0] }}>{percent(progress)}</Typography> : null}
+        {widget.progress?.display !== 'circle' ? <Typography sx={{ fontSize: 25, fontWeight: 600, color: accent || theme.palette.primary.main }}>{percent(progress)}</Typography> : null}
       </Box>
-      <LinearProgress variant="determinate" value={clamped(progress)} sx={{ height: 12, borderRadius: 6, bgcolor: 'action.hover', '& .MuiLinearProgress-bar': { bgcolor: accent || CHART_COLORS[0] } }} />
+      <LinearProgress variant="determinate" value={clamped(progress)} sx={{ height: 12, borderRadius: 6, bgcolor: 'action.hover', '& .MuiLinearProgress-bar': { bgcolor: accent || theme.palette.primary.main } }} />
       {result.progress_groups?.length ? (
         <Box sx={{ display: 'grid', gap: 2, borderTop: 1, borderColor: 'divider', pt: 2.25, mt: 2.75 }}>
           {result.progress_groups.map((group, index) => (
@@ -190,12 +193,12 @@ function TaskProgress({ widget, result }: { widget: DashboardWidget; result: Das
                   {format(group.actual)} / {format(group.target)} {unit} · {percent(group)} <Direction sx={{ fontSize: 14 }} />
                 </Box>
               </Box>
-              <LinearProgress variant="determinate" value={clamped(group)} sx={{ height: 7, borderRadius: 4, bgcolor: 'action.hover', '& .MuiLinearProgress-bar': { bgcolor: accent || CHART_COLORS[0] } }} />
+              <LinearProgress variant="determinate" value={clamped(group)} sx={{ height: 7, borderRadius: 4, bgcolor: 'action.hover', '& .MuiLinearProgress-bar': { bgcolor: accent || theme.palette.primary.main } }} />
             </Box>
           ))}
         </Box>
       ) : null}
-      <Button size="small" onClick={() => open()} sx={{ mt: 1.75, color: session.themeColor }}>查看来源记录</Button>
+      <Button size="small" onClick={() => open()} sx={{ mt: 1.75, color: 'text.secondary' }}>查看来源记录</Button>
     </Box>
   )
 }

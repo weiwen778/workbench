@@ -8,9 +8,7 @@ import LiftCard from '@/motion/components/LiftCard'
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { CopyDocument, Delete, DragIndicator, Edit, MoreFilled, Plus, Search, Brush, Tune } from '@/icons'
-import GridView from '@mui/icons-material/GridView'
-import ViewList from '@mui/icons-material/ViewList'
+import { CopyDocument, Delete, DragIndicator, Edit, MoreFilled, Plus, Search, Brush, Tune, GridView, ViewList } from '@/icons'
 import { apiError, copyText, http } from '@/api/client'
 import { EmptyHint, ModuleToolbar, Page, PageBody } from '@/ui/common'
 import { confirmDialog, toast } from '@/ui/feedback'
@@ -87,13 +85,13 @@ export default function MemosPage() {
     if (color === 'default') return theme.palette.background.paper
     if (dark) {
       const map: Record<string, string> = {
-        yellow: 'rgba(214,165,74,0.10)', green: 'rgba(105,176,141,0.10)',
-        blue: 'rgba(90,160,200,0.10)', pink: 'rgba(224,112,150,0.10)', purple: 'rgba(170,120,210,0.10)',
+        yellow: 'rgba(234,179,8,0.10)', green: 'rgba(22,163,74,0.10)',
+        blue: 'rgba(37,99,235,0.10)', pink: 'rgba(219,39,119,0.10)', purple: 'rgba(124,58,237,0.10)',
       }
       return map[color] || theme.palette.background.paper
     }
     const map: Record<string, string> = {
-      yellow: '#FDF9EC', green: '#F3F8F4', blue: '#F2F7FA', pink: '#FBF4F7', purple: '#F7F3FA',
+      yellow: '#FEFCE8', green: '#F0FDF4', blue: '#EFF6FF', pink: '#FDF2F8', purple: '#FAF5FF',
     }
     return map[color] || theme.palette.background.paper
   }
@@ -261,7 +259,7 @@ export default function MemosPage() {
   }
 
   const renderMemoActions = (memo: any) => (
-    <Stack direction="row" spacing={0.25} sx={{ flexShrink: 0 }}>
+    <Stack direction="row" spacing={0.25} className="wb-card-actions" sx={{ flexShrink: 0 }}>
       <Tooltip title="复制正文"><IconButton size="small" aria-label="复制正文" sx={{ p: 0.5 }} onClick={() => void copyContent(memo)}><CopyDocument sx={{ fontSize: 17 }} /></IconButton></Tooltip>
       <Tooltip title="添加到白板"><IconButton size="small" aria-label="添加到白板" sx={{ p: 0.5 }} onClick={() => sendToBoard(memo)}><Brush sx={{ fontSize: 17 }} /></IconButton></Tooltip>
       <Tooltip title="编辑"><IconButton size="small" aria-label="编辑便利贴" sx={{ p: 0.5 }} onClick={() => openEdit(memo)}><Edit sx={{ fontSize: 17 }} /></IconButton></Tooltip>
@@ -272,8 +270,7 @@ export default function MemosPage() {
   return (
     <Page variant="dense">
       <ModuleToolbar
-        info={<Typography variant="caption" color="text.secondary">{memoTotal} 张便利贴</Typography>}
-        filters={(
+        info={(
           <>
             <TextField
               size="small" placeholder="搜索标题或正文" value={keyword} onChange={(event) => onSearch(event.target.value)}
@@ -313,7 +310,7 @@ export default function MemosPage() {
             </Menu>
           </>
         )}
-        primary={<Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={openCreate}>新建便利贴</Button>}
+        primary={<Button variant="contained" size="small" startIcon={<Plus />} onClick={openCreate} sx={{ height: 36 }}>新建便利贴</Button>}
       />
 
       <PageBody>
@@ -353,18 +350,19 @@ export default function MemosPage() {
                 }}>
                   {memos.map((memo) => (
                     <SortableMemo key={memo.id} id={memo.id} disabled={loading || ordering}>
-                      <LiftCard variant="outlined" sx={{
-                        height: 230, display: 'flex', flexDirection: 'column', p: 1.5,
+                      <LiftCard variant="outlined" className="memo-card" sx={{
+                        height: 230, display: 'flex', flexDirection: 'column', p: 2,
                         bgcolor: memoBg(memo.color),
                         borderColor: 'divider',
-                        boxShadow: '0 1px 2px rgba(24,39,42,0.03)',
-                        '&:hover': { borderColor: 'text.disabled', boxShadow: '0 4px 12px rgba(24,39,42,0.06)' },
+                        boxShadow: 'none',
+                        '&:hover': { borderColor: 'text.disabled', boxShadow: 'none' },
                       }}>
-                        <Stack direction="row" alignItems="center" gap={0.5} sx={{ mb: 1.5, minWidth: 0 }}>
+                        <Stack direction="row" alignItems="center" gap={0.75} sx={{ mb: 1.5, minWidth: 0 }}>
                           <MemoDragHandle label={memo.display_title} />
+                          <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: memoAccent(memo.color), flexShrink: 0 }} />
                           <Box component="button" onClick={() => setViewing(memo)} sx={{
                             display: 'block', flex: 1, minWidth: 0, border: 0, bgcolor: 'transparent', p: 0, cursor: 'pointer',
-                            font: 'inherit', fontSize: 16, fontWeight: 600, textAlign: 'left', color: 'text.primary',
+                            font: 'inherit', fontSize: 14.5, fontWeight: 600, textAlign: 'left', color: 'text.primary',
                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                           }}>{memo.display_title}</Box>
                         </Stack>
@@ -390,7 +388,7 @@ export default function MemosPage() {
                 <List sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, bgcolor: 'background.paper', py: 0 }}>
                   {memos.map((memo) => (
                     <SortableMemo key={memo.id} id={memo.id} disabled={loading || ordering}>
-                      <ListItem divider disablePadding sx={{ '&:last-child': { borderBottom: 0 } }}>
+                      <ListItem divider disablePadding className="memo-row" sx={{ '&:last-child': { borderBottom: 0 } }}>
                         <MemoDragHandle label={memo.display_title} />
                         <ListItemButton onClick={() => setViewing(memo)} sx={{ flex: 1, minWidth: 0, gap: 1.25, pl: 0.5, pr: 1.75, py: 1.25, alignItems: 'center' }}>
                           <Box sx={{ width: 3, alignSelf: 'stretch', minHeight: 34, borderRadius: 2, bgcolor: memoAccent(memo.color), flexShrink: 0 }} />
@@ -403,7 +401,7 @@ export default function MemosPage() {
                           />
                           <Stack direction="row" spacing={1.25} alignItems="center" sx={{ flexShrink: 0 }}>
                             <Typography component="span" sx={{ fontSize: 12, color: 'text.secondary' }}>{memo.display_category}</Typography>
-                            <Typography component="span" sx={{ fontSize: 12, color: 'text.disabled' }}>{formatDate(memo.updated_at)}</Typography>
+                            <Typography component="span" sx={{ fontSize: 12, color: 'text.secondary' }}>{formatDate(memo.updated_at)}</Typography>
                           </Stack>
                           <Box sx={{ flexShrink: 0 }} onClick={(event) => event.stopPropagation()}>
                             {renderMemoActions(memo)}

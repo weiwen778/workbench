@@ -4,11 +4,10 @@ import {
   Alert, Box, Button, Divider, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText,
   Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography, useMediaQuery,
 } from '@mui/material'
-import { ArrowLeft, ArrowRight, Delete, InfoFilled, Lock, Menu, Moon, Palette, Search, Sunny, Todo, Translate, Tune } from '@/icons'
-import BackupIcon from '@mui/icons-material/Backup'
-import BugReportIcon from '@mui/icons-material/BugReport'
-import ReceiptLongIcon from '@mui/icons-material/ReceiptLong'
-import SpeedIcon from '@mui/icons-material/Speed'
+import {
+  ArrowLeft, ArrowRight, BugIcon, Delete, InfoFilled, Lock, Menu, Moon, Palette,
+  ReceiptIcon, Search, SpeedIcon, StorageIcon, Sunny, Todo, Translate, Tune,
+} from '@/icons'
 import { apiError } from '@/api/client'
 import { setTheme, useSession } from '@/session'
 import { MOTION_SPEED_OPTIONS, readMotionSpeed, writeMotionSpeed, type MotionSpeed } from '@/motion'
@@ -36,13 +35,13 @@ const groups = [
       { key: 'ai', label: 'AI 能力', icon: InfoFilled, description: '配置智谱模型，用于 AI 填表和 AI 生成看板图表。', keywords: 'GLM OCR 视觉 文本 图片 识别 看板 图表 API Key 模型' },
       { key: 'translation', label: '翻译服务', icon: Translate, description: '配置、启用和测试翻译服务，密钥留空时保留原有值。', keywords: '百度 有道 DeepSeek 智谱 密钥 模型 翻译 字号 服务' },
       { key: 'agents', label: 'Agent 接入', icon: Todo, description: '让 Agent 直接接管工作台，记录每次操作并支持撤销。', keywords: '令牌 API token 自动化 权限 直接写入 撤销 暂存 审核 活动' },
-      { key: 'feedback', label: '问题反馈', icon: BugReportIcon, description: '连接 GitHub 仓库，把浏览器里提交的 Bug 和需求直接变成 Issue。', keywords: 'GitHub Issue 反馈 Bug 需求 令牌 仓库 标签' },
+      { key: 'feedback', label: '问题反馈', icon: BugIcon, description: '连接 GitHub 仓库，把浏览器里提交的 Bug 和需求直接变成 Issue。', keywords: 'GitHub Issue 反馈 Bug 需求 令牌 仓库 标签' },
     ],
   },
   {
     name: '数据',
     items: [
-      { key: 'backup', label: '备份与恢复', icon: BackupIcon, description: '创建完整备份、下载恢复密钥并校验备份完整性。', keywords: '备份 恢复 密钥 下载 校验 自动备份 频率 保留' },
+      { key: 'backup', label: '备份与恢复', icon: StorageIcon, description: '创建完整备份、下载恢复密钥并校验备份完整性。', keywords: '备份 恢复 密钥 下载 校验 自动备份 频率 保留' },
       { key: 'trash', label: '回收站', icon: Delete, description: '恢复误删内容，或清理不再需要的数据。', keywords: '删除 恢复 清理 数据 回收站' },
     ],
   },
@@ -50,7 +49,7 @@ const groups = [
     name: '系统',
     items: [
       { key: 'runtime', label: '运行状态', icon: SpeedIcon, description: '查看服务器 CPU、内存、磁盘、网络和健康状态。', keywords: 'CPU 内存 磁盘 网络 负载 监控 健康 运行 状态' },
-      { key: 'logs', label: '运行日志', icon: ReceiptLongIcon, description: '检索后端、请求、后台任务和浏览器上报的运行日志。', keywords: '日志 报错 异常 错误 请求 堆栈 排查 运行 检索' },
+      { key: 'logs', label: '运行日志', icon: ReceiptIcon, description: '检索后端、请求、后台任务和浏览器上报的运行日志。', keywords: '日志 报错 异常 错误 请求 堆栈 排查 运行 检索' },
       { key: 'security', label: '登录与安全', icon: Lock, description: '修改登录密码，退出当前设备。', keywords: '密码 登录 安全 退出 会话 设备' },
     ],
   },
@@ -89,12 +88,6 @@ export default function SettingsPage({ section: explicitSection }: { section?: s
       localStorage.setItem(navKey, next ? '1' : '0')
       return next
     })
-  }
-
-  const goBack = () => {
-    const index = Number(window.history.state?.idx)
-    if (Number.isFinite(index) && index > 0) navigate(-1)
-    else navigate('/')
   }
 
   const filtered = useMemo(() => allItems.filter((item) => (item.label + item.keywords).toLowerCase().includes(search.trim().toLowerCase())), [search])
@@ -185,23 +178,18 @@ export default function SettingsPage({ section: explicitSection }: { section?: s
     <Box sx={{
       display: 'grid', gridTemplateColumns: mobile ? '1fr' : `${navCollapsed ? 64 : 210}px minmax(0,1fr)`,
       transition: reduceMotion ? 'none' : 'grid-template-columns 160ms ease',
-      minHeight: 'calc(100vh - 44px)', width: '100%',
+      height: '100%', minHeight: 0, width: '100%', overflow: 'hidden',
     }}>
-      {!mobile ? <Box component="aside" aria-label={navCollapsed ? '设置分类（已收起）' : '设置分类'} sx={{ borderRight: 1, borderColor: 'divider', minWidth: 0, overflow: 'hidden' }}>
-        <Box sx={{ position: 'sticky', top: 0, maxHeight: 'calc(100vh - 44px)', overflowY: 'auto', overflowX: 'hidden' }}>{nav(false, navCollapsed)}</Box>
+      {!mobile ? <Box component="aside" aria-label={navCollapsed ? '设置分类（已收起）' : '设置分类'} sx={{ borderRight: 1, borderColor: 'divider', minWidth: 0, height: '100%', overflowY: 'auto', overflowX: 'hidden' }}>
+        {nav(false, navCollapsed)}
       </Box> : null}
 
-      <Box component="main" sx={{ p: { xs: 2, md: '24px 28px' }, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <Box component="main" sx={{ p: { xs: 2, md: '24px 28px' }, minWidth: 0, minHeight: 0, height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={2}>
-          <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ minWidth: 0 }}>
-            <Button size="small" startIcon={<ArrowLeft />} aria-label="返回上一页" onClick={goBack} sx={{ flexShrink: 0, mt: 0.25 }}>
-              返回
-            </Button>
-            <Box sx={{ minWidth: 0 }}>
-              <Typography variant="h5" sx={{ mb: 0.75 }}>{current.label}</Typography>
-              <Typography variant="body2" color="text.secondary">{current.description}</Typography>
-            </Box>
-          </Stack>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="h5" sx={{ mb: 0.75 }}>{current.label}</Typography>
+            <Typography variant="body2" color="text.secondary">{current.description}</Typography>
+          </Box>
           <Button size="small" startIcon={<Menu />} aria-label="打开设置目录" onClick={() => setMobileNavOpen(true)} sx={{ display: mobile ? 'inline-flex' : 'none', flexShrink: 0 }}>
             目录
           </Button>

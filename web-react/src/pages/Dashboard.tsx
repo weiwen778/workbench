@@ -10,11 +10,10 @@ import LiftCard from '@/motion/components/LiftCard'
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import Star from '@mui/icons-material/Star'
-import StarBorder from '@mui/icons-material/StarBorder'
-import GridView from '@mui/icons-material/GridView'
-import ViewList from '@mui/icons-material/ViewList'
-import { AutoAwesome, ChevronDown, DashboardIcon, DragIndicator, MoreFilled, Palette, Plus, Search } from '@/icons'
+import {
+  ArrowLeft, AutoAwesome, ChevronDown, DashboardIcon, DragIndicator, GridView, MoreFilled,
+  Palette, Plus, Refresh, Search, Star, StarBorder, ViewList,
+} from '@/icons'
 import { apiError, http } from '@/api/client'
 import { confirmDialog, promptDialog, toast } from '@/ui/feedback'
 import { EmptyHint, FieldRow, ModuleToolbar, Page, PageBody } from '@/ui/common'
@@ -577,60 +576,39 @@ export default function DashboardPage() {
   }, [boards, boardQuery, boardSort, boardFavorites])
 
   const recentBoards = boardRecent.map((id) => boards.find((board) => board.id === id)).filter(Boolean).slice(0, 5) as DashboardBoard[]
-  const totalWidgets = boards.reduce((sum, board) => sum + board.widgets.length, 0)
-  const latestBoardUpdate = boards.reduce((value, board) => {
-    if (!board.updated_at) return value
-    return !value || new Date(board.updated_at) > new Date(value) ? board.updated_at : value
-  }, '' as string)
   const noBoardResults = boards.length > 0 && visibleBoards.length === 0 && !loading
 
   return (
     <Page>
-      <ModuleToolbar
-        info={current
-          ? <Button size="small" onClick={() => navigate('/visualizations')}>全部看板</Button>
-          : (
-            <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
-              {boards.length} 个看板 · {totalWidgets} 张图表{latestBoardUpdate ? ` · 最近更新 ${relativeTime(latestBoardUpdate)}` : ''}
-            </Typography>
+      {!current ? (
+        <ModuleToolbar
+          info={(
+            <>
+              <TextField
+                size="small" placeholder="搜索看板名称" value={boardQuery}
+                onChange={(event) => setBoardQuery(event.target.value)}
+                InputProps={{ startAdornment: <Search sx={{ fontSize: 16, mr: 0.75, color: 'text.secondary' }} /> }}
+                sx={{ width: { xs: '100%', sm: 220 } }}
+              />
+              <Select size="small" value={boardSort} onChange={(event) => setBoardSort(event.target.value as any)} sx={{ width: 126 }} inputProps={{ 'aria-label': '看板排序' }}>
+                <MenuItem value="updated">最近更新</MenuItem>
+                <MenuItem value="name">按名称</MenuItem>
+                <MenuItem value="widgets">按图表数</MenuItem>
+              </Select>
+              <ToggleButtonGroup size="small" exclusive value={boardView} onChange={(_, value) => value && setBoardView(value)}>
+                <ToggleButton value="cards" aria-label="卡片视图"><GridView sx={{ fontSize: 17 }} /></ToggleButton>
+                <ToggleButton value="list" aria-label="列表视图"><ViewList sx={{ fontSize: 17 }} /></ToggleButton>
+              </ToggleButtonGroup>
+            </>
           )}
-        filters={current ? (
-          <Button size="small" startIcon={<AutoAwesome fontSize="small" />} disabled={saving || current.widgets.length >= 24} onClick={() => setAiOpen(true)}>AI 生成</Button>
-        ) : (
-          <>
-            <TextField
-              size="small" placeholder="搜索看板名称" value={boardQuery}
-              onChange={(event) => setBoardQuery(event.target.value)}
-              InputProps={{ startAdornment: <Search sx={{ fontSize: 16, mr: 0.75, color: 'text.secondary' }} /> }}
-              sx={{ width: { xs: '100%', sm: 220 } }}
-            />
-            <Select size="small" value={boardSort} onChange={(event) => setBoardSort(event.target.value as any)} sx={{ width: 126 }} inputProps={{ 'aria-label': '看板排序' }}>
-              <MenuItem value="updated">最近更新</MenuItem>
-              <MenuItem value="name">按名称</MenuItem>
-              <MenuItem value="widgets">按图表数</MenuItem>
-            </Select>
-            <ToggleButtonGroup size="small" exclusive value={boardView} onChange={(_, value) => value && setBoardView(value)}>
-              <ToggleButton value="cards" aria-label="卡片视图"><GridView sx={{ fontSize: 17 }} /></ToggleButton>
-              <ToggleButton value="list" aria-label="列表视图"><ViewList sx={{ fontSize: 17 }} /></ToggleButton>
-            </ToggleButtonGroup>
-          </>
-        )}
-        onRefresh={() => { if (current) void fetchData(); else void load() }}
-        refreshLabel={current ? '刷新看板数据' : '刷新看板列表'}
-        refreshing={current ? refreshing : loading}
-        more={current ? (
-          <Tooltip title="看板操作">
-            <IconButton size="small" aria-label="看板操作" onClick={(event) => setDetailMenu(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
-          </Tooltip>
-        ) : null}
-        primary={current ? (
-          <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} disabled={saving || current.widgets.length >= 24} onClick={() => void openEditor()}>添加图表</Button>
-        ) : (
-          <Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={createBoard}>新建看板</Button>
-        )}
-      />
+          onRefresh={() => void load()}
+          refreshLabel="刷新看板列表"
+          refreshing={loading}
+          primary={<Button variant="contained" startIcon={<Plus />} onClick={createBoard} sx={{ height: 36 }}>新建看板</Button>}
+        />
+      ) : null}
 
-      <PageBody sx={{ gap: 1.5 }}>
+      <PageBody sx={{ gap: 2 }}>
         {loadError ? <Alert severity="error" action={<Button size="small" onClick={() => void load()}>重新加载</Button>}>{loadError}</Alert> : null}
 
         {!activeId ? (
@@ -813,7 +791,22 @@ export default function DashboardPage() {
                   </>
                 ) : null}
               </Stack>
-              <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>{lastRefresh ? `更新于 ${displayTime(lastRefresh)}` : ''}</Typography>
+              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>{lastRefresh ? `更新于 ${displayTime(lastRefresh)}` : ''}</Typography>
+                <Tooltip title="刷新看板数据">
+                  <IconButton size="small" aria-label="刷新看板数据" disabled={refreshing} onClick={() => void fetchData()}>
+                    <Refresh />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="看板操作">
+                  <IconButton size="small" aria-label="看板操作" onClick={(event) => setDetailMenu(event.currentTarget)}>
+                    <MoreFilled />
+                  </IconButton>
+                </Tooltip>
+                <Button variant="outlined" size="small" startIcon={<ArrowLeft />} onClick={() => navigate('/visualizations')} sx={{ height: 36 }}>全部看板</Button>
+                <Button variant="outlined" size="small" startIcon={<AutoAwesome />} disabled={saving || current.widgets.length >= 24} onClick={() => setAiOpen(true)} sx={{ height: 36 }}>AI 生成</Button>
+                <Button variant="contained" size="small" startIcon={<Plus />} disabled={saving || current.widgets.length >= 24} onClick={() => void openEditor()} sx={{ height: 36 }}>添加图表</Button>
+              </Stack>
             </Stack>
 
             {!current.widgets.length ? (

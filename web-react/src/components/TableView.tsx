@@ -4,7 +4,7 @@ import {
   Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton,
   Menu, MenuItem, Paper, Select, Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
-import { AutoAwesome, Close, Delete, Edit, InfoFilled, MoreFilled, Plus, Sort, Tune } from '@/icons'
+import { AutoAwesome, Close, Download, FilterList, MoreFilled, Plus, Sort, Tune } from '@/icons'
 import { apiError, http } from '@/api/client'
 import { confirmDialog, toast } from '@/ui/feedback'
 import { DataTable, EmptyHint, ModuleToolbar, PageBody, Pager, type Column } from '@/ui/common'
@@ -109,6 +109,7 @@ export default function TableView({ tableId }: { tableId: number }) {
   const [exportScope, setExportScope] = useState<'all' | 'filtered'>('all')
   const [exporting, setExporting] = useState(false)
   const [previewFile, setPreviewFile] = useState<any | null>(null)
+  const [rowMenu, setRowMenu] = useState<{ el: HTMLElement; row: any } | null>(null)
 
   const viewActive = useRef(true)
   const recordsRequest = useRef(0)
@@ -289,14 +290,15 @@ export default function TableView({ tableId }: { tableId: number }) {
     return keys
   }, [fields, columnVisibility, pinColumns])
 
-  const fieldHeader = useCallback((field: Field) => {
+  const fieldHeader = useCallback((field: Field, sortable = false) => {
     const align = valueAlign(field)
     return (
       <Stack direction="row" spacing={0.5} alignItems="center" justifyContent={align === 'right' ? 'flex-end' : 'flex-start'} sx={{ minWidth: 0, width: '100%' }}>
         <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{field.name}</Box>
+        {sortable ? <Sort sx={{ fontSize: 12, color: 'text.disabled', flexShrink: 0 }} /> : null}
         {isLikelyStaticDerived(field) ? (
           <Tooltip title="静态派生值：按录入时的数值保存，修改源数据后不会自动重算。建议改用「公式」列，或在列设置里确认它是手工录入值。">
-            <Box component="span" sx={{ flexShrink: 0, fontSize: 10, lineHeight: '14px', px: 0.5, border: 1, borderColor: 'warning.main', color: 'warning.main', borderRadius: 0.5, fontWeight: 600 }}>静态</Box>
+            <Box component="span" sx={{ flexShrink: 0, fontSize: 10, lineHeight: '14px', px: 0.5, border: 1, borderColor: 'divider', color: 'text.secondary', borderRadius: 0.5, fontWeight: 500 }}>静态</Box>
           </Tooltip>
         ) : null}
       </Stack>
@@ -304,45 +306,50 @@ export default function TableView({ tableId }: { tableId: number }) {
   }, [])
 
   const sortableKeys = useMemo(() => new Set(sortableFields.map((field) => field.key)), [sortableFields])
+  // 列宽默认值需容纳完整字段名：表头文字 + 排序图标 + 「静态」标记 + 单元格左右内边距。
+  const headerFitWidth = useCallback((field: Field) => {
+    const textWidth = Array.from(field.name || '').reduce(
+      (sum, char) => sum + ((char.codePointAt(0) ?? 0) > 0x2e7f ? 14 : 8), 0,
+    )
+    const sortWidth = sortableKeys.has(field.key) ? 16 : 0
+    const badgeWidth = isLikelyStaticDerived(field) ? 34 : 0
+    return Math.ceil(textWidth + sortWidth + badgeWidth + 26)
+  }, [sortableKeys])
   const columns = useMemo<Column<any>[]>(() => [
-    ...fields.map((field) => ({
-      key: field.key, label: field.name, width: field.type === 'long_text' ? 220 : field.type === 'url' ? 200 : field.type === 'number' ? 110 : 130,
-      align: valueAlign(field), headerAlign: valueAlign(field), headerRender: fieldHeader(field),
-      ellipsis: true, sortable: sortableKeys.has(field.key),
-      render: (row: any) => <TableCell field={field} row={row} onSave={saveCell} onOpenAttachment={openAttachment} />,
-    })),
+    ...fields.map((field) => {
+      const baseWidth = field.type === 'long_text' ? 220 : field.type === 'url' ? 200 : field.type === 'number' ? 110 : 130
+      const minWidth = Math.max(baseWidth, headerFitWidth(field))
+      return {
+        key: field.key, label: field.name, width: minWidth, minWidth,
+        align: valueAlign(field), headerAlign: valueAlign(field), headerRender: fieldHeader(field, sortableKeys.has(field.key)),
+        ellipsis: true, sortable: sortableKeys.has(field.key),
+        render: (row: any) => <TableCell field={field} row={row} onSave={saveCell} onOpenAttachment={openAttachment} />,
+      }
+    }),
     {
-      key: '__actions', label: '操作', width: 88, sticky: true,
+      key: '__actions', label: '', width: 56, sticky: true,
       render: (row) => (
         <Stack direction="row" spacing={0.25} onClick={(event) => event.stopPropagation()}>
-          <IconButton size="small" aria-label="编辑整行" title="编辑整行" onClick={() => { setEditingRecord(row); setRecordOpen(true) }}><Edit fontSize="small" /></IconButton>
-          <IconButton size="small" aria-label="删除" title="删除" color="error" onClick={() => void removeRecord(row)}><Delete fontSize="small" /></IconButton>
+          <IconButton size="small" aria-label="行操作" onClick={(event) => setRowMenu({ el: event.currentTarget, row })}><MoreFilled /></IconButton>
         </Stack>
       ),
     },
-  ], [fieldHeader, fields, openAttachment, removeRecord, saveCell, sortableKeys])
+  ], [fieldHeader, fields, headerFitWidth, openAttachment, removeRecord, saveCell, sortableKeys])
   const clearSort = useCallback(() => { setSorts([]); setPage(1) }, [])
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, p: 2 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, p: '10px', gap: '10px' }}>
       <ModuleToolbar
-        sx={{ py: 0.5 }}
+        sx={{ py: 0 }}
         info={(
           <>
-            {table?.note ? <Box title={table.note} sx={{ color: 'text.secondary', display: 'flex' }}><InfoFilled sx={{ fontSize: 16 }} /></Box> : null}
-            <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>共 {total} 行</Typography>
-          </>
-        )}
-        filters={(
-          <>
             <Button
-              size="small" startIcon={<Plus fontSize="small" />} disabled={fields.length >= 200}
-              onClick={() => { setFieldsOpen(true); setAddFieldRequest((value) => value + 1) }}
-            >添加一列</Button>
-            <Button size="small" onClick={() => setFiltersOpen(!filtersOpen)} color={filtersOpen ? 'primary' : undefined}>筛选{filters.length ? `(${filters.length})` : ''}</Button>
-            <Button size="small" startIcon={<Sort fontSize="small" />} onClick={(event: any) => { setSortDraft(sorts.length ? [...sorts] : []); setSortAnchor(event.currentTarget) }}>排序{sortDraft.length ? `(${sortDraft.length})` : sorts.length ? `(${sorts.length})` : ''}</Button>
-            <Button size="small" startIcon={<Tune fontSize="small" />} onClick={(event) => setViewAnchor(event.currentTarget)}>视图</Button>
-            <Button size="small" startIcon={<AutoAwesome fontSize="small" />} onClick={() => { setAiInitialText(''); setAiOpen(true) }}>AI 填入</Button>
+              variant="outlined" size="small" startIcon={<FilterList />}
+              onClick={() => setFiltersOpen(!filtersOpen)} color={filtersOpen ? 'primary' : 'inherit'}
+              sx={{ height: 36 }}
+            >筛选{filters.length ? `(${filters.length})` : ''}</Button>
+            <Button variant="outlined" size="small" startIcon={<Sort />} onClick={(event: any) => { setSortDraft(sorts.length ? [...sorts] : []); setSortAnchor(event.currentTarget) }} sx={{ height: 36 }}>排序{sortDraft.length ? `(${sortDraft.length})` : sorts.length ? `(${sorts.length})` : ''}</Button>
+            <Button variant="outlined" size="small" startIcon={<Tune />} onClick={(event) => setViewAnchor(event.currentTarget)} sx={{ height: 36 }}>视图</Button>
             <Menu anchorEl={viewAnchor} open={Boolean(viewAnchor)} onClose={() => setViewAnchor(null)}>
               <Box sx={{ px: 1.5, py: 1, width: 236 }}>
                 <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.75 }}>行高</Typography>
@@ -403,7 +410,8 @@ export default function TableView({ tableId }: { tableId: number }) {
             </Tooltip>
             <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
               <MenuItem onClick={() => { setMoreAnchor(null); setFieldsOpen(true) }}>列设置</MenuItem>
-              <MenuItem onClick={() => { setMoreAnchor(null); setImportOpen(true) }}>批量导入</MenuItem>
+              <MenuItem onClick={() => { setMoreAnchor(null); setFieldsOpen(true); setAddFieldRequest((value) => value + 1) }} disabled={fields.length >= 200}>添加一列</MenuItem>
+              <MenuItem onClick={() => { setMoreAnchor(null); setAiInitialText(''); setAiOpen(true) }}>AI 填入</MenuItem>
               <MenuItem onClick={() => { setMoreAnchor(null); setExportOpen(true) }}>导出</MenuItem>
               <MenuItem onClick={() => { setMoreAnchor(null); setAnalysisOpen(true) }}>汇总与透视</MenuItem>
               <MenuItem onClick={() => { setMoreAnchor(null); navigate(`/visualizations?table=${tableId}`) }}>用于数据可视化</MenuItem>
@@ -411,7 +419,12 @@ export default function TableView({ tableId }: { tableId: number }) {
             </Menu>
           </>
         )}
-        primary={<Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={openCreate}>添加一行</Button>}
+        primary={(
+          <>
+            <Button variant="outlined" startIcon={<Download />} onClick={() => setImportOpen(true)} sx={{ height: 36 }}>导入</Button>
+            <Button variant="contained" startIcon={<Plus />} onClick={openCreate} sx={{ height: 36 }}>添加一行</Button>
+          </>
+        )}
       />
 
       {(filtersOpen) ? (
@@ -475,7 +488,6 @@ export default function TableView({ tableId }: { tableId: number }) {
                 rows={rows}
                 loading={loading}
                 maxHeight="100%"
-                columnDividers
                 striped={striped}
                 centerX={centerX}
                 centerY={centerY}
@@ -504,6 +516,19 @@ export default function TableView({ tableId }: { tableId: number }) {
           </>
         )}
       </PageBody>
+
+      <Menu anchorEl={rowMenu?.el || null} open={Boolean(rowMenu)} onClose={() => setRowMenu(null)}>
+        <MenuItem onClick={() => {
+          const row = rowMenu?.row
+          setRowMenu(null)
+          if (row) { setEditingRecord(row); setRecordOpen(true) }
+        }}>编辑整行</MenuItem>
+        <MenuItem divider sx={{ color: 'error.main' }} onClick={() => {
+          const row = rowMenu?.row
+          setRowMenu(null)
+          if (row) void removeRecord(row)
+        }}>删除</MenuItem>
+      </Menu>
 
       <RecordDrawer open={recordOpen} tableId={tableId} fields={fields} record={editingRecord} onClose={() => setRecordOpen(false)} onSaved={() => void loadRecords()} />
       <FieldManager open={fieldsOpen} tableId={tableId} fields={fields} addRequest={addFieldRequest} onClose={() => setFieldsOpen(false)} onUpdated={() => void reload()} />

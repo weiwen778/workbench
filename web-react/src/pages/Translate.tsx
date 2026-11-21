@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl,
   IconButton, InputLabel, LinearProgress, MenuItem, Select, Stack, Tab, Tabs, TextField, Tooltip, Typography,
 } from '@mui/material'
 import Star from '@mui/icons-material/Star'
-import { CopyDocument, Delete, Direction, DocumentCopy, Favorite, Keyboard, Promotion, Refresh, Search, Switch } from '@/icons'
+import { CopyDocument, Delete, DocumentCopy, Favorite, Keyboard, Promotion, Refresh, Search, Switch } from '@/icons'
 import { apiError, copyText, http } from '@/api/client'
 import { ModuleToolbar, Page, EmptyHint } from '@/ui/common'
 import { confirmDialog, toast } from '@/ui/feedback'
@@ -20,17 +20,6 @@ const panelSx = {
   boxShadow: (theme: any) => theme.palette.mode === 'dark' ? 'none' : '0 1px 2px rgba(26,36,38,0.05)',
 }
 const separatorSx = { borderColor: panelBorder }
-
-function relativeTime(value?: string) {
-  if (!value) return ''
-  const time = new Date(value).getTime()
-  if (!Number.isFinite(time)) return ''
-  const diff = Date.now() - time
-  if (diff < 60_000) return '刚刚'
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`
-  return new Date(value).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
-}
 
 const SHORTCUTS: { label: string; keys: string[] }[] = [
   { label: '翻译', keys: ['Ctrl / ⌘', 'Enter'] },
@@ -89,6 +78,27 @@ export default function TranslatePage() {
   const requestSeq = useRef(0)
   const historyTimer = useRef<number | null>(null)
   const sourceRef = useRef<HTMLTextAreaElement>(null)
+  const [favoritesWidth, setFavoritesWidth] = useState(() => {
+    const saved = Number(localStorage.getItem('wb_translate_favorites_width'))
+    return Number.isFinite(saved) && saved >= 240 && saved <= 560 ? saved : 320
+  })
+  const resizeStart = useRef<{ x: number; width: number } | null>(null)
+  const clampFavoritesWidth = (value: number) => Math.min(560, Math.max(240, Math.round(value)))
+  const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    resizeStart.current = { x: event.clientX, width: favoritesWidth }
+  }
+  const resizeMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!resizeStart.current) return
+    setFavoritesWidth(clampFavoritesWidth(resizeStart.current.width + event.clientX - resizeStart.current.x))
+  }
+  const endResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!resizeStart.current) return
+    resizeStart.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    localStorage.setItem('wb_translate_favorites_width', String(favoritesWidth))
+  }
 
   const currentConn = connections.find((connection) => connection.provider === provider)
   const enabledConnections = connections.filter((connection) => connection.enabled && connection.configured)
@@ -282,16 +292,11 @@ export default function TranslatePage() {
           sx={{ flex: 1, minWidth: 0, cursor: kind === 'history' ? 'pointer' : 'default' }}
           onClick={kind === 'history' ? () => void openDetail(item) : undefined}
         >
-          <Typography sx={{ fontSize: 13 }} noWrap>{item.source_text}</Typography>
-          <Stack direction="row" spacing={0.5} alignItems="center">
-            <Direction sx={{ fontSize: 14, color: 'text.secondary' }} />
-            <Typography sx={{ fontSize: 12, color: 'text.secondary' }} noWrap>{item.target_text}</Typography>
-          </Stack>
-          <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mt: 0.25 }}>
-            <Typography sx={{ fontSize: 10.5, color: 'text.disabled' }} noWrap>{item.provider_name}</Typography>
-            {kind === 'history' ? <Typography sx={{ fontSize: 10.5, color: 'text.disabled' }} noWrap>{langText(item.source_lang)} → {langText(item.target_lang)}</Typography> : null}
-            <Typography sx={{ fontSize: 10.5, color: 'text.disabled' }} noWrap>{relativeTime(item.created_at)}</Typography>
-          </Stack>
+          <Typography sx={{ fontSize: 13 }} noWrap>{item.target_text}</Typography>
+          <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 0.25 }} noWrap>{item.source_text}</Typography>
+          {kind === 'history' ? (
+            <Typography sx={{ fontSize: 10.5, color: 'text.disabled', mt: 0.25 }} noWrap>{langText(item.source_lang)} → {langText(item.target_lang)}</Typography>
+          ) : null}
         </Box>
         <Stack direction="row" spacing={0.25} alignItems="center">
           {kind === 'history' ? <Button size="small" onClick={() => void openDetail(item)}>详情</Button> : null}
@@ -370,8 +375,8 @@ export default function TranslatePage() {
         ) : null}
       </Stack>
 
-      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 1, flex: { xs: 'none', lg: '1 0 auto' } }}>
-        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 220, ...panelSx }}>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 1, flex: '0 0 auto', height: { md: 320 }, minHeight: 0 }}>
+        <Box sx={{ flex: { xs: '0 0 auto', md: 1 }, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, height: { xs: 260, md: 'auto' }, ...panelSx }}>
           <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ px: 1.5, py: 0.75, borderBottom: 1, ...separatorSx }}>
             <Stack direction="row" spacing={0.5} alignItems="center">
               <Typography sx={{ fontSize: 13 }}>原文</Typography>
@@ -389,7 +394,13 @@ export default function TranslatePage() {
             fullWidth multiline value={sourceText} placeholder="输入或粘贴需要翻译的内容，Ctrl / Command + Enter 开始翻译"
             onChange={(event) => { setSourceText(event.target.value); if (error) setError('') }}
             onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); void translate(event.shiftKey) } }}
-            sx={{ flex: 1, minHeight: 0, '& .MuiInputBase-root': { height: '100%', alignItems: 'flex-start', fontSize: translationFont(sourceText, preferences), lineHeight: 1.65 }, '& textarea::placeholder': { fontSize: 15 }, '& fieldset': { border: 0 } }}
+            onClick={() => sourceRef.current?.focus()}
+            sx={{
+              flex: 1, minHeight: 0, display: 'flex',
+              '& .MuiInputBase-root': { flex: 1, height: '100%', alignItems: 'flex-start', fontSize: translationFont(sourceText, preferences), lineHeight: 1.65 },
+              '& textarea:not([aria-hidden="true"])': { height: '100% !important', overflowY: 'auto !important' },
+              '& fieldset': { border: 0 },
+            }}
           />
           <Stack direction="row" spacing={0.5} sx={{ px: 1, py: 0.5, borderTop: 1, ...separatorSx }}>
             <Button size="small" startIcon={<DocumentCopy fontSize="small" />} title="粘贴剪贴板内容（Alt+P）" onClick={() => void pasteSource()}>粘贴</Button>
@@ -397,7 +408,7 @@ export default function TranslatePage() {
           </Stack>
         </Box>
 
-        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 220, ...panelSx }}>
+        <Box sx={{ flex: { xs: '0 0 auto', md: 1 }, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, height: { xs: 260, md: 'auto' }, ...panelSx }}>
           <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ px: 1.5, py: 0.75, borderBottom: 1, ...separatorSx }}>
             <Stack direction="row" spacing={0.5} alignItems="center">
               <Typography sx={{ fontSize: 13 }}>译文</Typography>
@@ -435,7 +446,7 @@ export default function TranslatePage() {
         </Box>
       </Box>
 
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0,1fr)', lg: '320px minmax(0,1fr)' }, gap: 1, flex: { xs: '0 1 auto', lg: 1 }, minWidth: 0, minHeight: { lg: 220 } }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0,1fr)', lg: `${favoritesWidth}px 10px minmax(0,1fr)` }, gap: 1, flex: { xs: '0 1 auto', lg: 1 }, minWidth: 0, minHeight: { lg: 220 } }}>
         <Box sx={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 200, ...panelSx }}>
           <Stack direction="row" justifyContent="space-between" sx={{ px: 1.5, py: 0.75, borderBottom: 1, ...separatorSx }}>
             <Typography sx={{ fontSize: 13, fontWeight: 600 }}>收藏</Typography><Typography sx={{ fontSize: 12, color: 'text.secondary' }}>共 {favorites.length} 条</Typography>
@@ -443,6 +454,37 @@ export default function TranslatePage() {
           <Box sx={{ flex: 1, overflow: 'auto', px: 1.5 }}>
             {favorites.length ? rows(favorites, 'favorite') : <EmptyHint action={<Button size="small" onClick={() => sourceRef.current?.focus()}>去翻译</Button>}>还没有收藏</EmptyHint>}
           </Box>
+        </Box>
+
+        <Box
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="左右拖动调整收藏和历史宽度"
+          aria-valuemin={240}
+          aria-valuemax={560}
+          aria-valuenow={favoritesWidth}
+          tabIndex={0}
+          title="左右拖动调整收藏和历史宽度"
+          onPointerDown={startResize}
+          onPointerMove={resizeMove}
+          onPointerUp={endResize}
+          onPointerCancel={endResize}
+          onDoubleClick={() => { setFavoritesWidth(320); localStorage.setItem('wb_translate_favorites_width', '320') }}
+          onKeyDown={(event) => {
+            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+            event.preventDefault()
+            const next = clampFavoritesWidth(favoritesWidth + (event.key === 'ArrowRight' ? 16 : -16))
+            setFavoritesWidth(next)
+            localStorage.setItem('wb_translate_favorites_width', String(next))
+          }}
+          sx={{
+            display: { xs: 'none', lg: 'flex' }, alignItems: 'center', justifyContent: 'center',
+            cursor: 'col-resize', borderRadius: 1, touchAction: 'none', outline: 'none',
+            '&:hover, &:focus-visible, &:active': { bgcolor: 'action.hover' },
+            '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 },
+          }}
+        >
+          <Box sx={{ width: 3, height: 34, borderRadius: 2, bgcolor: 'text.disabled', opacity: 0.6 }} />
         </Box>
 
         <Box sx={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 200, ...panelSx }}>

@@ -31,22 +31,41 @@ export default function LoginPage() {
   }
 
   return (
-    <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'background.default', p: 3 }}>
-      <Paper elevation={3} sx={{ width: 360, maxWidth: '100%', p: 3 }}>
-        <Box component="img" src="/favicon.svg?v=20261031-notion" alt="个人工作台图标" sx={{ width: 52, height: 52, display: 'block', mx: 'auto', mb: 2 }} />
-        <Typography variant="h5" align="center" sx={{ mb: 2.5 }}>个人工作台</Typography>
+    <Box sx={{
+      height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      bgcolor: 'background.default', p: 3,
+    }}>
+      <Paper
+        variant="outlined"
+        sx={{ width: 380, maxWidth: '100%', p: { xs: 3, sm: 4 }, borderRadius: 1.5, boxShadow: '0 1px 2px rgba(9,9,11,0.04)' }}
+      >
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 3 }}>
+          <Box
+            component="img"
+            src="/favicon.svg"
+            alt="Nexus"
+            sx={{ width: 36, height: 36, display: 'block', mb: 1.5 }}
+          />
+          <Typography sx={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1.2 }}>Nexus</Typography>
+          <Typography sx={{ fontSize: 13, color: 'text.secondary', mt: 0.5 }}>登录到个人工作台</Typography>
+        </Box>
         <form onSubmit={submit}>
-          <Stack spacing={1.5}>
+          <Stack spacing={1.75}>
             <TextField fullWidth autoFocus label="用户名" placeholder="请输入用户名" autoComplete="username" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} />
             <TextField
               fullWidth type="password" label="密码" placeholder="请输入密码" autoComplete="current-password"
               value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })}
               error={Boolean(error)} helperText={error}
             />
-            <Button type="submit" variant="contained" fullWidth disabled={loading}>{loading ? '登录中…' : '登录'}</Button>
+            <Button type="submit" variant="contained" fullWidth disabled={loading} sx={{ height: 40, mt: 0.25 }}>
+              {loading ? '登录中…' : '登录'}
+            </Button>
           </Stack>
         </form>
       </Paper>
+      <Typography sx={{ mt: 2, fontSize: 11, color: 'text.disabled' }}>
+        Nexus · 个人工作台
+      </Typography>
     </Box>
   )
 }

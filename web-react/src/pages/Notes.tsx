@@ -511,7 +511,6 @@ export default function NotesPage() {
         sx={{ px: 1.5, borderBottom: 1, borderColor: 'divider' }}
         info={(
           <>
-            <Typography sx={{ fontSize: 13, fontWeight: 600 }} noWrap>{noteTotal} 篇笔记</Typography>
             <Button size="small" onClick={(event) => setTagAnchor(event.currentTarget)} sx={{ fontSize: 12 }}>
               {selectedTag ? `标签：${selectedTag.name}` : '标签筛选'}
             </Button>
@@ -553,7 +552,7 @@ export default function NotesPage() {
             </Menu>
           </>
         )}
-        primary={<Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} disabled={missingFolder} onClick={createNote}>新建笔记</Button>}
+        primary={<Button variant="contained" size="small" startIcon={<Plus />} disabled={missingFolder} onClick={createNote} sx={{ height: 36 }}>新建笔记</Button>}
       />
       <Box className={`notes-layout${current ? ' has-current' : ''}`} sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
       <Box className="note-list-pane" sx={{ display: { xs: current ? 'none' : 'flex', md: 'flex' }, width: { xs: '100%', md: 232 }, flex: { xs: 1, md: '0 0 232px' }, borderRight: { md: (theme) => `1px solid ${theme.palette.divider}` }, borderColor: { md: 'divider' }, bgcolor: 'background.paper', flexDirection: 'column', minHeight: 0 }}>
@@ -565,10 +564,10 @@ export default function NotesPage() {
               onClick={() => void openNote(item.id)}
               sx={{
                 p: '8px 10px', borderRadius: 1, border: 1, cursor: 'pointer',
-                borderColor: item.id === current?.id ? 'primary.main' : 'divider',
+                borderColor: item.id === current?.id ? 'text.primary' : 'divider',
                 bgcolor: item.id === current?.id ? 'action.selected' : 'background.paper',
                 transition: 'background-color .15s, border-color .15s',
-                '&:hover': { bgcolor: 'action.hover', borderColor: item.id === current?.id ? 'primary.main' : 'divider' },
+                '&:hover': { bgcolor: 'action.hover', borderColor: item.id === current?.id ? 'text.primary' : 'divider' },
               }}
             >
               <Typography sx={{ fontSize: 13, fontWeight: 600 }} noWrap title={item.title}>{item.title}</Typography>
@@ -638,8 +637,13 @@ export default function NotesPage() {
               primary={<Button size="small" variant="contained" startIcon={<Edit fontSize="small" />} onClick={openEditor}>编辑</Button>}
             />
 
-            <Box className="note-reader" sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-              <Box sx={{ maxWidth: contentWidth, mx: 'auto', px: { xs: 2, md: 3 }, py: { xs: 2, md: 2.5 } }}>
+            <Box className="note-reader" sx={{ flex: 1, minHeight: 0, overflow: 'auto', p: { xs: 1.5, md: 2 }, bgcolor: 'background.default' }}>
+              <Box sx={{
+                maxWidth: contentWidth, mx: 'auto', bgcolor: 'background.paper',
+                border: 1, borderColor: 'divider', borderRadius: 1.5,
+                boxShadow: (theme) => theme.palette.mode === 'dark' ? 'none' : '0 1px 2px rgba(9,9,11,0.04)',
+                px: { xs: 2, md: 3 }, py: { xs: 2, md: 2.5 }, minHeight: '100%',
+              }}>
                 <Typography component="h1" sx={{ fontSize: 22, fontWeight: 600, lineHeight: 1.35, overflowWrap: 'anywhere' }}>
                   {current.raw_title || '未命名笔记'}
                 </Typography>

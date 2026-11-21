@@ -1,5 +1,6 @@
 import {
   Box,
+  Checkbox,
   CircularProgress,
   FormControl,
   IconButton,
@@ -14,9 +15,8 @@ import {
   Typography,
   useTheme,
 } from '@mui/material'
-import { cloneElement, isValidElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactElement, type ReactNode } from 'react'
-import CloudUploadIcon from '@mui/icons-material/CloudUpload'
-import RefreshIcon from '@mui/icons-material/Refresh'
+import { cloneElement, forwardRef, isValidElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactElement, type ReactNode } from 'react'
+import { Circle, CircleCheck, Refresh, UploadFilled } from '@/icons'
 import { DataGrid, useGridApiRef, type GridColDef } from '@mui/x-data-grid'
 import { zhCN } from '@mui/x-data-grid/locales'
 
@@ -34,8 +34,8 @@ export function Page({
     <Box
       sx={{
         height: '100%', minWidth: 0, display: 'flex', flexDirection: 'column',
-        gap: bleed ? 0 : dense ? 1.5 : 2,
-        p: bleed ? 0 : dense ? 2 : 2.5,
+        gap: bleed ? 0 : dense ? 2 : 2.5,
+        p: bleed ? 0 : dense ? 2.5 : 3,
         ...(scroll ? { overflow: 'auto' } : {}),
         ...sx,
       }}
@@ -93,14 +93,14 @@ export function ModuleToolbar({
                     size="small" aria-label={refreshLabel}
                     disabled={refreshDisabled || refreshing} onClick={onRefresh}
                   >
-                    {refreshing ? <CircularProgress size={14} /> : <RefreshIcon fontSize="small" />}
+                    {refreshing ? <CircularProgress size={14} /> : <Refresh fontSize="small" />}
                   </IconButton>
                 </span>
               </Tooltip>
             </Box>
           ) : null}
           {more ? <Box component="span" data-toolbar-slot="more" sx={{ display: 'inline-flex' }}>{more}</Box> : null}
-          {primary ? <Box component="span" data-toolbar-slot="primary" sx={{ display: 'inline-flex' }}>{primary}</Box> : null}
+          {primary ? <Box component="span" data-toolbar-slot="primary" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>{primary}</Box> : null}
         </Box>
       </Box>
     </Box>
@@ -152,7 +152,7 @@ export function LoadingBar({ active }: { active: boolean }) {
 export function SectionTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
     <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
-      <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{children}</Typography>
+      <Typography sx={{ fontSize: 16, fontWeight: 600 }}>{children}</Typography>
       {action}
     </Stack>
   )
@@ -166,6 +166,8 @@ export interface Column<T> {
   key: string
   label: ReactNode
   width?: number | string
+  /** 列的最小宽度；默认按表头文字自适应，避免字段名被省略。 */
+  minWidth?: number
   align?: 'left' | 'right' | 'center'
   headerAlign?: 'left' | 'right' | 'center'
   ellipsis?: boolean
@@ -174,6 +176,17 @@ export interface Column<T> {
   headerRender?: ReactNode
   render?: (row: T, index: number) => ReactNode
 }
+
+const RoundCheckbox = forwardRef<HTMLButtonElement, any>(function RoundCheckbox(props, ref) {
+  return (
+    <Checkbox
+      ref={ref}
+      {...props}
+      icon={<Circle sx={{ fontSize: 18 }} />}
+      checkedIcon={<CircleCheck sx={{ fontSize: 18 }} />}
+    />
+  )
+})
 
 export function DataTable<T>({
   columns,
@@ -245,12 +258,14 @@ export function DataTable<T>({
     const fixed = pinnedActions || tailActions
     const savedWidth = typeof columnWidths?.[field] === 'number' && columnWidths[field] > 0 ? columnWidths[field] : undefined
     const baseWidth = savedWidth ?? (typeof column.width === 'number' ? column.width : undefined)
+    const declaredMinWidth = typeof column.minWidth === 'number' && column.minWidth > 0 ? column.minWidth : undefined
+    const minWidth = declaredMinWidth ?? savedWidth ?? (!fixed && typeof column.width === 'number' ? column.width : undefined)
     const hasSavedWidths = Boolean(columnWidths && Object.keys(columnWidths).length)
     return {
       field,
       headerName: typeof column.label === 'string' ? column.label : '',
-      width: baseWidth,
-      minWidth: savedWidth ?? (!fixed && typeof column.width === 'number' ? column.width : undefined),
+      width: declaredMinWidth && baseWidth !== undefined ? Math.max(baseWidth, declaredMinWidth) : baseWidth,
+      minWidth,
       flex: fixed || savedWidth || hasSavedWidths ? 0 : typeof column.width === 'number' ? column.width : 1,
       // 「水平居中」打开时整表居中；关闭时按列类型对齐（数字靠右、文本靠左）。
       align: centerX ? 'center' : (column.align ?? 'left'),
@@ -270,7 +285,7 @@ export function DataTable<T>({
     }
   }), [columns, columnWidths, centerX, onSort, rowIndexByRow])
   const theme = useTheme()
-  const softBg = theme.palette.mode === 'dark' ? '#242B2E' : '#F4F5F5'
+  const softBg = theme.palette.mode === 'dark' ? '#18181B' : '#FAFAFA'
   const apiRef = useGridApiRef()
   const hasActions = columns.some((column) => String(column.key) === '__actions')
   // DataGrid 免费版没有 pinnedColumns 属性，但社区版内部状态已支持列固定，这里直接注入状态：
@@ -303,8 +318,8 @@ export function DataTable<T>({
       widthsChangeRef.current(widths)
     })
   }, [apiRef])
-  const rowHeightValue = size === 'small' ? 36 : 52
-  const headerHeightValue = size === 'small' ? 36 : 44
+  const rowHeightValue = size === 'small' ? 48 : 56
+  const headerHeightValue = size === 'small' ? 48 : 52
   const naturalHeight = headerHeightValue + rows.length * rowHeightValue + 2
   const height = maxHeight === '100%'
     ? '100%'
@@ -325,16 +340,23 @@ export function DataTable<T>({
     borderColor: 'divider',
     borderRadius: 1.5,
     bgcolor: 'background.paper',
-    '& .MuiDataGrid-columnHeaders': { bgcolor: 'action.hover', borderBottom: '1px solid', borderColor: 'divider' },
+    '& .MuiDataGrid-columnHeaders': { bgcolor: 'background.paper', borderBottom: '1px solid', borderColor: 'divider' },
     '& .MuiDataGrid-cell': {
-      fontSize: 12.5, borderBottom: '1px solid', borderColor: 'divider',
+      fontSize: 13.5,
+      borderBottom: '1px solid',
+      borderColor: theme.palette.mode === 'dark' ? '#1F1F23' : '#F4F4F5',
       ...(columnDividers ? { borderRight: '1px solid', borderRightColor: 'divider' } : {}),
       ...(centerY ? {} : { lineHeight: '1.5 !important', paddingTop: '4px !important' }),
       ...(autoRowHeight ? { py: 1, whiteSpace: 'normal', lineHeight: 1.45, alignItems: 'center' } : {}),
     },
     '& .MuiDataGrid-row--lastVisible .MuiDataGrid-cell': { borderBottom: 0 },
-    '& .MuiDataGrid-columnHeaderTitle': { fontSize: 12.5, fontWeight: 600 },
-    // 排序入口保留列菜单和工具栏，隐藏表头里的排序箭头/按钮，避免重复
+    '& .MuiDataGrid-row:hover': { backgroundColor: theme.palette.action.hover },
+    '& .MuiDataGrid-columnHeaderTitle': { fontSize: 13, fontWeight: 500, color: theme.palette.text.secondary },
+    // 数字列表头的 headerRender 是自定义 Stack，只有让内容容器撑满，
+    // 金额/百分比表头才会和右对齐的数字列落在同一条基线上。
+    '& .MuiDataGrid-columnHeader--alignRight .MuiDataGrid-columnHeaderTitleContainerContent': { flex: 1, minWidth: 0 },
+    // 列菜单和内置排序箭头都收起来，用表头里的静态排序图标
+    '& .MuiDataGrid-menuIcon': { display: 'none' },
     '& .MuiDataGrid-columnHeader .MuiDataGrid-iconButtonContainer': { display: 'none' },
     '& .wb-table-cell-text': {
       display: 'block', width: '100%', minWidth: 0, minHeight: 22, overflow: 'hidden',
@@ -343,6 +365,9 @@ export function DataTable<T>({
     },
     '& .wb-table-cell-text:hover': { backgroundColor: theme.palette.action.hover },
     '& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within': { outline: 'none' },
+    '& .MuiDataGrid-cell[data-field="__actions"]': {
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    },
     '& .MuiDataGrid-scrollbar--horizontal': { height: '8px !important' },
     '& .MuiDataGrid-scrollbar--horizontal > div': { height: '8px !important' },
     '& .MuiDataGrid-scrollbar--vertical': { width: '8px !important' },
@@ -355,18 +380,18 @@ export function DataTable<T>({
     },
     '& .MuiDataGrid-cell--pinnedRight': {
       backgroundColor: 'background.paper',
-      boxShadow: '-8px 0 8px -8px rgba(0,0,0,0.28)',
+      boxShadow: '-8px 0 8px -8px rgba(9,9,11,0.08)',
     },
     '& .MuiDataGrid-columnHeader--pinnedRight': {
-      backgroundColor: softBg,
-      boxShadow: '-8px 0 8px -8px rgba(0,0,0,0.28)',
+      backgroundColor: 'background.paper',
+      boxShadow: '-8px 0 8px -8px rgba(9,9,11,0.08)',
     },
     '& .MuiDataGrid-cell--pinnedLeft': {
       backgroundColor: 'background.paper',
     },
     '& .MuiDataGrid-columnHeader--pinnedLeft': {
-      backgroundColor: softBg,
-      boxShadow: '8px 0 8px -8px rgba(0,0,0,0.28)',
+      backgroundColor: 'background.paper',
+      boxShadow: '8px 0 8px -8px rgba(9,9,11,0.08)',
     },
 
     ...(columnDividers ? {
@@ -378,7 +403,7 @@ export function DataTable<T>({
       '& .MuiDataGrid-row:nth-of-type(even) .MuiDataGrid-cell--pinnedRight': { backgroundColor: softBg },
       '& .MuiDataGrid-row:nth-of-type(even) .MuiDataGrid-cell--pinnedLeft': { backgroundColor: softBg },
     } : {}),
-  }), [autoRowHeight, centerY, columnDividers, effectiveHeight, softBg, striped, theme.palette.action.hover, theme.palette.mode])
+  }), [autoRowHeight, centerY, columnDividers, effectiveHeight, softBg, striped, theme.palette.action.hover, theme.palette.mode, theme.palette.text.secondary])
   return (
     <Box sx={{ width: '100%', minWidth: 0, ...(maxHeight === '100%' ? { flex: 1, minHeight: 0, height: '100%' } : {}), ...sx }}>
       <DataGrid
@@ -414,7 +439,10 @@ export function DataTable<T>({
           if (next.field === sortKey && next.sort === sortDirection) return
           onSort(next.field, next.sort === 'desc' ? 'desc' : 'asc')
         }}
-        slots={{ noRowsOverlay: () => <Box sx={{ p: 4, textAlign: 'center', fontSize: 13, color: 'text.secondary' }}>{empty}</Box> }}
+        slots={{
+          baseCheckbox: RoundCheckbox,
+          noRowsOverlay: () => <Box sx={{ p: 4, textAlign: 'center', fontSize: 13, color: 'text.secondary' }}>{empty}</Box>,
+        }}
         sx={gridSx}
       />
     </Box>
@@ -439,8 +467,8 @@ export function Pager({
   const to = Math.min(total, currentPage * pageSize)
   if (total <= 0 && !showSize) return null
   return (
-    <Stack direction="row" spacing={1.5} alignItems="center" justifyContent="flex-end" sx={{ py: 1 }}>
-      <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+    <Stack direction="row" spacing={2} alignItems="center" justifyContent="flex-end" flexWrap="wrap" useFlexGap sx={{ py: 1.5 }}>
+      <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
         {total > 0 ? `第 ${from}–${to} 条 / 共 ${total} 条` : '共 0 条'}
       </Typography>
       {showSize && onPageSize ? (
@@ -448,11 +476,12 @@ export function Pager({
           size="small"
           value={pageSize}
           onChange={(event) => onPageSize(Number(event.target.value))}
-          sx={{ height: 32, fontSize: 12, minWidth: 92 }}
+          sx={{ height: 36, fontSize: 13, minWidth: 104 }}
         >
-          {pageSizes.map((size) => <MenuItem key={size} value={size} sx={{ fontSize: 12 }}>{size} 条/页</MenuItem>)}
+          {pageSizes.map((size) => <MenuItem key={size} value={size} sx={{ fontSize: 13 }}>{size} 条/页</MenuItem>)}
         </Select>
       ) : null}
+      <Typography sx={{ fontSize: 13, color: 'text.secondary', whiteSpace: 'nowrap' }}>第 {currentPage} / {pages} 页</Typography>
       <Pagination
         size="small"
         count={pages}
@@ -461,6 +490,13 @@ export function Pager({
         showFirstButton
         showLastButton
         siblingCount={1}
+        sx={{
+          '& .MuiPaginationItem-root': { borderRadius: 1, fontSize: 13, minWidth: 32, height: 32 },
+          '& .MuiPaginationItem-root.Mui-selected': {
+            bgcolor: 'text.primary', color: 'background.paper',
+            '&:hover': { bgcolor: 'text.primary' },
+          },
+        }}
       />
     </Stack>
   )
@@ -497,7 +533,7 @@ export function UploadDropzone({
         opacity: disabled ? 0.6 : 1,
       }}
     >
-      <CloudUploadIcon sx={{ fontSize: 28, color: 'text.secondary' }} />
+      <UploadFilled sx={{ fontSize: 28, color: 'text.secondary' }} />
       <Typography sx={{ fontSize: 13, mt: 0.5 }}>{title}</Typography>
       {hint ? <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 0.5 }}>{hint}</Typography> : null}
       <input

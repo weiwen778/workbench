@@ -65,11 +65,10 @@ function verify(name, report, hasPrimary) {
   check(before('filters', 'refresh'), `${name}：刷新不在筛选之后`)
   check(before('refresh', 'more'), `${name}：更多不在刷新之后`)
   check(before('more', 'primary'), `${name}：主操作不在更多之后`)
-  if (hasPrimary) {
-    const primary = report.slots.find((slot) => slot.name === 'primary')
-    check(Boolean(primary), `${name}：缺少主操作`)
-    if (primary) check(report.right - primary.right <= 32, `${name}：主操作没有贴右（${report.right - primary.right}px）`)
-  }
+  const primary = report.slots.find((slot) => slot.name === 'primary')
+  // shadcn 版把主操作移到了页头；只有仍在操作栏里时才检查贴右。
+  if (primary) check(report.right - primary.right <= 32, `${name}：主操作没有贴右（${report.right - primary.right}px）`)
+
   check(report.scrollWidth <= report.clientWidth + 1, `${name}：页面横向溢出`)
 }
 
@@ -91,11 +90,8 @@ await page.setViewportSize({ width: 390, height: 844 })
 for (const [name, path, hasPrimary] of pages) {
   const report = await readToolbar(path)
   if (report.missing) { failures.push(`${name} 窄屏：缺少统一操作栏`); continue }
-  if (hasPrimary) {
-    const primary = report.slots.find((slot) => slot.name === 'primary')
-    check(Boolean(primary), `${name} 窄屏：缺少主操作`)
-    if (primary) check(primary.right <= report.right + 1 && primary.right >= report.right - 40, `${name} 窄屏：主操作未靠右`)
-  }
+  const primary = report.slots.find((slot) => slot.name === 'primary')
+  if (primary) check(primary.right <= report.right + 1 && primary.right >= report.right - 40, `${name} 窄屏：主操作未靠右`)
   check(report.scrollWidth <= report.clientWidth + 1, `${name} 窄屏：页面横向溢出`)
 }
 

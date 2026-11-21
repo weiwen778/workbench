@@ -1,15 +1,13 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
-  AppBar, Badge, Box, Button, IconButton, Paper, Stack, Toolbar, Tooltip,
-  Typography,
+  AppBar, Badge, Box, Button, IconButton, Paper, Toolbar, Tooltip,
 } from '@mui/material'
 import {
-  ChecklistRtl, DarkModeOutlined, EventAvailable, LightModeOutlined, List as ListIcon, MoreHoriz,
-  Search, TableChart, TaskAlt, BugReportOutlined,
-} from '@mui/icons-material'
+  BugIcon, Calendar, CheckCircle, Collection, ListIcon, Moon, MoreFilled,
+  PanelLeftIcon, Search, Setting, Sunny, Todo,
+} from '@/icons'
 import AppRail from './AppRail'
-import ModuleTabs from './ModuleTabs'
 import { NavAllDrawer } from './NavPanels'
 import { APP_NAV_KEYS, DEFAULT_PINNED_KEYS } from './app-nav'
 import { readPinnedKeys, readSidebarMode, writePinnedKeys, writeSidebarMode, SIDEBAR_MODE_EVENT, SIDEBAR_ORDER_EVENT, type SidebarMode } from './sidebar-order'
@@ -18,7 +16,7 @@ import FeedbackDialog from '@/components/FeedbackDialog'
 import WorkspaceToolsDialog from '@/components/WorkspaceToolsDialog'
 import PageTransition from '@/motion/components/PageTransition'
 import SkeletonPulse from '@/motion/components/SkeletonPulse'
-import { buildGroups, toolItems, type SidebarData } from './nav'
+import { buildGroups, type SidebarData } from './nav'
 import { http, apiError } from '@/api/client'
 import { toggleTheme, useSession } from '@/session'
 import { toast } from '@/ui/feedback'
@@ -29,17 +27,6 @@ const EMPTY_DATA: SidebarData = {
 }
 
 export const MODULE_KEYS = ['checkin', 'visualizations', 'data', 'todos', 'notes', 'memos', 'bookmarks']
-
-function moduleKeyFromPath(pathname: string) {
-  if (pathname.startsWith('/checkins')) return 'checkin'
-  if (pathname.startsWith('/data')) return 'data'
-  if (pathname.startsWith('/todos')) return 'todos'
-  if (pathname.startsWith('/notes')) return 'notes'
-  if (pathname.startsWith('/memos')) return 'memos'
-  if (pathname.startsWith('/visualizations')) return 'visualizations'
-  if (pathname.startsWith('/bookmarks')) return 'bookmarks'
-  return ''
-}
 
 function memoTitle(search: string) {
   const params = new URLSearchParams(search)
@@ -211,11 +198,6 @@ export default function AppLayout() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const moduleKey = moduleKeyFromPath(location.pathname)
-  const moduleLabel = groups.find((group) => group.key === moduleKey)?.label
-    || toolItems.find((tool) => location.pathname.startsWith(tool.path))?.label
-    || ''
-
   const pageTitle = useMemo(() => {
     const path = location.pathname
     if (path.startsWith('/settings')) return '设置'
@@ -268,16 +250,17 @@ export default function AppLayout() {
     const path = location.pathname
     // 笔记页自己管理左右分栏和滚动，外层不能再滚动。
     if (path === '/notes' || path.startsWith('/notes/')) return false
-    if (['/visualizations', '/settings', '/data', '/memos'].includes(path)) return true
-    return ['/visualizations/', '/settings/', '/memos'].some((prefix) => path.startsWith(prefix))
+    if (['/visualizations', '/data', '/memos'].includes(path)) return true
+    return ['/visualizations/', '/memos'].some((prefix) => path.startsWith(prefix))
   }, [location.pathname])
 
   const bottomNav = [
-    { key: 'checkin', label: '打卡', path: '/checkins', icon: EventAvailable },
-    { key: 'todos', label: '待办', path: '/todos', icon: ChecklistRtl },
-    { key: 'data', label: '表格', path: '/data', icon: TableChart },
-    { key: 'more', label: '更多', path: '', icon: MoreHoriz },
+    { key: 'checkin', label: '打卡', path: '/checkins', icon: Calendar },
+    { key: 'todos', label: '待办', path: '/todos', icon: Todo },
+    { key: 'data', label: '表格', path: '/data', icon: Collection },
+    { key: 'more', label: '更多', path: '', icon: MoreFilled },
   ]
+  const initials = (session.user?.username || 'admin').slice(0, 2).toUpperCase()
 
   return (
     <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
@@ -286,39 +269,44 @@ export default function AppLayout() {
           mode={navMode}
           pinned={pinned}
           groups={groups}
-          onToggleMode={toggleNavMode}
         />
       ) : null}
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', flex: 1, minWidth: 0 }}>
         <AppBar position="static" color="transparent" elevation={0} sx={{ bgcolor: 'background.paper', borderBottom: 1, borderColor: 'divider' }}>
-          <Toolbar variant="dense" sx={{ gap: 0.75, minHeight: 44, px: 2 }}>
+          <Toolbar sx={{ gap: 1, minHeight: { xs: 52, md: 56 }, px: { xs: 1.5, md: 2 } }}>
             {narrow ? (
-              <IconButton edge="start" size="small" aria-label="打开导航" onClick={() => setDrawerOpen(true)}><ListIcon /></IconButton>
-            ) : null}
-            <Stack direction="row" alignItems="baseline" spacing={1} sx={{ minWidth: 0 }}>
-              {moduleLabel && !narrow && moduleLabel !== pageTitle ? (
-                <Typography sx={{ fontSize: 11.5, color: 'text.disabled', fontFamily: '"IBM Plex Mono", monospace' }}>{moduleLabel}</Typography>
-              ) : null}
-              <Typography sx={{ fontSize: 13.5, fontWeight: 600 }} title={pageTitle} noWrap>{pageTitle}</Typography>
-            </Stack>
-            <Box sx={{ flex: 1 }} />
+              <IconButton size="small" aria-label="打开导航" onClick={() => setDrawerOpen(true)}><ListIcon /></IconButton>
+            ) : (
+              <Tooltip title={navMode === 'wide' ? '收起侧栏' : '展开侧栏'}>
+                <IconButton
+                  size="small"
+                  aria-label={navMode === 'wide' ? '收起侧栏' : '展开侧栏'}
+                  onClick={toggleNavMode}
+                  sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}
+                >
+                  <PanelLeftIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Tooltip>
+            )}
             <Button
               onClick={() => setSearchOpen(true)}
-              startIcon={<Search fontSize="small" />}
+              startIcon={<Search sx={{ fontSize: 16 }} />}
               sx={{
-                display: { xs: 'none', sm: 'inline-flex' }, minWidth: 230, justifyContent: 'flex-start',
-                color: 'text.secondary', bgcolor: 'action.hover', border: 0, fontWeight: 400, height: 30,
-                '&:hover': { bgcolor: 'action.selected' },
+                display: { xs: 'none', md: 'inline-flex' }, width: 240, justifyContent: 'flex-start',
+                color: 'text.secondary', bgcolor: 'background.paper', border: 1, borderColor: 'divider',
+                fontWeight: 400, height: 32, borderRadius: 1, px: 1.25,
+                '&:hover': { bgcolor: 'action.hover', borderColor: 'text.disabled' },
               }}
             >
-              搜索或跳转
-              <Box component="kbd" sx={{ ml: 'auto', fontFamily: '"IBM Plex Mono", monospace', fontSize: 11.5, color: 'text.disabled' }}>Ctrl K</Box>
+              搜索
+              <Box component="kbd" sx={{ ml: 'auto', fontSize: 11.5, color: 'text.disabled', fontFamily: 'inherit' }}>Ctrl K</Box>
             </Button>
             <Tooltip title="搜索">
-              <IconButton size="small" aria-label="搜索" sx={{ display: { xs: 'inline-flex', sm: 'none' } }} onClick={() => setSearchOpen(true)}>
-                <Search fontSize="small" />
+              <IconButton size="small" aria-label="搜索" sx={{ display: { xs: 'inline-flex', md: 'none' } }} onClick={() => setSearchOpen(true)}>
+                <Search sx={{ fontSize: 18 }} />
               </IconButton>
             </Tooltip>
+            <Box sx={{ flex: 1 }} />
             <Tooltip title="任务中心">
               <IconButton
                 size="small"
@@ -326,7 +314,7 @@ export default function AppLayout() {
                 color={toolsOpen ? 'primary' : 'default'}
                 onClick={() => { setToolsView('tasks'); setToolsOpen(true) }}
               >
-                <Badge badgeContent={taskCount} max={99} color="error" invisible={!taskCount}><TaskAlt sx={{ fontSize: 19 }} /></Badge>
+                <Badge badgeContent={taskCount} max={99} color="primary" invisible={!taskCount}><CheckCircle sx={{ fontSize: 18 }} /></Badge>
               </IconButton>
             </Tooltip>
             <Tooltip title="反馈问题或提需求">
@@ -335,8 +323,9 @@ export default function AppLayout() {
                 aria-label="反馈问题或提需求"
                 color={feedbackOpen ? 'primary' : 'default'}
                 onClick={() => setFeedbackOpen(true)}
+                sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
               >
-                <BugReportOutlined sx={{ fontSize: 19 }} />
+                <BugIcon sx={{ fontSize: 18 }} />
               </IconButton>
             </Tooltip>
             <Tooltip title="切换浅色／深色主题">
@@ -346,17 +335,38 @@ export default function AppLayout() {
                   aria-label="切换主题"
                   disabled={session.appearanceSaving}
                   onClick={() => { void toggleTheme().catch((error) => toast.error(apiError(error).message)) }}
+                  sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
                 >
-                  {session.theme === 'dark' ? <LightModeOutlined sx={{ fontSize: 20 }} /> : <DarkModeOutlined sx={{ fontSize: 20 }} />}
+                  {session.theme === 'dark' ? <Sunny sx={{ fontSize: 18 }} /> : <Moon sx={{ fontSize: 18 }} />}
                 </IconButton>
               </span>
             </Tooltip>
+            <Tooltip title="设置">
+              <IconButton
+                size="small"
+                aria-label="设置"
+                color={location.pathname.startsWith('/settings') ? 'primary' : 'default'}
+                onClick={() => navigate('/settings')}
+              >
+                <Setting sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Tooltip>
+            <Box
+              role="button"
+              tabIndex={0}
+              aria-label="账号与设置"
+              onClick={() => navigate('/settings')}
+              onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); navigate('/settings') } }}
+              sx={{
+                width: 30, height: 30, borderRadius: '50%', bgcolor: 'action.selected',
+                display: 'grid', placeItems: 'center', fontSize: 11.5, fontWeight: 600,
+                cursor: 'pointer', flexShrink: 0, '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
+              }}
+            >
+              {initials}
+            </Box>
           </Toolbar>
         </AppBar>
-
-        {!narrow && moduleKey ? (
-          <ModuleTabs moduleKey={moduleKey} data={data} />
-        ) : null}
 
         <Box sx={{ flex: 1, minHeight: 0, overflow: scrollable ? 'auto' : 'hidden', pb: narrow ? 7 : 0 }}>
           <PageTransition

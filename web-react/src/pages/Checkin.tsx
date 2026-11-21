@@ -8,13 +8,13 @@ import SpringDrawer from '@/motion/components/SpringDrawer'
 import ProgressRing from '@/motion/components/ProgressRing'
 import Burst from '@/motion/components/Burst'
 import PopCheckedIcon from '@/motion/components/PopCheckedIcon'
-import PushPin from '@mui/icons-material/PushPin'
 import {
   DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
 } from '@dnd-kit/core'
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Clock, Download, DragIndicator, InfoFilled, MoreFilled, Plus, Refresh, Setting, Upload } from '@/icons'
+import PushPin from '@mui/icons-material/PushPin'
+import { Clock, Download, DragIndicator, FilterList, InfoFilled, Memo, MoreFilled, Plus, Refresh, Setting, Upload } from '@/icons'
 import { apiError, http } from '@/api/client'
 import { DataTable, EmptyHint, FieldRow, ModuleToolbar, Page, PageBody, UploadDropzone } from '@/ui/common'
 import { confirmDialog, promptDialog, toast } from '@/ui/feedback'
@@ -85,6 +85,7 @@ export default function CheckinPage() {
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const scrollKey = `wb_checkin_scroll:${targetId || 'all'}:${period}:${status}`
 
+  const [mobileFilters, setMobileFilters] = useState(false)
   const [manageOpen, setManageOpen] = useState(false)
   const [allTargets, setAllTargets] = useState<any[]>([])
   const [navTargets, setNavTargets] = useState<any[]>([])
@@ -460,6 +461,7 @@ export default function CheckinPage() {
         : '当前没有要做的打卡'
 
   const noteItem = noteAnchor ? findItem(noteAnchor.id) : null
+  const activeFilterCount = (targetId ? 1 : 0) + (status !== 'all' ? 1 : 0)
 
   return (
     <Page variant="dense">
@@ -471,49 +473,66 @@ export default function CheckinPage() {
               <ToggleButton value="weekly">本周</ToggleButton>
               <ToggleButton value="monthly">本月</ToggleButton>
             </ToggleButtonGroup>
-            {!targetId ? (
-              <FormControl size="small" sx={{ width: 190 }}>
-                <InputLabel shrink>打卡项目</InputLabel>
-                <Select label="打卡项目" displayEmpty value={targetId ?? ''} onChange={(event) => {
-                  const value = event.target.value
-                  navigate(value ? `/checkins/items/${value}` : '/checkins')
-                }}>
-                  <MenuItem value="">全部打卡项目</MenuItem>
-                  {targets.map((target) => <MenuItem key={target.id} value={target.id}>{target.name}</MenuItem>)}
+            <Stack
+              direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap
+              sx={{ display: { xs: mobileFilters ? 'flex' : 'none', sm: 'contents' }, width: { xs: '100%', sm: 'auto' } }}
+            >
+              {!targetId ? (
+                <FormControl size="small" sx={{ width: 190 }}>
+                  <InputLabel id="checkin-target-label" shrink>打卡项目</InputLabel>
+                  <Select labelId="checkin-target-label" id="checkin-target" label="打卡项目" displayEmpty value={targetId ?? ''} onChange={(event) => {
+                    const value = event.target.value
+                    navigate(value ? `/checkins/items/${value}` : '/checkins')
+                  }}>
+                    <MenuItem value="">全部打卡项目</MenuItem>
+                    {targets.map((target) => <MenuItem key={target.id} value={target.id}>{target.name}</MenuItem>)}
+                  </Select>
+                </FormControl>
+              ) : null}
+              <FormControl size="small" sx={{ width: 120 }}>
+                <InputLabel id="checkin-status-label" shrink>状态</InputLabel>
+                <Select labelId="checkin-status-label" id="checkin-status" label="状态" value={status} onChange={(event) => setStatus(event.target.value)}>
+                  <MenuItem value="all">全部</MenuItem>
+                  <MenuItem value="pending">未完成</MenuItem>
+                  <MenuItem value="done">已完成</MenuItem>
                 </Select>
               </FormControl>
-            ) : null}
-            <FormControl size="small" sx={{ width: 120 }}>
-              <InputLabel shrink>状态</InputLabel>
-              <Select label="状态" value={status} onChange={(event) => setStatus(event.target.value)}>
-                <MenuItem value="all">全部</MenuItem>
-                <MenuItem value="pending">未完成</MenuItem>
-                <MenuItem value="done">已完成</MenuItem>
-              </Select>
-            </FormControl>
-            <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>{periodLabel} {range}</Typography>
+              <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>{periodLabel} {range}</Typography>
+            </Stack>
             <Stack direction="row" spacing={1} alignItems="center">
               <Box sx={{ position: 'relative', color: 'primary.main', display: 'flex' }}>
                 <ProgressRing value={(stats.rate ?? 0) / 100} size={26} stroke={3} label={`完成率 ${stats.rate === null ? '—' : `${stats.rate}%`}`} />
                 <Burst trigger={stats.completed} size={30} color="currentColor" />
               </Box>
-              <Typography sx={{ fontSize: 13 }}>
-                完成 <b>{stats.completed}</b> / {stats.total}
+              <Typography sx={{ fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
+                完成 <Box component="b" sx={{ fontSize: 13.5, fontWeight: 600 }}>{stats.completed}</Box> / {stats.total}
                 <Box component="span" sx={{ color: 'text.secondary', fontSize: 12 }}>（完成率 {stats.rate === null ? '—' : `${stats.rate}%`}）</Box>
               </Typography>
             </Stack>
           </>
         )}
         filters={(
-          <>
-            <Button size="small" startIcon={<Clock fontSize="small" />} onClick={() => setHistoryOpen(true)}>历史</Button>
-            {targetId ? <Button size="small" onClick={() => navigate(`/checkins/targets/${targetId}`)}>资料与任务</Button> : null}
-          </>
+          <Button
+            size="small"
+            variant="outlined"
+            color={mobileFilters ? 'primary' : 'inherit'}
+            startIcon={<FilterList fontSize="small" />}
+            onClick={() => setMobileFilters((value) => !value)}
+            sx={{ display: { sm: 'none' } }}
+          >
+            筛选{activeFilterCount ? `(${activeFilterCount})` : ''}
+          </Button>
         )}
         onRefresh={() => { void refresh(true) }}
         refreshLabel="刷新打卡"
         refreshing={loading}
-        primary={<Button size="small" variant="contained" startIcon={<Setting fontSize="small" />} onClick={() => setManageOpen(true)}>管理打卡项目</Button>}
+        primary={(
+          <>
+            {targetId ? <Button variant="outlined" size="small" onClick={() => navigate(`/checkins/targets/${targetId}`)} sx={{ height: 36 }}>资料与任务</Button> : null}
+            <Button variant="outlined" size="small" startIcon={<Clock />} onClick={() => setHistoryOpen(true)} sx={{ height: 36 }}>历史</Button>
+            <Button variant="contained" size="small" startIcon={<Setting />} onClick={() => setManageOpen(true)} sx={{ height: 36 }}>管理打卡项目</Button>
+          </>
+        )}
       />
 
       <PageBody>
@@ -535,7 +554,7 @@ export default function CheckinPage() {
                     sx={{ px: 2, py: 1, minHeight: 36, bgcolor: 'action.hover', borderTop: groupIndex ? 1 : 0, borderColor: 'divider' }}
                   >
                     <Typography sx={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.02em', flex: 1 }}>{group.group_name}</Typography>
-                    <Typography variant="caption" color="text.disabled" sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>{group.completed} / {group.total}</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>{group.completed} / {group.total}</Typography>
                   </Stack>
                   {group.items.map((item: any) => (
                     <Box
@@ -554,29 +573,37 @@ export default function CheckinPage() {
                       <Box sx={{ flex: 1, minWidth: 0 }}>
                         <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
                           <Typography variant="body2" sx={{ fontSize: 13 }}>{item.title}</Typography>
-                          <Typography variant="caption" color="text.disabled" sx={{ display: { xs: 'none', sm: 'block' } }}>{item.target_name}</Typography>
-                          {item.locked ? <Typography variant="caption" color="text.disabled">{item.lock_reason || '已结束'}</Typography> : null}
+                          <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>{item.target_name}</Typography>
+                          {item.locked ? <Typography variant="caption" color="text.secondary">{item.lock_reason || '已结束'}</Typography> : null}
                           {item.description ? (
                             <Tooltip title={<span style={{ whiteSpace: 'pre-wrap' }}>{item.description}</span>} placement="top-start">
                               <InfoFilled sx={{ fontSize: 14, color: 'text.disabled', cursor: 'help' }} />
                             </Tooltip>
                           ) : null}
                         </Stack>
-                        <Typography variant="caption" color="text.disabled" component="div" sx={{ mt: 0.25 }}>
+                        <Typography variant="caption" color="text.secondary" component="div" noWrap title={item.note || undefined} sx={{ mt: 0.25 }}>
                           {busy.has(item.id) ? '正在更新…'
                             : item.completed_at ? `完成于 ${formatTime(item.completed_at)}`
                               : `本${periodUnit}内完成一次`}
                           {item.note ? ` · 备注：${item.note}` : ''}
                         </Typography>
                       </Box>
-                      <Button
-                        size="small"
-                        sx={{ whiteSpace: 'nowrap', flexShrink: 0, color: 'text.secondary', minWidth: 0, px: 1 }}
-                        disabled={item.locked || busy.has(item.id)}
-                        onClick={(event) => void openNoteEditor(event, item)}
-                      >
-                        {item.note ? '改备注' : '备注'}
-                      </Button>
+                      <Tooltip title={item.note ? '编辑备注' : '添加备注'}>
+                        <span>
+                          <IconButton
+                            size="small"
+                            aria-label={`${item.title}的备注`}
+                            disabled={item.locked || busy.has(item.id)}
+                            onClick={(event) => void openNoteEditor(event, item)}
+                            sx={{
+                              flexShrink: 0, color: item.note ? 'primary.main' : 'text.secondary',
+                              '&:hover': { color: 'primary.main', bgcolor: 'action.hover' },
+                            }}
+                          >
+                            <Memo sx={{ fontSize: 18 }} />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
                     </Box>
                   ))}
                 </Box>

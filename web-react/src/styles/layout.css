@@ -65,6 +65,22 @@ html[data-motion="off"] .wb-card:hover .wb-thumb {
   transform: none;
 }
 
+/* 行/卡片操作：桌面端悬停或键盘聚焦时出现，触屏常显。
+   只隐藏透明度，不移出 Tab 顺序，键盘用户仍能聚焦到按钮。 */
+@media (hover: hover) and (pointer: fine) {
+  .memo-card .wb-card-actions,
+  .memo-row .wb-card-actions {
+    opacity: 0;
+    transition: opacity 140ms ease;
+  }
+  .memo-card:hover .wb-card-actions,
+  .memo-card:focus-within .wb-card-actions,
+  .memo-row:hover .wb-card-actions,
+  .memo-row:focus-within .wb-card-actions {
+    opacity: 1;
+  }
+}
+
 /* 白板工具按压：Excalidraw 自己的工具按钮，按下时轻微内缩 */
 .wb-pressable,
 .excalidraw .ToolIcon {

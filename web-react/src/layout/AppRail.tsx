@@ -1,12 +1,10 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Box, Divider, Tooltip, Typography, useTheme } from '@mui/material'
+import { Box, Tooltip, Typography } from '@mui/material'
 import { AnimatePresence, motion } from 'framer-motion'
-import ChevronLeft from '@mui/icons-material/ChevronLeft'
-import ChevronRight from '@mui/icons-material/ChevronRight'
-import { Settings } from '@mui/icons-material'
+import { ChevronRight, ChevronUp, MoreFilled } from '@/icons'
 import { preloadPath } from '@/router/preload'
-import { appNavItem } from './app-nav'
+import { APP_NAV_ITEMS, appNavItem } from './app-nav'
 import { activeGroupKey, type NavGroup } from './nav'
 import type { SidebarMode } from './sidebar-order'
 
@@ -16,24 +14,27 @@ interface AppRailProps {
   mode: SidebarMode
   pinned: string[]
   groups: NavGroup[]
-  onToggleMode: () => void
 }
 
-export default function AppRail({ mode, pinned, groups, onToggleMode }: AppRailProps) {
+export default function AppRail({ mode, pinned, groups }: AppRailProps) {
   const navigate = useNavigate()
   const location = useLocation()
-  const theme = useTheme()
-  const accent = theme.palette.primary.main
-  const [openKey, setOpenKey] = useState<string | null>(() => activeGroupKey(window.location.pathname, groups) || null)
   const wide = mode === 'wide'
+  const [openKey, setOpenKey] = useState<string | null>(() => activeGroupKey(window.location.pathname, groups) || null)
+  const [subExpanded, setSubExpanded] = useState(false)
   const activeGroup = activeGroupKey(location.pathname, groups) || null
 
   const items = useMemo(() => pinned.map((key) => appNavItem(key)).filter(Boolean), [pinned])
+  const moreItems = useMemo(() => APP_NAV_ITEMS.filter((item) => !pinned.includes(item.key)), [pinned])
   const activeKey = items.find((item) => item && (location.pathname === item.path || location.pathname.startsWith(item.path + '/')))?.key || ''
 
   useEffect(() => {
     setOpenKey(activeGroup && CATEGORY_KEYS.has(activeGroup) ? activeGroup : null)
   }, [activeGroup])
+
+  useEffect(() => {
+    setSubExpanded(false)
+  }, [openKey])
 
   const go = (path: string) => {
     preloadPath(path)
@@ -50,23 +51,30 @@ export default function AppRail({ mode, pinned, groups, onToggleMode }: AppRailP
   }
 
   const itemSx = (active: boolean) => ({
-    width: wide ? '100%' : 82,
-    minHeight: wide ? 38 : 48,
-    px: wide ? 1.3 : 0,
-    py: wide ? 0.26 : 0.42,
+    width: wide ? '100%' : 40,
+    minHeight: 38,
+    px: wide ? 1.25 : 0,
     display: 'flex',
-    flexDirection: wide ? 'row' : 'column',
     alignItems: 'center',
     justifyContent: wide ? 'flex-start' : 'center',
-    gap: wide ? 1.05 : 0.32,
-    borderRadius: 1.05,
+    gap: wide ? 0.75 : 0,
+    borderRadius: 1,
     cursor: 'pointer',
     userSelect: 'none',
     overflow: 'hidden',
-    color: active ? 'primary.contrastText' : 'text.secondary',
-    bgcolor: active ? accent : 'transparent',
-    transition: 'width 160ms ease, min-height 160ms ease, padding 160ms ease, background-color 120ms ease',
-    '&:hover': { bgcolor: active ? accent : 'action.hover', color: active ? 'primary.contrastText' : 'text.primary' },
+    color: active ? 'text.primary' : 'text.secondary',
+    bgcolor: active ? 'action.hover' : 'transparent',
+    transition: 'background-color 150ms ease, color 150ms ease',
+    '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
+    '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 1 },
+  })
+
+  const subItemSx = (active: boolean) => ({
+    width: '100%', minHeight: 30, display: 'flex', alignItems: 'center', gap: 0.75,
+    border: 0, borderRadius: 0.75, bgcolor: active ? 'action.hover' : 'transparent',
+    color: active ? 'text.primary' : 'text.secondary', px: 1, py: 0.5,
+    textAlign: 'left', cursor: 'pointer',
+    '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
     '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 1 },
   })
 
@@ -74,199 +82,190 @@ export default function AppRail({ mode, pinned, groups, onToggleMode }: AppRailP
     const Icon = item.icon
     const active = activeKey === item.key
     const hasSub = wide && CATEGORY_KEYS.has(item.key) && subItems.length > 0
+    const activeSubIndex = subItems.findIndex((sub) => isSubActive(sub.path))
+    const collapsedSubItems = activeSubIndex >= 4
+      ? [...subItems.slice(0, 3), subItems[activeSubIndex]]
+      : subItems.slice(0, 4)
+    const visibleSubItems = subExpanded ? subItems : collapsedSubItems
+    const hiddenCount = subItems.length - visibleSubItems.length
     const activate = () => {
       go(item.path)
-      if (hasSub) setOpenKey((value) => value === item.key ? null : item.key)
+      if (hasSub) setOpenKey((value) => (value === item.key ? null : item.key))
+      else setOpenKey(null)
     }
     return (
-      <Box
-        key={item.key}
-        role="button"
-        tabIndex={0}
-        aria-label={item.label}
-        title={item.label}
-        aria-current={active ? 'page' : undefined}
-        aria-expanded={hasSub ? openKey === item.key : undefined}
-        onClick={activate}
-        onMouseEnter={() => preloadPath(item.path)}
-        onFocus={() => preloadPath(item.path)}
-        onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate() } }}
-        sx={{ ...itemSx(active), ...(hasSub ? { pr: 2.6 } : {}) }}
-      >
-        <Icon sx={{ fontSize: wide ? 21 : 20, flexShrink: 0 }} />
-        <Typography
-          component="span"
-          sx={{
-            fontSize: wide ? 13.65 : 12.6,
-            lineHeight: 1.15,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            maxWidth: '100%',
-            flex: hasSub ? 1 : undefined,
-          }}
-        >
-          {item.label}
-        </Typography>
-        {hasSub ? (
-          <ChevronRight sx={{
-            fontSize: 15.8, flexShrink: 0, color: active ? 'primary.contrastText' : 'text.disabled',
-            transition: 'transform 160ms ease', transform: openKey === item.key ? 'rotate(90deg)' : 'none',
-            pointerEvents: 'none',
-          }} />
-        ) : null}
+      <Box key={item.key} sx={{ width: wide ? '100%' : 40 }}>
+        <Tooltip title={wide ? '' : item.label} placement="right" arrow>
+          <Box
+            role="button"
+            tabIndex={0}
+            aria-label={item.label}
+            aria-current={active ? 'page' : undefined}
+            aria-expanded={hasSub ? openKey === item.key : undefined}
+            onClick={activate}
+            onMouseEnter={() => preloadPath(item.path)}
+            onFocus={() => preloadPath(item.path)}
+            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate() } }}
+            sx={{ ...itemSx(active), ...(hasSub ? { pr: 1 } : {}) }}
+          >
+            <Icon sx={{ fontSize: 18, flexShrink: 0 }} />
+            {wide ? (
+              <Typography
+                component="span"
+                sx={{ fontSize: 13.5, lineHeight: 1.2, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: hasSub ? 1 : undefined, maxWidth: '100%' }}
+              >
+                {item.label}
+              </Typography>
+            ) : null}
+            {hasSub ? (
+              <ChevronRight sx={{
+                fontSize: 15, flexShrink: 0, color: 'text.disabled',
+                transition: 'transform 150ms ease', transform: openKey === item.key ? 'rotate(90deg)' : 'none',
+                pointerEvents: 'none',
+              }} />
+            ) : null}
+          </Box>
+        </Tooltip>
+        <AnimatePresence initial={false}>
+          {wide && openKey === item.key && hasSub ? (
+            <motion.div
+              key={`${item.key}-subnav`}
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+              style={{ overflow: 'hidden' }}
+            >
+              <Box
+                aria-label={`${item.label}二级导航`}
+                sx={{
+                  width: '100%', overflowX: 'hidden',
+                  display: 'flex', flexDirection: 'column', gap: '2px', py: 0.5, mt: 0.25, mb: 0.5,
+                  pl: 2.75, pr: 0.25, borderLeft: 1, borderColor: 'divider', ml: 2.1,
+                }}
+              >
+                {visibleSubItems.map((sub, index) => {
+                  const active = isSubActive(sub.path)
+                  return (
+                    <motion.div
+                      key={sub.path}
+                      initial={{ opacity: 0, x: -4 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.14, delay: Math.min(index, 10) * 0.01 }}
+                    >
+                      <Box
+                        component="button"
+                        type="button"
+                        onClick={(event) => { event.stopPropagation(); go(sub.path) }}
+                        sx={subItemSx(active)}
+                      >
+                        <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: active ? 500 : 400 }}>{sub.label}</Typography>
+                        {typeof sub.count === 'number' && sub.count > 0 ? (
+                          <Typography component="span" sx={{ fontSize: 11.5, color: 'text.disabled', fontVariantNumeric: 'tabular-nums' }}>{sub.count}</Typography>
+                        ) : null}
+                      </Box>
+                    </motion.div>
+                  )
+                })}
+                {hiddenCount > 0 ? (
+                  <Box
+                    component="button"
+                    type="button"
+                    aria-expanded={subExpanded}
+                    onClick={(event) => { event.stopPropagation(); setSubExpanded(true) }}
+                    sx={subItemSx(false)}
+                  >
+                    <Typography sx={{ flex: 1, minWidth: 0, fontSize: 12.5 }}>更多</Typography>
+                    <Typography component="span" sx={{ fontSize: 11.5, color: 'text.disabled', fontVariantNumeric: 'tabular-nums' }}>{hiddenCount}</Typography>
+                    <MoreFilled sx={{ fontSize: 14, color: 'text.disabled' }} />
+                  </Box>
+                ) : null}
+                {subExpanded && subItems.length > 4 ? (
+                  <Box
+                    component="button"
+                    type="button"
+                    aria-expanded={subExpanded}
+                    onClick={(event) => { event.stopPropagation(); setSubExpanded(false) }}
+                    sx={subItemSx(false)}
+                  >
+                    <Typography sx={{ flex: 1, minWidth: 0, fontSize: 12.5 }}>收起</Typography>
+                    <ChevronUp sx={{ fontSize: 14, color: 'text.disabled' }} />
+                  </Box>
+                ) : null}
+              </Box>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </Box>
     )
   }
 
-  const bottomItem = (label: string, icon: ReactNode, active: boolean, onClick: () => void) => (
-    <Box
-      role="button"
-      tabIndex={0}
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onClick() } }}
-      sx={itemSx(active)}
-    >
-      {icon}
-      <Typography component="span" sx={{ fontSize: wide ? 13.65 : 12.6, lineHeight: 1.15, whiteSpace: 'nowrap' }}>{label}</Typography>
-    </Box>
-  )
+  const sectionSx = { px: 1.25, pt: 1.5, pb: 0.5, fontSize: 11, fontWeight: 500, color: 'text.secondary', letterSpacing: '0.01em' }
 
   return (
     <Box
       component="nav"
       aria-label="主导航"
       sx={{
-        width: wide ? 240 : 101,
+        width: wide ? 264 : 72,
         flexShrink: 0,
-        bgcolor: theme.palette.mode === 'dark' ? '#11181B' : '#FBFCFB',
+        bgcolor: 'background.paper',
         borderRight: 1,
         borderColor: 'divider',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         overflow: 'hidden',
-        py: 1.05,
-        gap: 0.53,
+        py: 1.25,
         transition: 'width 160ms ease',
         '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
       }}
     >
-      <Box sx={{ position: 'relative', width: '100%', height: 46, px: wide ? 1.3 : 0.53, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-        <Tooltip title="回到首页">
+      <Box sx={{ width: '100%', px: wide ? 1.5 : 0, display: 'flex', alignItems: 'center', justifyContent: wide ? 'flex-start' : 'center' }}>
+        <Box
+          role="button"
+          tabIndex={0}
+          aria-label="回到首页"
+          onClick={() => go('/checkins')}
+          onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); go('/checkins') } }}
+          sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, cursor: 'pointer', borderRadius: 1, p: 0.5, '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 1 } }}
+        >
           <Box
-            role="button"
-            tabIndex={0}
-            aria-label="回到首页"
-            onClick={() => go('/checkins')}
-            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); go('/checkins') } }}
-            sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 0, cursor: 'pointer', borderRadius: 1.5 }}
-          >
-            {!wide ? (
-              <Box
-                component="img"
-                src="/favicon.svg?v=20261031-notion"
-                alt="Nexus 图标"
-                sx={{ display: 'block', width: 41, height: 41, flexShrink: 0, objectFit: 'contain' }}
-              />
-            ) : (
-              <Typography
-                component="span"
-                sx={{
-                  maxWidth: 120,
-                  opacity: 1,
-                  overflow: 'hidden',
-                  whiteSpace: 'nowrap',
-                  fontSize: 24,
-                  fontWeight: 600,
-                  letterSpacing: '-0.01em',
-                }}
-              >
-                Nexus
-              </Typography>
-            )}
-          </Box>
-        </Tooltip>
-      </Box>
-      <Divider sx={{ width: wide ? 'calc(100% - 21px)' : 34, mb: 0.53 }} />
-
-      <Box sx={{ width: '100%', flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', px: wide ? 0.79 : 0.53, pb: 0.53, display: 'flex', flexDirection: 'column', alignItems: wide ? 'stretch' : 'center', gap: 0.53, scrollbarWidth: 'thin' }}>
-        {items.map((item) => {
-          if (!item) return null
-          const group = groups.find((entry) => entry.key === item.key)
-          const subItems = group?.items || []
-          const expanded = wide && openKey === item.key && CATEGORY_KEYS.has(item.key) && subItems.length > 0
-          return (
-            <Box key={`rail-${item.key}`} sx={{ width: '100%' }}>
-              {renderItem(item, subItems)}
-              <AnimatePresence initial={false}>
-                {expanded ? (
-                  <motion.div
-                    key={`${item.key}-subnav`}
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                    style={{ overflow: 'hidden' }}
-                  >
-                    <Box
-                      aria-label={`${item.label}二级导航`}
-                      sx={{
-                        width: '100%', maxHeight: 'min(42vh, 357px)', overflowY: 'auto', overflowX: 'hidden',
-                        display: 'flex', flexDirection: 'column', gap: '3.2px', py: 0.26,
-                        mt: 0.26, mb: 0.53, pl: 2.6, pr: 0.53,
-                        borderLeft: '1px solid', borderColor: 'divider',
-                      }}
-                    >
-                      {subItems.map((sub, index) => {
-                        const active = isSubActive(sub.path)
-                        return (
-                          <motion.div
-                            key={sub.path}
-                            initial={{ opacity: 0, x: -4 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ duration: 0.16, delay: Math.min(index, 10) * 0.012 }}
-                          >
-                            <Box
-                              component="button"
-                              type="button"
-                              onClick={(event) => { event.stopPropagation(); go(sub.path) }}
-                              sx={{
-                                width: '100%', minHeight: 29, display: 'flex', alignItems: 'center', gap: 0.79,
-                                border: 0, borderRadius: 0.79, bgcolor: active ? 'action.selected' : 'transparent',
-                                color: active ? 'primary.main' : 'text.secondary', px: 0.79, py: 0.53,
-                                textAlign: 'left', cursor: 'pointer',
-                                '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
-                              }}
-                            >
-                              <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: 12.6, fontWeight: active ? 600 : 400 }}>{sub.label}</Typography>
-                              {typeof sub.count === 'number' && sub.count > 0 ? (
-                                <Typography component="span" sx={{ fontSize: 12.1, color: 'text.disabled' }}>{sub.count}</Typography>
-                              ) : null}
-                            </Box>
-                          </motion.div>
-                        )
-                      })}
-                    </Box>
-                  </motion.div>
-                ) : null}
-              </AnimatePresence>
+            component="img"
+            src="/favicon.svg"
+            alt="Nexus"
+            sx={{ width: 32, height: 32, flexShrink: 0, display: 'block' }}
+          />
+          {wide ? (
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <Typography noWrap sx={{ fontSize: 14, fontWeight: 600, lineHeight: 1.2 }}>Nexus</Typography>
+              <Typography noWrap sx={{ fontSize: 11, color: 'text.secondary', lineHeight: 1.3 }}>个人工作台</Typography>
             </Box>
-          )
-        })}
+          ) : null}
+
+        </Box>
       </Box>
 
-      <Divider sx={{ width: wide ? 'calc(100% - 21px)' : 34, my: 0.53 }} />
-      <Box sx={{ width: '100%', px: wide ? 0.79 : 0.53, display: 'flex', flexDirection: 'column', alignItems: wide ? 'stretch' : 'center', gap: 0.26 }}>
-        {bottomItem('设置', <Settings sx={{ fontSize: wide ? 21 : 20 }} />, location.pathname.startsWith('/settings'), () => go('/settings'))}
-        {bottomItem(
-          wide ? '收起侧栏' : '展开侧栏',
-          wide ? <ChevronLeft sx={{ fontSize: 20 }} /> : <ChevronRight sx={{ fontSize: 20 }} />,
-          false,
-          onToggleMode,
-        )}
+      <Box sx={{ width: '100%', flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', px: wide ? 0.75 : 0.5, pt: 1, display: 'flex', flexDirection: 'column', alignItems: wide ? 'stretch' : 'center', gap: 0.25, scrollbarWidth: 'thin' }}>
+        {wide ? <Typography sx={sectionSx}>工作台</Typography> : null}
+        <Box data-nav-section="pinned" sx={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: wide ? 'stretch' : 'center', gap: 0.25 }}>
+          {items.map((item) => {
+            if (!item) return null
+            const group = groups.find((entry) => entry.key === item.key)
+            return renderItem(item, group?.items || [])
+          })}
+        </Box>
+        {moreItems.length ? (
+          <>
+            {wide ? <Typography sx={sectionSx}>更多</Typography> : null}
+            <Box data-nav-section="more" sx={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: wide ? 'stretch' : 'center', gap: 0.25 }}>
+              {moreItems.map((item) => {
+                const group = groups.find((entry) => entry.key === item.key)
+                return renderItem(item, group?.items || [])
+              })}
+            </Box>
+          </>
+        ) : null}
       </Box>
     </Box>
   )

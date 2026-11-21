@@ -136,11 +136,6 @@ export default function TablesPage() {
   }, [tables, query, sort, favorites])
 
   const recentTables = recent.map((id) => tables.find((table) => table.id === id)).filter(Boolean).slice(0, 5)
-  const totalRecords = tables.reduce((sum, table) => sum + (table.record_count || 0), 0)
-  const latest = tables.reduce((value, table) => {
-    if (!table.updated_at) return value
-    return !value || new Date(table.updated_at) > new Date(value) ? table.updated_at : value
-  }, '' as string)
 
   const empty = !tables.length && !loading
   const noResults = Boolean(tables.length) && !visible.length && !loading
@@ -158,12 +153,7 @@ export default function TablesPage() {
   return (
     <Page variant="dense">
       <ModuleToolbar
-        info={(
-          <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
-            {tables.length} 张表格 · {totalRecords} 条数据{latest ? ` · 最近更新 ${relativeTime(latest)}` : ''}
-          </Typography>
-        )}
-        filters={!empty ? (
+        info={!empty ? (
           <>
             <TextField
               size="small" placeholder="搜索表格名称、说明或字段" value={query}
@@ -180,7 +170,6 @@ export default function TablesPage() {
               <ToggleButton value="cards" aria-label="卡片视图"><GridView sx={{ fontSize: 17 }} /></ToggleButton>
               <ToggleButton value="list" aria-label="列表视图"><ViewList sx={{ fontSize: 17 }} /></ToggleButton>
             </ToggleButtonGroup>
-            <Button size="small" startIcon={<Upload fontSize="small" />} onClick={() => setImportOpen(true)}>导入</Button>
           </>
         ) : null}
         onRefresh={!empty ? () => void load() : undefined}
@@ -191,7 +180,12 @@ export default function TablesPage() {
             <IconButton size="small" aria-label="更多表格操作" onClick={(event) => setMoreAnchor(event.currentTarget)}><MoreFilled fontSize="small" /></IconButton>
           </Tooltip>
         ) : null}
-        primary={<Button size="small" variant="contained" startIcon={<Plus fontSize="small" />} onClick={() => setCreateOpen(true)}>新建表格</Button>}
+        primary={(
+          <>
+            <Button variant="outlined" size="small" startIcon={<Upload />} onClick={() => setImportOpen(true)} sx={{ height: 36 }}>导入</Button>
+            <Button variant="contained" size="small" startIcon={<Plus />} onClick={() => setCreateOpen(true)} sx={{ height: 36 }}>新建表格</Button>
+          </>
+        )}
       />
 
       <PageBody sx={{ overflow: 'auto', pt: 0.75 }}>
