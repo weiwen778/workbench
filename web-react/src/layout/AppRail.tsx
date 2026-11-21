@@ -139,9 +139,9 @@ export default function AppRail({ mode, pinned, groups }: AppRailProps) {
               <Box
                 aria-label={`${item.label}二级导航`}
                 sx={{
-                  width: '100%', overflowX: 'hidden',
+                  width: 'auto', overflowX: 'hidden',
                   display: 'flex', flexDirection: 'column', gap: '2px', py: 0.5, mt: 0.25, mb: 0.5,
-                  pl: 2.75, pr: 0.25, borderLeft: 1, borderColor: 'divider', ml: 2.1,
+                  pl: 2.75, pr: 0.25, borderLeft: 1, borderColor: 'divider', ml: 2.1, mr: 0.25,
                 }}
               >
                 {visibleSubItems.map((sub, index) => {
