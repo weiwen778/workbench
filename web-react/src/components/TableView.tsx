@@ -500,6 +500,7 @@ export default function TableView({ tableId }: { tableId: number }) {
                 onColumnVisibilityChange={saveColumnVisibility}
                 pinnedLeft={pinnedLeft}
                 size={density === 'compact' ? 'small' : 'medium'}
+                compact={density === 'compact'}
                 checkboxSelection
                 rowSelectionModel={rowSelectionModel}
                 onRowSelectionModelChange={setRowSelectionModel}

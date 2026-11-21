@@ -128,7 +128,7 @@ export default function WorkspaceToolsDialog({
                 {
                   key: 'progress', label: '进度', width: 210,
                   render: (row) => (
-                    <Box>
+                    <Box sx={{ width: '100%' }}>
                       <LinearProgress variant="determinate" color={row.status === 'failed' ? 'error' : row.status === 'completed' ? 'success' : 'primary'} value={Math.min(100, Math.max(0, row.progress || 0))} sx={{ height: 6, borderRadius: 3, mb: 0.5 }} />
                       <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>{row.cancel_requested && row.status === 'running' ? '正在取消' : statuses[row.status]}{row.kind === 'export' ? ` · 已处理 ${row.processed} 行` : ''}</Typography>
                     </Box>

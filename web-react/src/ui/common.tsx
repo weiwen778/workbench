@@ -197,6 +197,7 @@ export function DataTable<T>({
   onRowClick,
   maxHeight,
   size = 'small',
+  compact = false,
   autoRowHeight = false,
   columnDividers = false,
   striped = false,
@@ -224,6 +225,8 @@ export function DataTable<T>({
   onRowClick?: (row: T, index: number) => void
   maxHeight?: number | string
   size?: 'small' | 'medium'
+  /** 仅数据表详情等需要极高信息密度的场景启用 24px 行高。 */
+  compact?: boolean
   autoRowHeight?: boolean
   columnDividers?: boolean
   striped?: boolean
@@ -318,8 +321,8 @@ export function DataTable<T>({
       widthsChangeRef.current(widths)
     })
   }, [apiRef])
-  const rowHeightValue = size === 'small' ? 24 : 56
-  const headerHeightValue = size === 'small' ? 32 : 52
+  const rowHeightValue = compact ? 24 : size === 'small' ? 48 : 56
+  const headerHeightValue = compact ? 32 : size === 'small' ? 48 : 52
   const naturalHeight = headerHeightValue + rows.length * rowHeightValue + 2
   const height = maxHeight === '100%'
     ? '100%'
@@ -342,6 +345,7 @@ export function DataTable<T>({
     bgcolor: 'background.paper',
     '& .MuiDataGrid-columnHeaders': { bgcolor: 'background.paper', borderBottom: '1px solid', borderColor: 'divider' },
     '& .MuiDataGrid-cell': {
+      display: 'flex', alignItems: 'center',
       fontSize: 13.5,
       borderBottom: '1px solid',
       borderColor: theme.palette.mode === 'dark' ? '#1F1F23' : '#F4F4F5',
