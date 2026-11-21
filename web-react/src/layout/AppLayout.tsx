@@ -260,8 +260,6 @@ export default function AppLayout() {
     { key: 'data', label: '表格', path: '/data', icon: Collection },
     { key: 'more', label: '更多', path: '', icon: MoreFilled },
   ]
-  const initials = (session.user?.username || 'admin').slice(0, 2).toUpperCase()
-
   return (
     <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
       {!narrow ? (
@@ -351,20 +349,6 @@ export default function AppLayout() {
                 <Setting sx={{ fontSize: 18 }} />
               </IconButton>
             </Tooltip>
-            <Box
-              role="button"
-              tabIndex={0}
-              aria-label="账号与设置"
-              onClick={() => navigate('/settings')}
-              onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); navigate('/settings') } }}
-              sx={{
-                width: 30, height: 30, borderRadius: '50%', bgcolor: 'action.selected',
-                display: 'grid', placeItems: 'center', fontSize: 11.5, fontWeight: 600,
-                cursor: 'pointer', flexShrink: 0, '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
-              }}
-            >
-              {initials}
-            </Box>
           </Toolbar>
         </AppBar>
 
