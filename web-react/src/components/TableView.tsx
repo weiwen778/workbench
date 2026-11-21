@@ -330,7 +330,10 @@ export default function TableView({ tableId }: { tableId: number }) {
       key: '__actions', label: '', width: 56, sticky: true,
       render: (row) => (
         <Stack direction="row" spacing={0.25} onClick={(event) => event.stopPropagation()}>
-          <IconButton size="small" aria-label="行操作" onClick={(event) => setRowMenu({ el: event.currentTarget, row })}><MoreFilled /></IconButton>
+          <IconButton
+            size="small" aria-label="行操作" onClick={(event) => setRowMenu({ el: event.currentTarget, row })}
+            sx={{ width: 24, height: 24, p: 0 }}
+          ><MoreFilled sx={{ fontSize: 16 }} /></IconButton>
         </Stack>
       ),
     },

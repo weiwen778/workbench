@@ -184,7 +184,7 @@ export default function SettingsPage({ section: explicitSection }: { section?: s
         {nav(false, navCollapsed)}
       </Box> : null}
 
-      <Box component="main" sx={{ p: { xs: 2, md: '24px 28px' }, minWidth: 0, minHeight: 0, height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <Box component="main" sx={{ p: '10px', minWidth: 0, minHeight: 0, height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={2}>
           <Box sx={{ minWidth: 0 }}>
             <Typography variant="h5" sx={{ mb: 0.75 }}>{current.label}</Typography>

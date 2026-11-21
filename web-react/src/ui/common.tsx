@@ -28,14 +28,13 @@ export function Page({
   variant?: 'standard' | 'dense' | 'bleed'
   sx?: any
 }) {
-  const dense = variant === 'dense'
   const bleed = variant === 'bleed'
   return (
     <Box
       sx={{
         height: '100%', minWidth: 0, display: 'flex', flexDirection: 'column',
-        gap: bleed ? 0 : dense ? 2 : 2.5,
-        p: bleed ? 0 : dense ? 2.5 : 3,
+        gap: bleed ? 0 : '10px',
+        p: bleed ? 0 : '10px',
         ...(scroll ? { overflow: 'auto' } : {}),
         ...sx,
       }}
@@ -108,7 +107,7 @@ export function ModuleToolbar({
 }
 
 export function PageBody({ children, sx }: { children: ReactNode; sx?: any }) {
-  return <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 2, ...sx }}>{children}</Box>
+  return <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '10px', ...sx }}>{children}</Box>
 }
 
 export function PageActions({ children, sx }: { children: ReactNode; sx?: any }) {
@@ -184,6 +183,7 @@ const RoundCheckbox = forwardRef<HTMLButtonElement, any>(function RoundCheckbox(
       {...props}
       icon={<Circle sx={{ fontSize: 18 }} />}
       checkedIcon={<CircleCheck sx={{ fontSize: 18 }} />}
+      sx={{ p: 0.25 }}
     />
   )
 })
@@ -318,8 +318,8 @@ export function DataTable<T>({
       widthsChangeRef.current(widths)
     })
   }, [apiRef])
-  const rowHeightValue = size === 'small' ? 48 : 56
-  const headerHeightValue = size === 'small' ? 48 : 52
+  const rowHeightValue = size === 'small' ? 24 : 56
+  const headerHeightValue = size === 'small' ? 32 : 52
   const naturalHeight = headerHeightValue + rows.length * rowHeightValue + 2
   const height = maxHeight === '100%'
     ? '100%'
@@ -359,7 +359,7 @@ export function DataTable<T>({
     '& .MuiDataGrid-menuIcon': { display: 'none' },
     '& .MuiDataGrid-columnHeader .MuiDataGrid-iconButtonContainer': { display: 'none' },
     '& .wb-table-cell-text': {
-      display: 'block', width: '100%', minWidth: 0, minHeight: 22, overflow: 'hidden',
+      display: 'block', width: '100%', minWidth: 0, minHeight: 18, overflow: 'hidden',
       textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderRadius: 4,
       fontVariantNumeric: 'tabular-nums',
     },

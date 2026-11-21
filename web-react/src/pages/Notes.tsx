@@ -506,7 +506,7 @@ export default function NotesPage() {
   }, [editOpen, save])
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, p: '10px', gap: '10px' }}>
       <ModuleToolbar
         sx={{ px: 1.5, borderBottom: 1, borderColor: 'divider' }}
         info={(
@@ -637,7 +637,7 @@ export default function NotesPage() {
               primary={<Button size="small" variant="contained" startIcon={<Edit fontSize="small" />} onClick={openEditor}>编辑</Button>}
             />
 
-            <Box className="note-reader" sx={{ flex: 1, minHeight: 0, overflow: 'auto', p: { xs: 1.5, md: 2 }, bgcolor: 'background.default' }}>
+            <Box className="note-reader" sx={{ flex: 1, minHeight: 0, overflow: 'auto', p: '10px', bgcolor: 'background.default' }}>
               <Box sx={{
                 maxWidth: contentWidth, mx: 'auto', bgcolor: 'background.paper',
                 border: 1, borderColor: 'divider', borderRadius: 1.5,

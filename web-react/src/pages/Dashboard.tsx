@@ -608,7 +608,7 @@ export default function DashboardPage() {
         />
       ) : null}
 
-      <PageBody sx={{ gap: 2 }}>
+      <PageBody sx={{ gap: '10px' }}>
         {loadError ? <Alert severity="error" action={<Button size="small" onClick={() => void load()}>重新加载</Button>}>{loadError}</Alert> : null}
 
         {!activeId ? (

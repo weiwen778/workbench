@@ -38,7 +38,7 @@ export default function TableCellEditor({
         value={initialValue ?? ''}
         disabled={disabled}
         onChange={(event) => onSave(event.target.value)}
-        sx={{ minWidth: 110, height: 30 }}
+        sx={{ minWidth: 110, height: 24, fontSize: 12.5 }}
         onKeyDown={(event) => {
           event.stopPropagation()
           if (event.key === 'Escape') onCancel()

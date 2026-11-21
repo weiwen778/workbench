@@ -357,7 +357,7 @@ export default function TranslatePage() {
         )}
       />
 
-      <Stack spacing={1}>
+      <Stack spacing={1.25}>
         {connections.length && !enabledConnections.length ? (
           <Alert severity="warning" action={<Button size="small" sx={{ whiteSpace: 'nowrap' }} onClick={() => navigate('/settings/translation')}>去启用</Button>}>
             还没有启用翻译服务，请先在设置中配置并启用至少一个服务。
@@ -375,7 +375,7 @@ export default function TranslatePage() {
         ) : null}
       </Stack>
 
-      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 1, flex: '0 0 auto', height: { md: 320 }, minHeight: 0 }}>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: '10px', flex: '0 0 auto', height: { md: 320 }, minHeight: 0 }}>
         <Box sx={{ flex: { xs: '0 0 auto', md: 1 }, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, height: { xs: 260, md: 'auto' }, ...panelSx }}>
           <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ px: 1.5, py: 0.75, borderBottom: 1, ...separatorSx }}>
             <Stack direction="row" spacing={0.5} alignItems="center">
@@ -446,7 +446,7 @@ export default function TranslatePage() {
         </Box>
       </Box>
 
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0,1fr)', lg: `${favoritesWidth}px 10px minmax(0,1fr)` }, gap: 1, flex: { xs: '0 1 auto', lg: 1 }, minWidth: 0, minHeight: { lg: 220 } }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0,1fr)', lg: `${favoritesWidth}px 10px minmax(0,1fr)` }, gap: '10px', flex: { xs: '0 1 auto', lg: 1 }, minWidth: 0, minHeight: { lg: 220 } }}>
         <Box sx={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 200, ...panelSx }}>
           <Stack direction="row" justifyContent="space-between" sx={{ px: 1.5, py: 0.75, borderBottom: 1, ...separatorSx }}>
             <Typography sx={{ fontSize: 13, fontWeight: 600 }}>收藏</Typography><Typography sx={{ fontSize: 12, color: 'text.secondary' }}>共 {favorites.length} 条</Typography>

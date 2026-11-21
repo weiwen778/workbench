@@ -385,7 +385,7 @@ export default function TodosPage() {
 
   return (
     <Box className="todos-layout">
-      <Box className="task-pane" sx={{ p: 2.5, gap: 2 }}>
+      <Box className="task-pane" sx={{ p: '10px', gap: '10px' }}>
         <ModuleToolbar
           info={(
             <ToggleButtonGroup size="small" exclusive value={sortMode} disabled={!currentList} onChange={(_, value) => value && void changeSortMode(value)}>
