@@ -79,25 +79,33 @@ export function fieldError(error: any): Record<string, string> {
 }
 
 export async function copyText(text: string): Promise<boolean> {
+  // 先走同步的 execCommand，确保仍在用户点击手势内完成复制；
+  // 某些浏览器会在 navigator.clipboard 的 await 之后拒绝回退方案。
   try {
-    if (navigator.clipboard && window.isSecureContext) {
+    const area = document.createElement('textarea')
+    area.value = text
+    area.setAttribute('readonly', '')
+    area.style.position = 'fixed'
+    area.style.top = '-9999px'
+    area.style.left = '-9999px'
+    area.style.opacity = '0'
+    document.body.appendChild(area)
+    area.focus({ preventScroll: true })
+    area.select()
+    area.setSelectionRange(0, area.value.length)
+    const ok = document.execCommand('copy')
+    document.body.removeChild(area)
+    if (ok) return true
+  } catch {
+    /* 继续尝试 Clipboard API */
+  }
+  try {
+    if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text)
       return true
     }
   } catch {
-    /* 继续走回退方案 */
+    /* 浏览器拒绝时返回失败，由调用方提示手动复制 */
   }
-  try {
-    const area = document.createElement('textarea')
-    area.value = text
-    area.style.position = 'fixed'
-    area.style.opacity = '0'
-    document.body.appendChild(area)
-    area.select()
-    const ok = document.execCommand('copy')
-    document.body.removeChild(area)
-    return ok
-  } catch {
-    return false
-  }
+  return false
 }

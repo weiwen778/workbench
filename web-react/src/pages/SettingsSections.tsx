@@ -72,6 +72,7 @@ export function AgentsSection() {
   })
   const [policyPreset, setPolicyPreset] = useState('takeover')
   const [creating, setCreating] = useState(false)
+  const [guideText, setGuideText] = useState('')
 
   const scopeOptions = [
     { key: 'all:read', label: '读取全部业务', hint: '表格、待办、笔记、便利贴、打卡、看板、网址等' },
@@ -127,6 +128,13 @@ export function AgentsSection() {
   }
 
   useEffect(() => { void load() }, [])
+  useEffect(() => {
+    let active = true
+    http.get('/agent-guide')
+      .then(({ data }) => { if (active) setGuideText(data.guide || '') })
+      .catch(() => { /* 复制时再提示 */ })
+    return () => { active = false }
+  }, [])
   useEffect(() => { void loadChanges(changeStatus, changePage, changeQuery) }, [changeStatus, changePage])
   useEffect(() => { void loadRuns(runStatus, runUndoStatus, runPage, runQuery) }, [runStatus, runUndoStatus, runPage])
   useEffect(() => {
@@ -223,12 +231,11 @@ export function AgentsSection() {
   }
 
   const copyGuide = async () => {
-    try {
-      const { data } = await http.get('/agent-guide')
-      const guide = data.guide.replaceAll('{{BASE_URL}}', window.location.origin)
-      if (await copyText(guide)) toast.success('接入说明已复制，令牌请另行通过机密配置提供')
-      else toast.error('复制失败，请重试')
-    } catch (error) { toast.error(apiError(error).message) }
+    // 接入说明在页面挂载时预取，点击时只做同步复制，避免 await 丢掉用户手势。
+    const guide = guideText.replaceAll('{{BASE_URL}}', window.location.origin)
+    if (!guide) { toast.error('接入说明还没加载好，请稍后重试'); return }
+    if (await copyText(guide)) toast.success('接入说明已复制，令牌请另行通过机密配置提供')
+    else toast.error('复制失败，请重试')
   }
 
   const copyEndpoint = async () => {
@@ -245,12 +252,10 @@ export function AgentsSection() {
 
   const copyFullConfig = async () => {
     if (!secret) return
-    try {
-      const { data } = await http.get('/agent-guide')
-      const text = data.guide.replaceAll('{{BASE_URL}}', window.location.origin).replaceAll('{{TOKEN}}', secret.token)
-      if (await copyText(text)) toast.success('完整接入包已复制，直接交给 Agent 即可')
-      else toast.error('复制失败，请重试')
-    } catch (error) { toast.error(apiError(error).message) }
+    if (!guideText) { toast.error('接入说明还没加载好，请稍后重试'); return }
+    const text = guideText.replaceAll('{{BASE_URL}}', window.location.origin).replaceAll('{{TOKEN}}', secret.token)
+    if (await copyText(text)) toast.success('完整接入包已复制，直接交给 Agent 即可')
+    else toast.error('复制失败，请重试')
   }
 
   const openRun = async (run: any) => {
@@ -715,9 +720,16 @@ export function AgentsSection() {
         <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>保存 Agent 令牌</DialogTitle>
         <DialogContent>
           <Alert severity="warning" sx={{ mb: 1.5 }}>令牌只显示一次，请立即保存，不要提交到 Git。</Alert>
-          <Stack direction="row" spacing={1} sx={{ mb: 1.5 }}>
-            <TextField fullWidth value={secret?.token || ''} inputProps={{ readOnly: true }} />
-            <Button size="small" variant="contained" onClick={async () => { if (await copyText(secret?.token || '')) toast.success('令牌已复制'); else toast.error('复制失败，请手动选中复制') }}>复制</Button>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+            <TextField
+              size="small" value={secret?.token || ''} inputProps={{ readOnly: true }}
+              sx={{ flex: 1, minWidth: 0, '& .MuiInputBase-input': { fontFamily: '"IBM Plex Mono", monospace', fontSize: 12 } }}
+            />
+            <Button
+              size="small" variant="contained"
+              sx={{ flexShrink: 0, whiteSpace: 'nowrap', height: 40 }}
+              onClick={async () => { if (await copyText(secret?.token || '')) toast.success('令牌已复制'); else toast.error('复制失败，请手动选中复制') }}
+            >复制</Button>
           </Stack>
           <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 0.5 }}>接口地址</Typography>
           <Typography sx={{ fontSize: 12, fontFamily: '"IBM Plex Mono", monospace', bgcolor: 'action.hover', px: 1.25, py: 0.75, borderRadius: 1, mb: 1.5 }}>{endpoint}</Typography>
