@@ -315,10 +315,27 @@ export default function TableView({ tableId }: { tableId: number }) {
     const badgeWidth = isLikelyStaticDerived(field) ? 34 : 0
     return Math.ceil(textWidth + sortWidth + badgeWidth + 26)
   }, [sortableKeys])
+  // 文本列至少容纳当前页最长内容，避免备注、说明被省略成「…」。
+  const contentFitWidth = useCallback((field: Field) => {
+    if (!['text', 'short_text', 'long_text'].includes(field.type)) return 0
+    const cap = field.type === 'long_text' ? 360 : 300
+    let max = 0
+    for (const row of rows) {
+      const value = (row as any)?.data?.[field.key]
+      if (value == null) continue
+      for (const line of String(value).split('\n')) {
+        max = Math.max(max, Array.from(line).reduce(
+          (sum, char) => sum + ((char.codePointAt(0) ?? 0) > 0x2e7f ? 14 : 8), 0,
+        ))
+        if (max >= cap) return cap
+      }
+    }
+    return max ? Math.min(cap, Math.ceil(max + 36)) : 0
+  }, [rows])
   const columns = useMemo<Column<any>[]>(() => [
     ...fields.map((field) => {
       const baseWidth = field.type === 'long_text' ? 220 : field.type === 'url' ? 200 : field.type === 'number' ? 110 : 130
-      const minWidth = Math.max(baseWidth, headerFitWidth(field))
+      const minWidth = Math.max(baseWidth, headerFitWidth(field), contentFitWidth(field))
       return {
         key: field.key, label: field.name, width: minWidth, minWidth,
         align: valueAlign(field), headerAlign: valueAlign(field), headerRender: fieldHeader(field, sortableKeys.has(field.key)),
@@ -337,7 +354,7 @@ export default function TableView({ tableId }: { tableId: number }) {
         </Stack>
       ),
     },
-  ], [fieldHeader, fields, headerFitWidth, openAttachment, removeRecord, saveCell, sortableKeys])
+  ], [contentFitWidth, fieldHeader, fields, headerFitWidth, openAttachment, removeRecord, saveCell, sortableKeys])
   const clearSort = useCallback(() => { setSorts([]); setPage(1) }, [])
 
   return (
